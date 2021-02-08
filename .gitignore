@@ -1,0 +1,30 @@
+.DS_Store
+__pycache__
+*.pyc
+*.swp
+*.o
+*.mod.c
+*.ko
+*.order
+*.builtin
+*.cmd
+*.so
+*.dbg
+*.s
+*.a
+*.bin
+*.elf
+
+# pt tool
+/tools/pt/pt
+/tools/pt/cmppath
+/tools/pt/obj
+# angr tool
+/tools/angr/ptxed/build
+/tools/angr/scripts/gnu-parallel-analysis/hosts
+# pyptrace tool
+/tools/pyptrace/build
+/tools/pyptrace/dist
+
+/env
+/venv

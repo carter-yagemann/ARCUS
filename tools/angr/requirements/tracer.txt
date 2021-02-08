@@ -1,0 +1,4 @@
+./tools/pyptrace
+pyelftools>=0.25
+construct>=2.9.45
+pefile>=2018.8.8

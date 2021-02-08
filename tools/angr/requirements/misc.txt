@@ -1,0 +1,5 @@
+pefile>=2018.8.8
+capstone>=4.0.1
+keystone-engine>=0.9.1.post3
+lief>=0.9.0
+construct>=2.9.45

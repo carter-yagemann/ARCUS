@@ -1,0 +1,16 @@
+/.config.old
+/.config
+/.version
+/.missing-syscalls.d
+/.tmp_*
+/Module.symvers
+/System.map
+/vmlinux
+
+/arch/x86/include/generated
+/arch/x86/boot
+
+/include/config
+/include/generated
+
+/usr/.initramfs_data.cpio.d

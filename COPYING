@@ -1,0 +1,11 @@
+Except where otherwise stated, the code in this repository is provided under
+GNU General Public License version 3. For details, see LICENSE.
+
+This repository contains Griffin, which is a derivative work of the Linux Kernel,
+provided under GNU General Public License 2. See linux/COPYING for details.
+
+This repository contains xed, which is provided under Apache License version 2.
+See tools/pt/xed/LICENSE for details.
+
+This repository contains mbuild, which is provided under Apache License version 2.
+See tools/pt/mbuild/LICENSE for details.

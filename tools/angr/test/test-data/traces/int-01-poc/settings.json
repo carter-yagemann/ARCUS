@@ -1,0 +1,1 @@
+{"traced-cmd": ["./program"], "version": "1.2.0", "settings": {"snapshot_rva": 94506024235152, "concrete_argv": false, "wait_exec": null, "uid": 1000, "no_state": false, "gid": 1000, "concrete_env": false, "concrete_fs": false, "time": false, "no_trace": false}}

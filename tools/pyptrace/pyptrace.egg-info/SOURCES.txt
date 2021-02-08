@@ -1,0 +1,12 @@
+setup.cfg
+setup.py
+./pyptrace/__init__.py
+./pyptrace/const.py
+./pyptrace/ext/__init__.py
+./pyptrace/ext/os/__init__.py
+./pyptrace/ext/os/signal.py
+pyptrace.egg-info/PKG-INFO
+pyptrace.egg-info/SOURCES.txt
+pyptrace.egg-info/dependency_links.txt
+pyptrace.egg-info/top_level.txt
+pyptrace/ext/os/os.c

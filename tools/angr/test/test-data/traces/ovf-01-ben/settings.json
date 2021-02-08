@@ -1,0 +1,1 @@
+{"traced-cmd": ["./bin/program1", "Alice"], "version": "1.1.2", "settings": {"snapshot_rva": null, "concrete_argv": false, "uid": null, "no_state": false, "gid": null, "concrete_env": false, "concrete_fs": false, "time": false, "no_trace": false}}
