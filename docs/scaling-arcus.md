@@ -2,7 +2,7 @@
 
 ## Batching over Remote Hosts
 
-The scripts in `tools/angr/gnu-parallel` let you run ARCUS's `analysis.py` over
+The scripts in `tools/angr/scripts/gnu-parallel-analysis` let you run ARCUS's `analysis.py` over
 one or more remote hosts using [GNU Parallel](https://www.gnu.org/software/parallel/).
 
 Guide:
@@ -12,12 +12,12 @@ remote hosts via SSH.
 
 2. Run `setup-host.sh` for each host. Ex: `./setup-host.sh server.example.org git@git.repo.com:user/my-repo.git`
 
-3. Write a hosts file at `tools/angr/gnu-parallel/hosts`. See GNU Parallel's documentation
+3. Write a hosts file at `tools/angr/scripts/gnu-parallel-analysis/hosts`. See GNU Parallel's documentation
 for more details.
 
 4. Place all the traces you want to analyze in one directory and then navigate to
-where you want the results to be stored (ideally, another empty directory). (Note:
-you may want to use `tools/pt/cmppath` to filter out similar traces`)
+where you want the results to be stored (ideally, another empty directory). **Note:**
+you may want to use `tools/pt/cmppath` to filter out similar traces.
 
 5. Run `run.sh`.
 

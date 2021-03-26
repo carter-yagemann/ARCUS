@@ -55,7 +55,7 @@ The general setup steps are:
 
 * [Tracing with Griffin](docs/griffin-tracing.md)
 
-* [Analyzing with ARCUS)](docs/arcus.md)
+* [Analyzing with ARCUS](docs/arcus.md)
 
 * [Analyzing With ARCUS At Scale](docs/scaling-arcus.md)
 
