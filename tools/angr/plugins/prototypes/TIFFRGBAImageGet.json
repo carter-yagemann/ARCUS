@@ -1,0 +1,93 @@
+[
+  {
+    "value_type": "Struct",
+    "value_data": [
+      {
+        "value_type": "Int",
+        "value_data": null,
+        "value_size": 4,
+        "offset": 8,
+        "offset_type": "RVA"
+      },
+      {
+        "value_type": "Int",
+        "value_data": null,
+        "value_size": 4,
+        "offset": 12,
+        "offset_type": "RVA"
+      },
+      {
+        "value_type": "Int",
+        "value_data": null,
+        "value_size": 4,
+        "offset": 16,
+        "offset_type": "RVA"
+      },
+      {
+        "value_type": "Int",
+        "value_data": null,
+        "value_size": 4,
+        "offset": 20,
+        "offset_type": "RVA"
+      },
+      {
+        "value_type": "Int",
+        "value_data": null,
+        "value_size": 4,
+        "offset": 24,
+        "offset_type": "RVA"
+      },
+      {
+        "value_type": "Int",
+        "value_data": null,
+        "value_size": 2,
+        "offset": 28,
+        "offset_type": "RVA"
+      },
+      {
+        "value_type": "Int",
+        "value_data": null,
+        "value_size": 2,
+        "offset": 30,
+        "offset_type": "RVA"
+      },
+      {
+        "value_type": "Int",
+        "value_data": null,
+        "value_size": 2,
+        "offset": 32,
+        "offset_type": "RVA"
+      },
+      {
+        "value_type": "Int",
+        "value_data": null,
+        "value_size": 2,
+        "offset": 34,
+        "offset_type": "RVA"
+      },
+      {
+        "value_type": "Int",
+        "value_data": null,
+        "value_size": 2,
+        "offset": 36,
+        "offset_type": "RVA"
+      }
+    ],
+    "value_size": null
+  },
+  {
+    "value_type": "Ptr_Data",
+    "value_data": null,
+    "value_size": null
+  },
+  {
+    "value_type": "Int",
+    "value_data": null,
+    "value_size": 4
+  },
+  {
+    "value_type": "Int",
+    "value_data": null,
+    "value_size": 4
+  }
+]

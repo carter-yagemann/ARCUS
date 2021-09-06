@@ -1,0 +1,13 @@
+{
+  "basic_types": {
+    "char": 1,
+    "short": 2,
+    "int": 4,
+    "unsigned": 4,
+    "long": 8,
+    "void": 8,
+    "float": 4,
+    "double": 8
+  },
+  "ptr_size": 8
+}

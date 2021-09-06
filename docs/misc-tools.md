@@ -5,7 +5,32 @@ Here's a list of other tools provided and their purpose:
 * `tools/angr/memlayout.py` - Takes a trace and prints the memory layout.
 * `tools/angr/decode.py` - Decodes a GRIFFIN trace (usually named `trace.griffin`) and prints out the sequence
 of executed basic blocks along with some other details.
+* `tools/angr/rewriter.py` - Instruments program to record run-time data in PT trace. Explained in more detail
+in a following subsection.
 * `tools/pt/cmppath` - Compares traces using hashmaps and checksums.
+
+## Instrumenting Programs
+
+Processor traces usually only record control flow, so for analysis that requires data flow, the program has to be rewritten
+to encode the data of interest. This can be done with `tools/angr/rewriter.py`. See `-h` for more details.
+
+The JSON file provided to this tool is used to specify where to place hooks and what to record at those
+places. For example, to capture the contents of the `rax` register at the code located at relative virtual
+address `0x839`:
+
+```
+{"hooks": [
+    {"addr": 2105, "src": "rax"}
+]}
+```
+
+And if we want to record the value at a memory location instead:
+
+```
+{"hooks": [
+    {"addr": 2105, "src": 123456}
+]}
+```
 
 ## Comparing Traces
 

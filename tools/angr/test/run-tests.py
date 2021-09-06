@@ -288,6 +288,10 @@ class TestAnalysis(unittest.TestCase):
     run_script = os.path.join(os.path.dirname(__file__), '../analysis.py')
     traces_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'test-data/traces'))
     test_traces = {
+        'int-01-poc': {'explore': False,
+                       'timeout': 60,
+                       'reports': [{'count': 1, 'prefix': 'int'},
+                                   {'count': 1, 'prefix': 'neg'}]},
         'uaf-01-poc': {'explore': False,
                        'timeout': 60,
                        'reports': [{'count': 1, 'prefix': 'alloc'}]},
@@ -297,44 +301,108 @@ class TestAnalysis(unittest.TestCase):
         'uaf-03-poc': {'explore': False,
                        'timeout': 60,
                        'reports': [{'count': 1, 'prefix': 'alloc'}]},
+        'uaf-04-ben': {'explore': True,
+                       'plugins': 'uaf_explore',
+                       'max-arg': '1024',
+                       'timeout': 120,
+                       'reports': [{'count': 1, 'prefix': 'alloc'}]},
         'uaf-05-poc': {'explore': False,
                        'timeout': 60,
                        'reports': [{'count': 2, 'prefix': 'alloc'}]},
+        'uaf-05-ben': {'explore': True,
+                       'plugins': 'uaf_explore',
+                       'max-arg': '1024',
+                       'timeout': 120,
+                       'reports': [{'count': 1, 'prefix': 'alloc'}]},
         'df-01-poc':  {'explore': False,
                        'timeout': 60,
                        'reports': [{'count': 1, 'prefix': 'alloc'}]},
         'dp-01-poc':  {'explore': False,
                        'timeout': 60,
                        'reports': [{'count': 1, 'prefix': 'alloc'}]},
-        'ovf-01-poc': {'explore': False,
-                       'timeout': 60,
-                       'reports': [{'count': 1, 'prefix': 'sip'}]},
-        'ovf-02-poc': {'explore': False,
-                       'timeout': 60,
-                       'reports': [{'count': 1, 'prefix': 'sip'}]},
-        'ovf-03-poc': {'explore': False,
-                       'timeout': 60,
-                       'reports': [{'count': 1, 'prefix': 'sip'}]},
-        'ovf-04-poc': {'explore': False,
-                       'timeout': 60,
-                       'reports': [{'count': 1, 'prefix': 'sip'}]},
-        'ovf-05-poc': {'explore': False,
-                       'timeout': 60,
-                       'reports': [{'count': 1, 'prefix': 'neg'}]},
-        'ovf-06-poc': {'explore': False,
-                       'timeout': 60,
-                       'reports': [{'count': 1, 'prefix': 'fmt'}]},
-        'ovf-07-poc': {'explore': False,
-                       'timeout': 60,
-                       'reports': [{'count': 1, 'prefix': 'sip'}]},
-        'ovf-08-poc': {'explore': False,
-                       'timeout': 60,
-                       'reports': [{'count': 1, 'prefix': 'sip'}]},
-        'ovf-09-poc': {'explore': False,
-                       'timeout': 60,
-                       'reports': [{'count': 1, 'prefix': 'sip'}]},
+        'ovf-01-poc':  {'explore': False,
+                        'timeout': 60,
+                        'reports': [{'count': 1, 'prefix': 'sip'}]},
+        'ovf-02-poc':  {'explore': False,
+                        'timeout': 60,
+                        'reports': [{'count': 1, 'prefix': 'sip'}]},
+        'ovf-03-poc':  {'explore': False,
+                        'timeout': 60,
+                        'reports': [{'count': 1, 'prefix': 'sip'}]},
+        'ovf-04-poc':  {'explore': False,
+                        'timeout': 60,
+                        'reports': [{'count': 1, 'prefix': 'sip'}]},
+        'ovf-05-poc':  {'explore': False,
+                        'timeout': 60,
+                        'reports': [{'count': 1, 'prefix': 'neg'}]},
+        'ovf-06-poc':  {'explore': False,
+                        'timeout': 60,
+                        'reports': [{'count': 1, 'prefix': 'fmt'}]},
+        'ovf-07-poc':  {'explore': False,
+                        'timeout': 60,
+                        'reports': [{'count': 1, 'prefix': 'sip'}]},
+        'ovf-08-poc':  {'explore': False,
+                        'timeout': 60,
+                        'reports': [{'count': 1, 'prefix': 'sip'}]},
+        'ovf-09-poc':  {'explore': False,
+                        'timeout': 60,
+                        'reports': [{'count': 1, 'prefix': 'sip'}]},
+        'ovf-01-ben':  {'explore': True,
+                        'plugins': 'loop_bounds,arg_max',
+                        'max-arg': '1024',
+                        'timeout': 120,
+                        'reports': [{'count': 1, 'prefix': 'sip'}]},
+        'ovf-02-ben':  {'explore': True,
+                        'plugins': 'loop_bounds,arg_max',
+                        'max-arg': '1024',
+                        'timeout': 120,
+                        'reports': [{'count': 1, 'prefix': 'sip'}]},
+        'ovf-03-ben':  {'explore': True,
+                        'plugins': 'loop_bounds,arg_max',
+                        'max-arg': '1024',
+                        'timeout': 120,
+                        'reports': [{'count': 1, 'prefix': 'sip'}]},
+        'ovf-04-ben':  {'explore': True,
+                        'plugins': 'loop_bounds,arg_max',
+                        'max-arg': '128',
+                        'timeout': 120,
+                        'reports': [{'count': 1, 'prefix': 'sip'}]},
+        'ovf-05-ben':  {'explore': True,
+                        'plugins': 'loop_bounds,arg_max',
+                        'max-arg': '1024',
+                        'timeout': 120,
+                        'reports': [{'count': 2, 'prefix': 'neg'}]},
+        'ovf-06-ben':  {'explore': True,
+                        'plugins': 'loop_bounds,arg_max',
+                        'max-arg': '1024',
+                        'timeout': 120,
+                        'reports': [{'count': 1, 'prefix': 'fmt'}]},
+        'ovf-07-ben':  {'explore': True,
+                        'plugins': 'loop_bounds,arg_max',
+                        'max-arg': '1024',
+                        'timeout': 120,
+                        'reports': [{'count': 1, 'prefix': 'sip'}]},
+        'ovf-08-ben':  {'explore': True,
+                        'plugins': 'loop_bounds,arg_max',
+                        'max-arg': '1024',
+                        'timeout': 120,
+                        'reports': [{'count': 1, 'prefix': 'sip'}]},
+        'ovf-09-ben':  {'explore': True,
+                        'plugins': 'loop_bounds,arg_max',
+                        'max-arg': '1024',
+                        'timeout': 120,
+                        'reports': [{'count': 1, 'prefix': 'sip'}]},
+        'ovf-10-api':  {'explore': False,
+                        'timeout': 300,
+                        'apisnap': '55585b41e030-0',
+                        'reports': [{'count': 1, 'prefix': 'sip'}]},
         'cve-2018-12327-poc':  {'explore': False,
                                 'timeout': 300,
+                                'reports': [{'count': 1, 'prefix': 'vuln'}]},
+        'cve-2018-12327-ben':  {'explore': True,
+                                'plugins': 'loop_bounds,arg_max',
+                                'max-arg': '1024',
+                                'timeout': 900,
                                 'reports': [{'count': 1, 'prefix': 'vuln'}]},
         'cve-2005-0105-poc':   {'explore': False,
                                 'timeout': 300,
@@ -366,7 +434,13 @@ class TestAnalysis(unittest.TestCase):
 
         # run analysis and get reports
         with tempfile.TemporaryDirectory(prefix='analysis-unittest') as tmpdir:
-            cmd = [sys.executable, self.run_script, '--save-reports', tmpdir, trace_path]
+            cmd = [sys.executable, self.run_script, '--save-reports', tmpdir]
+            if trace_info['explore']:
+                cmd += ['--explore', '--override-max-argv', trace_info['max-arg'],
+                        '--explore-plugins', trace_info['plugins']]
+            if 'apisnap' in trace_info:
+                cmd += ['--api-snapshot', trace_info['apisnap'], '--api-inference']
+            cmd += [trace_path]
 
             ret = subprocess.run(cmd, stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL, timeout=trace_info['timeout'])
@@ -380,6 +454,9 @@ class TestAnalysis(unittest.TestCase):
                     if name.startswith(criteria['prefix'])])
             self.assertEqual(criteria['count'], prefix_cnt)
 
+    #def test_int_01_poc(self):
+    #    self.do_analysis_test('int-01-poc')
+
     def test_uaf_01_poc(self):
         self.do_analysis_test('uaf-01-poc')
 
@@ -389,8 +466,14 @@ class TestAnalysis(unittest.TestCase):
     def test_uaf_03_poc(self):
         self.do_analysis_test('uaf-03-poc')
 
+    def test_uaf_04_ben(self):
+        self.do_analysis_test('uaf-04-ben')
+
     def test_uaf_05_poc(self):
         self.do_analysis_test('uaf-05-poc')
+
+    def test_uaf_05_ben(self):
+        self.do_analysis_test('uaf-05-ben')
 
     def test_df_01_poc(self):
         self.do_analysis_test('df-01-poc')
@@ -425,12 +508,44 @@ class TestAnalysis(unittest.TestCase):
     def test_ovf_09_poc(self):
         self.do_analysis_test('ovf-09-poc')
 
+    def test_ovf_01_ben(self):
+        self.do_analysis_test('ovf-01-ben')
+
+    def test_ovf_02_ben(self):
+        self.do_analysis_test('ovf-02-ben')
+
+    def test_ovf_03_ben(self):
+        self.do_analysis_test('ovf-03-ben')
+
+    def test_ovf_04_ben(self):
+        self.do_analysis_test('ovf-04-ben')
+
+    def test_ovf_05_ben(self):
+        self.do_analysis_test('ovf-05-ben')
+
+    def test_ovf_06_ben(self):
+        self.do_analysis_test('ovf-06-ben')
+
+    def test_ovf_07_ben(self):
+        self.do_analysis_test('ovf-07-ben')
+
+    def test_ovf_08_ben(self):
+        self.do_analysis_test('ovf-08-ben')
+
+    def test_ovf_09_ben(self):
+        self.do_analysis_test('ovf-09-ben')
+
+    def test_ovf_10_api(self):
+        self.do_analysis_test('ovf-10-api')
+
     def test_cve_2005_0105_poc(self):
         self.do_analysis_test('cve-2005-0105-poc')
 
     def test_cve_2018_12327_poc(self):
         self.do_analysis_test('cve-2018-12327-poc')
 
+    def test_cve_2018_12327_ben(self):
+        self.do_analysis_test('cve-2018-12327-ben')
 
 if __name__ == '__main__':
     unittest.main()

@@ -65,6 +65,8 @@ The general setup steps are:
 
 * [ARCUS Paper Evaluation](https://super.gtisc.gatech.edu/arcus-dataset-public.tgz)
 
+* [Bunkerbuster Paper Evaluation](https://super.gtisc.gatech.edu/bunkerbuster-dataset-public.tgz)
+
 ## Unit Tests
 
 If you make contributions to the repository, please try to keep `tools/angr/test/test.py` up-to-date. For non-unit tests,
@@ -72,8 +74,15 @@ create a new script in `tools/angr/test`. We currently do not have a unified fra
 
 ## Publications
 
-* C. Yagemann, M. Pruett, S. P. Chung, K. Bittick, B. Saltaformaggio, W. Lee, *ARCUS: Symbolic Root Cause Analysis of Exploits
-in Production Systems.* To appear in the 30th USENIX Security Symposium (USENIX'21). August 11--13, 2021.
+* C. Yagemann, S. Chung, B. Saltaformaggio, W. Lee,
+*Automated Bug Hunting With Data-Driven Symbolic Root Cause Analysis.*
+Appeared in the 2021 ACM Conference on Computer and Communications Security (CCS’21).
+Seoul, Republic of Korea. November 15--19, 2021.
+
+* C. Yagemann, M. Pruett, S. P. Chung, K. Bittick, B. Saltaformaggio, W. Lee,
+*ARCUS: Symbolic Root Cause Analysis of Exploits in Production Systems.*
+Appeared in the 30th USENIX Security Symposium (USENIX'21).
+August 11--13, 2021.
 
 ## Related Work
 

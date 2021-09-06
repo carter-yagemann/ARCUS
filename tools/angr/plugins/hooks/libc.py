@@ -107,6 +107,7 @@ class libc_getenv(angr.SimProcedure):
                 envp_strlen = self.inline_call(angr.SIM_PROCEDURES['libc']['strlen'], envp)
                 envp_str = self.state.memory.load(envp, envp_strlen.ret_expr)
                 if name_sym or self.state.solver.symbolic(envp_str):
+                    # TODO - this line is buggy because it can cause an arg size mismatch
                     ret_expr = Or(ret_expr, And(ret_val > envp, ret_val < (envp + envp_strlen.ret_expr)))
                 else:
                     # we can make the variable concrete
@@ -236,7 +237,7 @@ class libc__snprintf_chk(FormatParser):
         # enforce size limit
         size = self.state.solver.max(size)
         if (out_str.size() // 8) > size - 1:
-            out_str = out_str.get_bytes(0, size - 1)
+            out_str = out_str.get_bytes(0, max(size - 1, 1))
 
         # store resulting string
         self.state.memory.store(dst_ptr, out_str)

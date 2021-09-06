@@ -18,6 +18,38 @@ Upon detecting a vulnerability, the analysis will attempt to look backwards to f
 introducing the problem along with a root cause for the misbehavior. Currently, this will appear as part
 of the logging output.
 
+## Exploration
+
+With the release of exploration plugins (codename: Bunkerbuster), ARCUS can now explore nearby paths to
+find more bugs. Simply add the `--explore` flag to `analysis.py`.
+
+**Note:** Exploration is significantly slower and more memory expensive than simply following the trace.
+
+The "Explore Options" section in `analysis.py --help` contains additional advanced settings. For example,
+you can configure the analysis to switch to exploration after a timeout, regardless of whether the end
+of the trace has been reached. You can also use a Redis database to record which paths were explored so
+other analysis sessions won't re-explore the same stuff.
+
+## Snapshots
+
+Also new in the Bunkerbuster release is the ability for Tracer to break traces down into snapshots. This
+is useful for programs that are too big to analyze symbolically from start to finish. Passing `tracer.py`
+the flag `--snapshot-api` will cause it to snapshot invocations of imported functions. If you really know
+what you're doing, you can use `--snapshot-rva` to give a virtual address (relative to the main object's
+base address) to snapshot.
+
+**Note:** When using `--snapshot-rva`, results may be unstable if the address is not the start of a function.
+
+For each snapshot, the analysis will attempt to symbolize its parameters, using either a prototype definition
+(if one is available in `tools/angr/plugins/prototypes`) or by analyzing the memory accesses from the trace.
+
+**Note:** This is an under-constrained symbolic analysis, so bugs found under these conditions may not be
+reachable in real executions. However, since snapshots are taken at API entry points, bugs found this way
+are typically of relevance to the API's developers.
+
+It is possible to generate more prototypes for the `tools/angr/plugins/prototypes` directory using C/C++
+headers. See `tools/prototype-parser/parse_function.py --help` for more details.
+
 # Development
 
 This section is for developers who want to contribute to the project.
@@ -34,9 +66,16 @@ types of vulnerabilities, keep tracing on track, etc. The recommended steps for 
 
 ## Plugins
 
-The analysis uses a plugin system to make extending easy. There are currently two kinds of plugins: **hooks** and
-**detectors**. Hooks provide angr `SimProcedure` classes to speed up analysis. Detectors scan each state for
-vulnerabilities and then analyze detections at the end.
+The analysis uses a plugin system to make extending easy. There are currently four kinds of plugins: **hooks**,
+**detectors**, **explorers**, and **prototypes**:
+
+* Hooks provide angr `SimProcedure` classes to speed up analysis.
+
+* Detectors scan each state for vulnerabilities and then analyze detections at the end.
+
+* Explorers guide the analysis down interesting nearby paths.
+
+* Prototypes define the parameters to functions captured as snapshots.
 
 Adding plugins is as simple as creating a Python file to the appropriate directory. The `__init__.py` script in
 each plugin directory will automatically handle loading and validating the plugins. You should not need to modify

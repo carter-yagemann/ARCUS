@@ -31,4 +31,4 @@ you may want to use `tools/pt/cmppath` to filter out similar traces.
     ./run.sh /path/to/traces-dir master
     
     # pass additional arguments to analysis.py
-    ./run.sh /path/to/traces-dir master --logging=40
+    ./run.sh /path/to/traces-dir master --explore --logging=40

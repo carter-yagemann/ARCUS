@@ -37,11 +37,13 @@ import psutil
 import agc
 import angrpt
 import dwarf
+import explore
 from globals_deep import SimStateDeepGlobals
 import griffin
 import hooks
 import plugins.detectors
 import plugins.hooks
+import plugins.explorers
 import reporting
 import taint
 import xed
@@ -107,6 +109,20 @@ def parse_args():
     group_analysis.add_option('--save-reports', action='store', type='str', default=None,
             help='Save reports as JSON files to provided directory')
     parser.add_option_group(group_analysis)
+
+    group_explore = OptionGroup(parser, 'Explore Options')
+    group_explore.add_option('--explore', action='store_true', default=False,
+            help='Explore paths near the traced path for additional bugs')
+    group_explore.add_option('--explore-after', action='store', type='str', default=None,
+            help='Explore after given time, even if end of trace has not been reached '
+                 '(supports suffixes: s/m/h, defaults to m)')
+    group_explore.add_option('--explore-db', action='store', default=None,
+            help='Use database so explorers can share data across sessions (supported: '
+                 'Redis - redis://111.222.333.444:6379/0)')
+    group_explore.add_option('--explore-plugins', action='store', type='str', default=None,
+            help='Comma seperated list of explorer plugins to use, by module name '
+                 '(example: "arg_max,loop_bounds")')
+    parser.add_option_group(group_explore)
 
     group_logging = OptionGroup(parser, 'Logging Options')
     group_logging.add_option('-l', '--logging', action='store', type='int', default=20,
@@ -572,6 +588,10 @@ def set_log_levels(options):
     for module in list(plugins.detectors.loaded.values()):
         logging.getLogger(module.__name__).setLevel(options.logging)
 
+    # explorer plugins
+    for module in list(plugins.explorers.loaded.values()):
+        logging.getLogger(module.__name__).setLevel(options.logging)
+
 def get_predecessor(tech, index):
     """Helper function to get predecessors by index, ignoring None elements.
 
@@ -848,6 +868,19 @@ def main():
 
     set_log_levels(options)
 
+    # input validation
+    if options.explore_after:
+        if not options.explore:
+            options.explore = True  # user clearly intends to explore
+        explore_delta = parse_timedelta(options.explore_after, default_suffix='m')
+        if explore_delta is None:
+            log.error("Invalid value for --explore-after: %s" % options.explore_after)
+            return
+        if explore_delta < 1:
+            log.error("Value for --explore-after must be positive: %d" % explore_delta)
+            return
+        options.explore_after = explore_delta
+
     trace_dir = args[0]
     input_trace_candidates = ['trace.griffin', 'trace.griffin.gz']
     input_trace = None
@@ -955,7 +988,7 @@ def main():
 
     # initialize the starting state, exploration technique and simulation manager
     tech = angrpt.Tracer(bb_seq, start_address=regs['rip'])
-    init_state, init_env = parse_entry_state_json(proj, trace_dir, snapshot_dir, False,
+    init_state, init_env = parse_entry_state_json(proj, trace_dir, snapshot_dir, options.explore,
                                                   options.override_max_argv)
     simgr = proj.factory.simgr(init_state)
 
@@ -1062,13 +1095,19 @@ def main():
                 raise CriticalMemoryException('Memory critically low')
 
             analysis_duration = (datetime.now() - analysis_start_time).total_seconds()
+            if options.explore_after and analysis_duration > options.explore_after:
+                log.warning("Analysis timeout reached, moving to exploration early")
+                break
 
     except KeyboardInterrupt:
         log.warning("Received interrupt, cleaning up...")
+        options.explore = False  # forcibly disable exploration
     except (CriticalMemoryException, MemoryError):
         log.error("Memory critically low, halting analysis")
+        options.explore = False
     except AssertionError:
         log.error("Failed assertion: %s" % format_exc())
+        options.explore = False
     except angr.errors.AngrTracerError as ex:
         log.error("Angr stopped early: %s" % str(ex))
 
@@ -1086,6 +1125,7 @@ def main():
                 log.error("Stopped here: (symbolic)")
     except KeyboardInterrupt:
         log.warning("Received interrupt, cleaning up...")
+        options.explore = False  # forcibly disable exploration
 
     # update reports
     log.info("Updating reports with root cause analysis")
@@ -1093,10 +1133,104 @@ def main():
         reports = analyze(simgr, bb_seq)
     except KeyboardInterrupt:
         log.warning("Received interrupt, cleaning up...")
+        options.explore = False  # forcibly disable exploration
 
+    ################################################
+    ### PHASE 2: Optionally Explore Nearby Paths ###
+    ################################################
+
+    try:
+        if options.explore:
+            log.info("Starting explorers")
+            # backup list of predecessors for original trace
+            orig_preds = simgr._techniques[0].predecessors.copy()
+            # we no longer need the tracer exploration technique
+            simgr.remove_technique(tech)
+            assert len(simgr._techniques) == 0
+
+            # filter for if user wants us to only use a subset of plugins
+            allowed_explorers = None
+            if options.explore_plugins:
+                allowed_explorers = options.explore_plugins.split(',')
+
+            for explorer in list(plugins.explorers.loaded.values()):
+                e_short_name = explorer.__name__.split('.')[-1]
+                if not (allowed_explorers is None or e_short_name in allowed_explorers):
+                    log.info("Skipping explorer %s at user's request" % e_short_name)
+                    continue
+
+                log.debug("Invoking explorer: %s" % e_short_name)
+
+                # reactivate detectors because this is a new exploration
+                for detector in list(plugins.detectors.loaded.values()):
+                    detector.active = True
+
+                try:
+                    explorer_tech = explorer.explorer(orig_preds, bb_seq, options)
+                    simgr.use_technique(explorer_tech)
+                except KeyboardInterrupt:
+                    # let the outer try-except catch these
+                    raise ex
+                except:
+                    log.error("Uncaught exception while trying to setup explorer: %s" % format_exc())
+                    buggy_plugins.add(explorer.__name__)
+                    continue
+
+                mem_mgr.enable()
+                # step until explorer is complete
+                while not simgr.complete():
+                    try:
+                        simgr.step()
+                    except (KeyboardInterrupt, CriticalMemoryException, MemoryError) as ex:
+                        # let the outer try-except catch these
+                        raise ex
+                    except ReferenceError:
+                        # something is wrong with the active state, drop it, all explorers are
+                        # designed to react robustly to an empty active stash
+                        simgr.drop(stash='active')
+                    except:
+                        log.error("Uncaught exception raised by explorer plugin: %s" % format_exc())
+                        log.error("Stopping explorer and moving on")
+                        buggy_plugins.add(explorer.__name__)
+                        break
+
+                    if not hasattr(simgr._techniques[0], 'predecessors'):
+                        log.error("Detectors rely on explorers maintaining predecessors, which is missing, cannot continue")
+                        buggy_plugins.add(explorer.__name__)
+                        break
+
+                    if len(simgr.stashes['active']) > 0:
+                        if len(simgr.stashes['active']) > 1:
+                            log.warn("Explorer created %d active states, most detectors only examine one" % len(simgr.stashes['active']))
+
+                        check_for_vulns(simgr, proj)
+                        # this is a bit excessive, but because we don't know when an explorer is going to rewind
+                        # we have to check for new states to analyze after each step so simgr._techniques[0].predecessors
+                        # remains accurate
+                        analyze(simgr, bb_seq, reports)
+
+                    if psutil.virtual_memory().available <= min_memory:
+                        mem_mgr.reap_predecessors()
+                    if psutil.virtual_memory().available <= crit_memory:
+                        raise CriticalMemoryException('Memory critically low')
+
+                # cleanup explorer
+                log.debug("Explorer %s complete" % explorer.__name__)
+                mem_mgr.disable()
+                simgr.remove_technique(explorer_tech)
+                assert len(simgr._techniques) == 0
+
+    except KeyboardInterrupt:
+        log.warning("Received interrupt, cleaning up...")
+        mem_mgr.disable()
+    except (CriticalMemoryException, MemoryError):
+        log.error("Memory critically low, halting analysis")
+        mem_mgr.disable()
+    except AssertionError:
+        log.error("Failed assertion: %s" % format_exc())
 
     ################################
-    ### PHASE 2: Final Reporting ###
+    ### PHASE 3: Final Reporting ###
     ################################
 
     log.info("** Analysis complete, final results **")
