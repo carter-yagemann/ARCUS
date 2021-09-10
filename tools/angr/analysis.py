@@ -974,7 +974,7 @@ def main():
         # given the original names that point to the binaries and then force the loader to
         # only load from this directory.
         try:
-            os.link(fullfp, os.path.join(bin_temp, name))
+            os.symlink(fullfp, os.path.join(bin_temp, name))
         except PermissionError:
             log.error("Failed to symlink %s, permission denied" % fullfp)
             shutil.rmtree(bin_temp)
