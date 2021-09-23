@@ -37,7 +37,7 @@ INFO    | 2021-03-26 08:55:26,241 | plugins.detectors.symbolic_ip | Recommendati
 
 The general setup steps are:
 
-1. Install Griffin Linux kernel (only required if you want to record your own traces)
+1. Install a trace interface: Griffin or Perf (only required if you want to record your own traces)
 
 2. Install angr
 
@@ -45,7 +45,7 @@ The general setup steps are:
 
 ## Details
 
-1. [Griffin Setup](docs/griffin-setup.md)
+1. [Griffin Setup](docs/griffin-setup.md) (Alternative: [Perf Setup](docs/perf.md))
 
 2. [angr Setup](docs/angr-setup.md)
 
@@ -54,6 +54,8 @@ The general setup steps are:
 # Usage
 
 * [Tracing with Griffin](docs/griffin-tracing.md)
+
+* [Tracing with Perf](docs/perf.md)
 
 * [Analyzing with ARCUS](docs/arcus.md)
 
