@@ -135,7 +135,9 @@ def disasm_perf(perf_fp, output_fp):
     DisasmError if disassembly fails.
     """
     assert(os.path.isfile(perf_fp))
+    perf_fp = os.path.realpath(perf_fp)
     assert(not os.path.exists(output_fp))
+    output_fp = os.path.realpath(output_fp)
 
     # libipt aux extraction script
     ipt_aux = os.path.join(IPT_SCRIPTS, 'perf-read-aux.bash')
@@ -146,6 +148,7 @@ def disasm_perf(perf_fp, output_fp):
     assert(os.path.isfile(ipt_sideband))
 
     temp = tempfile.mkdtemp(prefix='aperf-')
+    old_cwd = os.getcwd()
     os.chdir(temp)
 
     # we need to symlink perf.data into the temp directory because some of the
@@ -157,11 +160,13 @@ def disasm_perf(perf_fp, output_fp):
     ret = subprocess.run(['/bin/bash', ipt_aux])
     if ret.returncode != 0:
         shutil.rmtree(temp)
+        os.chdir(old_cwd)
         raise DisasmError("Failed to extract aux data")
     #   2) extract per-core sideband data
     ret = subprocess.run(['/bin/bash', ipt_sideband])
     if ret.returncode != 0:
         shutil.rmtree(temp)
+        os.chdir(old_cwd)
         raise DisasmError("Failed to extract sideband data")
 
     # disassemble each core's trace
@@ -198,6 +203,7 @@ def disasm_perf(perf_fp, output_fp):
 
     # cleanup
     shutil.rmtree(temp)
+    os.chdir(old_cwd)
 
 if __name__ == '__main__':
 
