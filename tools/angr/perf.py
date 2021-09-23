@@ -91,10 +91,10 @@ class Disasm(object):
         self.ptxed = subprocess.Popen(cmd, bufsize=-1, stdout=subprocess.PIPE, universal_newlines=True)
 
         self.stdout = self.ptxed.stdout
+        self.new_block = False
         self.next_event()
 
     def next_event(self):
-        new_block = False
         while True:
             line = self.stdout.readline()
 
@@ -112,16 +112,22 @@ class Disasm(object):
 
             res = self.ADDR_REGEX.match(line)
             if res:
+                # update time and location
                 self.time = int(res.group('time'), 16)
                 self.addr = int(res.group('addr'), 16)
-                if new_block:
-                    return
 
+                # is this the start of a new block?
+                curr_new_block = self.new_block
+
+                # will the next instruction be the start of a new block?
                 mnemonic = res.group('mnemonic').rstrip()
                 if mnemonic in COF_MNEMONICS:
-                    # this instruction ends the current basic block,
-                    # next instruction is the start of a new block
-                    new_block = True
+                    self.new_block = True
+                else:
+                    self.new_block = False
+
+                if curr_new_block:
+                    return
 
 def disasm_perf(perf_fp, output_fp):
     """Disassemble a perf.data file into per-thread basic block sequences.
@@ -204,6 +210,30 @@ def disasm_perf(perf_fp, output_fp):
     # cleanup
     shutil.rmtree(temp)
     os.chdir(old_cwd)
+
+def get_pid_list(trace_fp):
+    """Given a filepath to an output trace from disasm_perf, return
+    a list of PIDs it contains."""
+    pids = set()
+    with gzip.open(trace_fp, 'rt') as ifile:
+        for line in ifile:
+            if line.startswith('[pid:'):
+                pids.add(int(line[6:-2]))
+    return list(pids)
+
+def get_bbs_for_pid(trace_fp, pid):
+    """Return the basic block trace for PID."""
+    trace = list()
+    curr_pid = None
+    with gzip.open(trace_fp, 'rt') as ifile:
+        for line in ifile:
+            if line.startswith('[pid:'):
+                curr_pid = int(line[6:-2])
+            else:
+                addr = int(line, 16)
+                if curr_pid == pid:
+                    trace.append(addr)
+    return trace
 
 if __name__ == '__main__':
 
