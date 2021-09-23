@@ -288,10 +288,6 @@ class TestAnalysis(unittest.TestCase):
     run_script = os.path.join(os.path.dirname(__file__), '../analysis.py')
     traces_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'test-data/traces'))
     test_traces = {
-        'int-01-poc': {'explore': False,
-                       'timeout': 60,
-                       'reports': [{'count': 1, 'prefix': 'int'},
-                                   {'count': 1, 'prefix': 'neg'}]},
         'uaf-01-poc': {'explore': False,
                        'timeout': 60,
                        'reports': [{'count': 1, 'prefix': 'alloc'}]},
@@ -456,9 +452,6 @@ class TestAnalysis(unittest.TestCase):
             prefix_cnt = len([name for name in reports
                     if name.startswith(criteria['prefix'])])
             self.assertEqual(criteria['count'], prefix_cnt)
-
-    #def test_int_01_poc(self):
-    #    self.do_analysis_test('int-01-poc')
 
     def test_uaf_01_poc(self):
         self.do_analysis_test('uaf-01-poc')
