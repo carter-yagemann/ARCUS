@@ -406,6 +406,11 @@ class TestAnalysis(unittest.TestCase):
         'ovf-01-poc-perf':  {'explore': False,
                              'timeout': 60,
                              'reports': [{'count': 1, 'prefix': 'sip'}]},
+        'cve-2018-12327-ben-perf':  {'explore': True,
+                                     'plugins': 'loop_bounds,arg_max',
+                                     'max-arg': '1024',
+                                     'timeout': 900,
+                                     'reports': [{'count': 1, 'prefix': 'vuln'}]},
         }
 
     def setUp(self):
@@ -545,6 +550,9 @@ class TestAnalysis(unittest.TestCase):
 
     def test_ovf_01_poc_perf(self):
         self.do_analysis_test('ovf-01-poc-perf')
+
+    def test_cve_2018_12327_ben_perf(self):
+        self.do_analysis_test('cve-2018-12327-ben-perf')
 
 if __name__ == '__main__':
     unittest.main()
