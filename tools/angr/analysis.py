@@ -41,6 +41,7 @@ import explore
 from globals_deep import SimStateDeepGlobals
 import griffin
 import hooks
+import perf
 import plugins.detectors
 import plugins.hooks
 import plugins.explorers
@@ -48,7 +49,7 @@ import reporting
 import taint
 import xed
 
-PROGRAM_VERSION = '0.6.0'
+PROGRAM_VERSION = '1.0.0'
 PROGRAM_USAGE = 'Usage: %prog [options] tracer_output_directory'
 
 class CriticalMemoryException(Exception):
@@ -860,6 +861,14 @@ def lookup_prototype(symbol, state):
 
     return None
 
+def get_trace(trace_fp, pid):
+    """A wrapper to call the correct decoder depending on whether GRIFFIN or Perf was
+    used to collect the trace."""
+    if trace_fp.endswith('perf.gz'):
+        return perf.get_bbs_for_pid(trace_fp, pid)
+    else:
+        return xed.disasm_pt_file(trace_fp, pids=pid)
+
 def main():
     """The main method."""
     options, args = parse_args()
@@ -882,7 +891,7 @@ def main():
         options.explore_after = explore_delta
 
     trace_dir = args[0]
-    input_trace_candidates = ['trace.griffin', 'trace.griffin.gz']
+    input_trace_candidates = ['trace.griffin', 'trace.griffin.gz', 'trace.perf.gz']
     input_trace = None
     for can in input_trace_candidates:
         can_path = os.path.join(trace_dir, can)
@@ -911,7 +920,10 @@ def main():
         regs = json.load(ifile)
 
     # get all tasks contained in the trace
-    trace_pids = griffin.get_pid_list(input_trace)
+    if input_trace.endswith('perf.gz'):
+        trace_pids = perf.get_pid_list(input_trace)
+    else:
+        trace_pids = griffin.get_pid_list(input_trace)
 
     # pick PID and get disassembly
     if len(trace_pids) == 0:
@@ -919,19 +931,19 @@ def main():
         return
     elif options.pid and options.pid in trace_pids:
         log.info("Disassembling PT trace for PID: %d" % options.pid)
-        bb_seq = xed.disasm_pt_file(input_trace, pids=options.pid)
+        bb_seq = get_trace(input_trace, options.pid)
     elif not options.pid:
         if len(trace_pids) == 1:
             target_pid = trace_pids[0]
             log.info("Disassembling PT trace for PID: %d" % target_pid)
-            bb_seq = xed.disasm_pt_file(input_trace, pids=target_pid)
+            bb_seq = get_trace(input_trace, target_pid)
         else:
             # try to intelligently pick the right PID by taking the first one that
             # has the starting/snapshot address in its trace
             log.info("No PID specified and trace contains several, trying to pick best option...")
             for pid in trace_pids:
                 log.info("Disassembling PT trace for PID: %d" % pid)
-                bb_seq = xed.disasm_pt_file(input_trace, pids=pid)
+                bb_seq = get_trace(input_trace, pid)
                 if regs['rip'] in bb_seq:
                     log.warn("No task specified with --pid, picking %d to analyze from: "
                              "%s" % (pid, str(trace_pids)))

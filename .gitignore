@@ -19,6 +19,7 @@ __pycache__
 /tools/pt/pt
 /tools/pt/cmppath
 /tools/pt/obj
+/tools/pt/build
 # angr tool
 /tools/angr/ptxed/build
 /tools/angr/scripts/gnu-parallel-analysis/hosts

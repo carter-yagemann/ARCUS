@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 # Copyright 2019 Carter Yagemann
 #
@@ -22,6 +22,7 @@ from optparse import OptionParser, OptionGroup
 import os
 from shutil import copyfile, rmtree
 import signal
+import subprocess
 import sys
 import time
 import traceback
@@ -30,7 +31,9 @@ import pyptrace
 from elftools.elf import elffile
 from elftools.common.exceptions import ELFError
 
-PROGRAM_VERSION = '1.3.2'
+import perf
+
+PROGRAM_VERSION = '2.0.0'
 PROGRAM_USAGE = 'Usage: %prog [options] <output_directory> <tracee_path> [tracee_args]...'
 
 BREAKPOINTS = dict()
@@ -391,7 +394,10 @@ def attach_delayed(tracee, tracee_args, output_dir, options):
                             dump_state(output_dir, tracee_args, not options.concrete_argv,
                                        not options.concrete_env)
                         if not options.no_trace:
-                            enable_griffin(options.wait_exec)
+                            if TRACE_INTERFACE == 'GRIFFIN':
+                                enable_griffin(options.wait_exec)
+                            elif TRACE_INTERFACE == 'PERF':
+                                enable_perf(waitpid)
                         dump_files(output_dir, tracee_args, not options.concrete_fs)
 
                         # trap target at desired snapshot address
@@ -434,7 +440,7 @@ def attach(tracee, tracee_args, output_dir, options):
     # dump environment and configure GRIFFIN
     if not options.no_state:
         dump_state(output_dir, tracee_args, not options.concrete_argv, not options.concrete_env)
-    if not options.no_trace:
+    if not options.no_trace and TRACE_INTERFACE == 'GRIFFIN':
         enable_griffin(os.path.basename(tracee))
     dump_files(output_dir, tracee_args, not options.concrete_fs)
 
@@ -448,6 +454,10 @@ def attach(tracee, tracee_args, output_dir, options):
         sys.exit(ret)
     elif pid > 0:  # within tracer
         os.waitpid(pid, 0)
+
+        if not options.no_trace and TRACE_INTERFACE == 'PERF':
+            enable_perf(pid)
+
         options.snapshot_rva = get_virtual_entrypoint(pid, tracee, options.snapshot_rva)
         set_breakpoint(pid, options.snapshot_rva)
         if next_event(pid) is None:
@@ -458,6 +468,18 @@ def attach(tracee, tracee_args, output_dir, options):
     else:  # fork failed
         sys.stderr.write("Failed to fork\n")
         sys.exit(1)
+
+def determine_trace_interface():
+    """Determine which tracer to use"""
+    if os.path.exists('/sys/kernel/debug/pt_monitor'):
+        sys.stderr.write("Using GRIFFIN tracing interface\n")
+        return 'GRIFFIN'
+    elif len(resolve_path('perf')) > 0:
+        sys.stderr.write("Using Perf tracing interface\n")
+        return 'PERF'
+    else:
+        sys.stderr.write("No trace interface found\n")
+        return None
 
 def enable_griffin(prog_name):
     """Sets up GRIFFIN to trace prog_name."""
@@ -480,6 +502,41 @@ def disable_griffin(dir):
         ifile.write(b"\x00")
     if os.path.exists('/tmp/tracer.lock'):
         os.remove('/tmp/tracer.lock')
+
+def enable_perf(pid):
+    """Sets up Perf to trace PID."""
+    global perf_proc
+
+    # make sure there isn't already a perf.data file
+    if os.path.exists('perf.data'):
+        os.remove('perf.data')
+
+    perf_bin = resolve_path('perf')
+    if len(perf_bin) > 0:
+        cmd = [perf_bin, 'record', '-e', 'intel_pt//u', '-T', '--switch-events', '-p', str(pid)]
+        perf_proc = subprocess.Popen(cmd)
+        while not os.path.exists('perf.data'):
+            # wait for perf to initialize
+            time.sleep(1)
+
+def disable_perf(dir):
+    """Disables Perf and decodes its trace into dir/trace.perf.gz"""
+    global perf_proc
+
+    # wait for perf to finish
+    perf_proc.wait()
+
+    if not os.path.isfile('perf.data'):
+        sys.stderr.write("Warning: no perf.data generated\n")
+        return
+
+    try:
+        sys.stderr.write("Disassembling Perf trace, this may take awhile...\n")
+        perf.disasm_perf('perf.data', os.path.join(dir, 'trace.perf.gz'))
+    except Exception as ex:
+        sys.stderr.write("Failed to decode perf.data: %s\n" % str(ex))
+
+    os.remove('perf.data')
 
 def dump_state(dir, args, sym_argv=False, sym_env=False):
     """Creates dir/state.json formatted for use by analysis.py."""
@@ -896,9 +953,18 @@ def main():
         time_delta = time.time() - start_time
         sys.stderr.write("Time: %f sec\n" % time_delta)
     if not options.no_trace:
-        disable_griffin(output_dir)
+        if TRACE_INTERFACE == 'GRIFFIN':
+            disable_griffin(output_dir)
+        elif TRACE_INTERFACE == 'PERF':
+            disable_perf(output_dir)
 
     dump_settings(output_dir, args, options.__dict__)
 
 if __name__ == '__main__':
+    TRACE_INTERFACE = determine_trace_interface()
+    if TRACE_INTERFACE is None:
+        sys.stderr.write("No suitable trace interface found, please "
+                         "install Perf or compile the ARCUS kernel\n")
+        sys.exit(1)
+
     main()

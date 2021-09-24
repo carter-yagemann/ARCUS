@@ -9,3 +9,6 @@ See tools/pt/xed/LICENSE for details.
 
 This repository contains mbuild, which is provided under Apache License version 2.
 See tools/pt/mbuild/LICENSE for details.
+
+This repository contains libipt, which is provided under Intel's license.
+See tools/pt/libipt/LICENSE for details.

@@ -1,0 +1,1 @@
+{"version": "2.0.0", "settings": {"uid": 1000, "gid": 1000, "concrete_argv": false, "concrete_env": false, "concrete_fs": false, "snapshot_rva": 93931267719280, "wait_exec": null, "snapshot_api": false, "time": false, "no_trace": false, "no_state": false}, "traced-cmd": ["./test", "AliceAAAAAAAA"]}

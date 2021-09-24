@@ -288,10 +288,6 @@ class TestAnalysis(unittest.TestCase):
     run_script = os.path.join(os.path.dirname(__file__), '../analysis.py')
     traces_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'test-data/traces'))
     test_traces = {
-        'int-01-poc': {'explore': False,
-                       'timeout': 60,
-                       'reports': [{'count': 1, 'prefix': 'int'},
-                                   {'count': 1, 'prefix': 'neg'}]},
         'uaf-01-poc': {'explore': False,
                        'timeout': 60,
                        'reports': [{'count': 1, 'prefix': 'alloc'}]},
@@ -392,10 +388,6 @@ class TestAnalysis(unittest.TestCase):
                         'max-arg': '1024',
                         'timeout': 120,
                         'reports': [{'count': 1, 'prefix': 'sip'}]},
-        'ovf-10-api':  {'explore': False,
-                        'timeout': 300,
-                        'apisnap': '55585b41e030-0',
-                        'reports': [{'count': 1, 'prefix': 'sip'}]},
         'cve-2018-12327-poc':  {'explore': False,
                                 'timeout': 300,
                                 'reports': [{'count': 1, 'prefix': 'vuln'}]},
@@ -407,6 +399,14 @@ class TestAnalysis(unittest.TestCase):
         'cve-2005-0105-poc':   {'explore': False,
                                 'timeout': 300,
                                 'reports': [{'count': 1, 'prefix': 'fmt'}]},
+        'ovf-01-poc-perf':  {'explore': False,
+                             'timeout': 60,
+                             'reports': [{'count': 1, 'prefix': 'sip'}]},
+        'cve-2018-12327-ben-perf':  {'explore': True,
+                                     'plugins': 'loop_bounds,arg_max',
+                                     'max-arg': '1024',
+                                     'timeout': 900,
+                                     'reports': [{'count': 1, 'prefix': 'vuln'}]},
         }
 
     def setUp(self):
@@ -453,9 +453,6 @@ class TestAnalysis(unittest.TestCase):
             prefix_cnt = len([name for name in reports
                     if name.startswith(criteria['prefix'])])
             self.assertEqual(criteria['count'], prefix_cnt)
-
-    #def test_int_01_poc(self):
-    #    self.do_analysis_test('int-01-poc')
 
     def test_uaf_01_poc(self):
         self.do_analysis_test('uaf-01-poc')
@@ -535,9 +532,6 @@ class TestAnalysis(unittest.TestCase):
     def test_ovf_09_ben(self):
         self.do_analysis_test('ovf-09-ben')
 
-    def test_ovf_10_api(self):
-        self.do_analysis_test('ovf-10-api')
-
     def test_cve_2005_0105_poc(self):
         self.do_analysis_test('cve-2005-0105-poc')
 
@@ -546,6 +540,12 @@ class TestAnalysis(unittest.TestCase):
 
     def test_cve_2018_12327_ben(self):
         self.do_analysis_test('cve-2018-12327-ben')
+
+    def test_ovf_01_poc_perf(self):
+        self.do_analysis_test('ovf-01-poc-perf')
+
+    def test_cve_2018_12327_ben_perf(self):
+        self.do_analysis_test('cve-2018-12327-ben-perf')
 
 if __name__ == '__main__':
     unittest.main()
