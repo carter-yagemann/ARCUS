@@ -388,10 +388,6 @@ class TestAnalysis(unittest.TestCase):
                         'max-arg': '1024',
                         'timeout': 120,
                         'reports': [{'count': 1, 'prefix': 'sip'}]},
-        'ovf-10-api':  {'explore': False,
-                        'timeout': 300,
-                        'apisnap': '55585b41e030-0',
-                        'reports': [{'count': 1, 'prefix': 'sip'}]},
         'cve-2018-12327-poc':  {'explore': False,
                                 'timeout': 300,
                                 'reports': [{'count': 1, 'prefix': 'vuln'}]},
@@ -535,9 +531,6 @@ class TestAnalysis(unittest.TestCase):
 
     def test_ovf_09_ben(self):
         self.do_analysis_test('ovf-09-ben')
-
-    def test_ovf_10_api(self):
-        self.do_analysis_test('ovf-10-api')
 
     def test_cve_2005_0105_poc(self):
         self.do_analysis_test('cve-2005-0105-poc')
