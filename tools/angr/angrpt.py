@@ -443,9 +443,11 @@ class Tracer(ExplorationTechnique):
         try:
             target_idx = self._trace.index(target_addr, state.globals['trace_idx'] + 1)
         except ValueError:
-            raise AngrTracerError("Trace failed to synchronize during fast forward? "
-                    "Couldn't find %s. You might want to unhook %s." %
-                    (self.project.loader.describe_addr(target_addr),
-                    self.project.hooked_by(state.history.addr).display_name))
+            desc = self.project.loader.describe_addr(target_addr)
+            msg = "Trace failed to fast forward. Couldn't find %s." % desc
+            hook = self.project.hooked_by(state.history.addr)
+            if not hook is None:
+                msg += " Trace may have ended inside hooked function %s." % hook.display_name
+            raise AngrTracerError(msg)
 
         state.globals['trace_idx'] = target_idx
