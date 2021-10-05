@@ -33,9 +33,13 @@ INFO    | 2021-03-26 08:55:21,285 | plugins.detectors.symbolic_ip | Analyzing ro
 INFO    | 2021-03-26 08:55:26,241 | plugins.detectors.symbolic_ip | Recommendation: Add [<SAO <Bool argv_21_2416[239:232] == 93>>] to <CFGENode openhost+0x2d8 0x55857a27db18[5]>
 ```
 
-**0-Day Discoveries:** [CVE-2019-17582](https://nvd.nist.gov/vuln/detail/CVE-2019-17582), [CVE-2019-19004](https://nvd.nist.gov/vuln/detail/CVE-2019-19004),
+**0-Day Discoveries:** [DMitry-Issue-3](https://github.com/jaygreig86/dmitry/issues/3),
+[hdContents-Issue-2](https://github.com/LeftHandCold/hdContents/issues/2),
+[EDB-47254](https://www.exploit-db.com/exploits/47254), [EDB-49259](https://www.exploit-db.com/exploits/49259),
+[CVE-2019-17582](https://nvd.nist.gov/vuln/detail/CVE-2019-17582), [CVE-2019-19004](https://nvd.nist.gov/vuln/detail/CVE-2019-19004),
 [CVE-2019-19005](https://nvd.nist.gov/vuln/detail/CVE-2019-19005), [CVE-2020-9549](https://nvd.nist.gov/vuln/detail/CVE-2020-9549),
-[CVE-2020-14931](https://nvd.nist.gov/vuln/detail/CVE-2020-14931), [CVE-2020-35457](https://nvd.nist.gov/vuln/detail/CVE-2020-35457).
+[CVE-2020-14931](https://nvd.nist.gov/vuln/detail/CVE-2020-14931), [CVE-2020-35457](https://nvd.nist.gov/vuln/detail/CVE-2020-35457),
+[CVE-2021-42006](https://nvd.nist.gov/vuln/detail/CVE-2021-42006).
 
 # Setup
 
