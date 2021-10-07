@@ -407,6 +407,9 @@ class TestAnalysis(unittest.TestCase):
                                      'max-arg': '1024',
                                      'timeout': 900,
                                      'reports': [{'count': 1, 'prefix': 'vuln'}]},
+        'cve-2004-0597-poc': {'explore': False,
+                              'timeout': 300,
+                              'reports': [{'count': 1, 'prefix': 'sip'}]},
         }
 
     def setUp(self):
@@ -546,6 +549,9 @@ class TestAnalysis(unittest.TestCase):
 
     def test_cve_2018_12327_ben_perf(self):
         self.do_analysis_test('cve-2018-12327-ben-perf')
+
+    def test_cve_2004_0597_poc(self):
+        self.do_analysis_test('cve-2004-0597-poc')
 
 if __name__ == '__main__':
     unittest.main()
