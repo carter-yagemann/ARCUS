@@ -91,7 +91,12 @@ def cfg_from_trace(addrs, project, cfg_args={}):
         if not addr in nodes:
             # factory will perform lifting and figure out the block's size, which is
             # required by CFGEmulated
-            block = project.factory.block(addr)
+            try:
+                block = project.factory.block(addr)
+                size = block.size
+            except angr.errors.SimEngineError:
+                # block cannot be lifted, this can happen if the address is unmapped
+                size = 0
             nodes[addr] = BasicNode(addr, block.size)
             base_graph.add_node(nodes[addr])
         if prev_addr:
