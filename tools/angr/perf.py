@@ -58,13 +58,14 @@ class Disasm(object):
     CONTEXT_REGEX = re.compile("\[context: pid-(?P<pid>[0-9a-f]+)\]")
     ADDR_REGEX = re.compile("(?P<time>[0-9a-f]+)  (?P<addr>[0-9a-f]+)  (?P<mnemonic>[a-z ]+)")
 
-    def __init__(self, perf_fp, aux_fp, sideband_fp):
+    def __init__(self, perf_fp, aux_fp, sideband_fp, vdso_fp=None):
         """A class for managing ptxed as it disassembles a perf PT trace.
 
         Keyword Arguments:
         perf_fp -- Filepath to perf.data file.
         aux_fp -- Filepath to Perf aux file.
         sideband_fp -- Filepath to Perf sideband file.
+        vdso_fp -- Filepath to vDSO file.
 
         Raises:
         AssertError if filepaths do not exist.
@@ -87,7 +88,12 @@ class Disasm(object):
                 capture_output=True, check=True).stdout.decode('ascii').split(' ')[1:]
 
         # start disassembly
-        cmd = [PTXED, '--att', '--time', '--sb:switch'] + self.opts + ['--pevent:vdso-x64', '--event:tick', '--pt', self.aux]
+        cmd = [PTXED, '--att', '--time', '--sb:switch']
+        if not vdso_fp is None:
+            cmd += ['--pevent:vdso-x64', vdso_fp]
+        cmd += self.opts
+        cmd += ['--event:tick', '--pt', self.aux]
+
         self.ptxed = subprocess.Popen(cmd, bufsize=-1, stdout=subprocess.PIPE, universal_newlines=True)
 
         self.stdout = self.ptxed.stdout
@@ -128,6 +134,33 @@ class Disasm(object):
 
                 if curr_new_block:
                     return
+
+            elif 'error' in line:
+                # print error message
+                sys.stderr.write(line)
+
+def dump_vdso(output_fp):
+    """Dump the system's current vDSO to output_fp."""
+    # it's the same across all processes, so we can just dump our own, starting
+    # by finding where it's mapped in memory
+    start_addr = None
+
+    with open('/proc/self/maps', 'r') as ifile:
+        for line in ifile:
+            if '[vdso]' in line:
+                tokens = line.split(' ', 1)[0].split('-')
+                start_addr = int(tokens[0], 16)
+                end_addr = int(tokens[1], 16)
+                size = end_addr - start_addr
+                break
+
+    if start_addr is None:
+        return
+
+    mem = open('/proc/self/mem', 'rb')
+    mem.seek(start_addr)
+    with open(output_fp, 'wb') as ofile:
+        ofile.write(mem.read(size))
 
 def disasm_perf(perf_fp, output_fp):
     """Disassemble a perf.data file into per-thread basic block sequences.
@@ -174,6 +207,9 @@ def disasm_perf(perf_fp, output_fp):
         shutil.rmtree(temp)
         os.chdir(old_cwd)
         raise DisasmError("Failed to extract sideband data")
+    #   3) dump vDSO
+    vdso_fp = os.path.join(temp, 'vdso')
+    dump_vdso(vdso_fp)
 
     # disassemble each core's trace
     workers = list()
@@ -183,7 +219,7 @@ def disasm_perf(perf_fp, output_fp):
             idx = res.group('idx')
             sideband = 'perf.data-sideband-cpu%s.pevent' % idx
             if os.path.isfile(sideband):
-                workers.append(Disasm('perf.data', entry, sideband))
+                workers.append(Disasm('perf.data', entry, sideband, vdso_fp))
 
     with gzip.open(output_fp, 'wt') as ofile:
         curr_pid = None
