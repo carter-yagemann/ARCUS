@@ -1,23 +1,35 @@
-ARCUS Setup
-===========
+# ARCUS Setup
 
-You should have already setup the Griffin tracer during [Griffin setup](griffin-setup.md)
-and installed the required Python modules for analysis during [angr setup](angr-setup.md).
+**Note:** We highly recommend using [PyPy](https://pypy.org/), [as do the angr developers](https://docs.angr.io/advanced-topics/speed).
 
-If you didn't:
+Install the Python modules required by the analysis code:
 
-    pip install -r tools/angr/requirements/tracer.txt
     pip install -r tools/angr/requirements/analysis.txt
 
-**Note:** You *must* run `pip` from the root directory of the repo for some requirement
-files to parse correctly.
+Next compile the disassembler:
 
-If you want to use the miscellaneous tools provided in `tools/angr/`:
+    sudo apt install zlib1g-dev
+    cd tools/pt
+    make
 
-    pip install -r tools/angr/requirements/misc.txt
+All the tools for working with angr are located in `tools/angr/`.
 
-You can test your ARCUS setup by running one of the analysis unit tests. This will take about
+## Verifying Your Setup
+
+You can test the basic functionality of your setup by running the quick unit tests.
+This should only take a few seconds:
+
+    cd tools/angr
+    python test/run-tests.py TestGriffinParser TestXed TestPTCFG
+
+You can also run one of the analysis unit tests. This will take about
 30 seconds:
 
     cd tools/angr
     python test/run-tests.py TestAnalysis.test_uaf_01_poc
+
+## Miscellaneous Tools
+
+If you want to use the miscellaneous tools provided in `tools/angr/`:
+
+    pip install -r tools/angr/requirements/misc.txt
