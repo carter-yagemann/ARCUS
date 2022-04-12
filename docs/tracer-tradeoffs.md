@@ -22,7 +22,7 @@ Bullseye or newer.
 
 **Pros:**
 
-* Easier to setup (no custom kernel)
+* Easier to setup (no custom kernel).
 
 * Works on newer Linux kernels.
 

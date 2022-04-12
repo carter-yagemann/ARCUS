@@ -2,6 +2,7 @@ For users who don't want to compile the custom Griffin Linux kernel, ARCUS
 now supports interfacing with Linux Perf.
 
 Support is currently **experimental** and may yield incomplete analysis results!
+See the [trade-offs](tracer-tradeoffs.md) document for more details.
 
 # Perf Setup
 

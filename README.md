@@ -56,14 +56,11 @@ Most modern Intel Core and Atom processors should work. Some Xeon processors wil
 1. Install a trace interface: [Griffin](docs/griffin-setup.md) or [Perf](docs/perf.md).
 
 See this [document](docs/tracer-tradeoffs.md) for trade-offs between the supported interfaces.
-
 This is only required if you want to record your own traces. You can analyze the
-pre-recorded traces in `tools/angr/test/test-data/traces` or the datasets below
+pre-recorded traces in `tools/angr/test/test-data/traces` and the datasets below
 without performing this step.
 
-2. [Install and setup](docs/griffin-setup.md) angr.
-
-3. [Install](docs/arcus-setup.md) project specific tools and packages.
+2. [Install](docs/arcus-setup.md) project specific tools and packages.
 
 # Usage
 
