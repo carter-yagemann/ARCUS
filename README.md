@@ -43,33 +43,39 @@ INFO    | 2021-03-26 08:55:26,241 | plugins.detectors.symbolic_ip | Recommendati
 
 # Setup
 
-The general setup steps are:
+**Hardware Requirements:**
 
-1. Install a trace interface: Griffin or Perf (only required if you want to record your own traces)
+1. A _physical_ Linux machine (virtual machines are not currently supported) with an Intel CPU
+that supports Intel PT.
 
-2. Install angr
+Refer to this [document](docs/check-pt.md) if you are unsure whether your CPU supports Intel PT.
+Most modern Intel Core and Atom processors should work. Some Xeon processors will _not_.
 
-3. Install project specific packages
+**Install Steps:**
 
-## Details
+1. Install a trace interface: [Griffin](docs/griffin-setup.md) or [Perf](docs/perf.md).
 
-1. [Griffin Setup](docs/griffin-setup.md) (Alternative: [Perf Setup](docs/perf.md))
+See this [document](docs/tracer-tradeoffs.md) for trade-offs between the supported interfaces.
 
-2. [angr Setup](docs/angr-setup.md)
+This is only required if you want to record your own traces. You can analyze the
+pre-recorded traces in `tools/angr/test/test-data/traces` or the datasets below
+without performing this step.
 
-3. [ARCUS Setup](docs/arcus-setup.md)
+2. [Install and setup](docs/griffin-setup.md) angr.
+
+3. [Install](docs/arcus-setup.md) project specific tools and packages.
 
 # Usage
 
-* [Tracing with Griffin](docs/griffin-tracing.md)
+* [Tracing with Griffin](docs/griffin-tracing.md).
 
-* [Tracing with Perf](docs/perf.md)
+* [Tracing with Perf](docs/perf.md).
 
-* [Analyzing with ARCUS](docs/arcus.md)
+* [Analyzing with ARCUS](docs/arcus.md).
 
-* [Analyzing With ARCUS At Scale](docs/scaling-arcus.md)
+* [Analyzing with ARCUS at scale](docs/scaling-arcus.md).
 
-* [Miscellaneous Tools](docs/misc-tools.md)
+* [Miscellaneous tools](docs/misc-tools.md).
 
 ## Datasets
 
