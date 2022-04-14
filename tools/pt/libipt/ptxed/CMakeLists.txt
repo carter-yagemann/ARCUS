@@ -30,6 +30,7 @@ set(XED_LIBDIR  "" CACHE PATH "")
 include_directories(
   include
   ../libipt/internal/include
+  ../../obj/wkit/include/xed
 )
 
 include_directories(SYSTEM
@@ -38,6 +39,7 @@ include_directories(SYSTEM
 
 link_directories(
   ${XED_LIBDIR}
+  ../../obj/wkit/lib
 )
 
 set(PTXED_FILES
