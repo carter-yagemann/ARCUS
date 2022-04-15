@@ -14,7 +14,7 @@ obj/libxed.a:
 build/bin/ptxed:
 	mkdir -p build
 	cd build && \
-	cmake -DPTDUMP=ON -DPTXED=ON -DPTTC=ON -DSIDEBAND=ON -DPEVENT=ON -DFEATURE_ELF=ON -DFEATURE_THREADS=ON -DXED_INCLUDE=./obj/wkit/include/xed -DXED_LIBDIR=./obj/ ../libipt/ && \
+	cmake -DPTDUMP=ON -DPTXED=ON -DPTTC=ON -DSIDEBAND=ON -DPEVENT=ON -DFEATURE_ELF=ON -DFEATURE_THREADS=ON -DXED_INCLUDE=../obj/wkit/include/xed -DXED_LIBDIR=../obj/ ../libipt/ && \
 	cd ..
 	cmake --build build
 
