@@ -12,7 +12,10 @@ obj/libxed.a:
 	./xed/mfile.py
 
 build/bin/ptxed:
-	cmake -DPTDUMP=ON -DPTXED=ON -DPTTC=ON -DSIDEBAND=ON -DPEVENT=ON -DFEATURE_ELF=ON -DFEATURE_THREADS=ON -DXED_INCLUDE=./obj/wkit/include/xed -DXED_LIBDIR=./obj/ -B build ./libipt/
+	mkdir -p build
+	cd build && \
+	cmake -DPTDUMP=ON -DPTXED=ON -DPTTC=ON -DSIDEBAND=ON -DPEVENT=ON -DFEATURE_ELF=ON -DFEATURE_THREADS=ON -DXED_INCLUDE=../obj/wkit/include/xed -DXED_LIBDIR=../obj/ ../libipt/ && \
+	cd ..
 	cmake --build build
 
 clean:
