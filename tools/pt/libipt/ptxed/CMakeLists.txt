@@ -30,7 +30,6 @@ set(XED_LIBDIR  "" CACHE PATH "")
 include_directories(
   include
   ../libipt/internal/include
-  ../../obj/wkit/include/xed
 )
 
 include_directories(SYSTEM
