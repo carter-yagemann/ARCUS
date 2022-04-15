@@ -38,7 +38,6 @@ include_directories(SYSTEM
 
 link_directories(
   ${XED_LIBDIR}
-  ../../obj/wkit/lib
 )
 
 set(PTXED_FILES
