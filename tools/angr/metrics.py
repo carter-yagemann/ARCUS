@@ -65,6 +65,10 @@ class Metrics(ExplorationTechnique):
                 "value": 0,
                 "descrpition": "Total unique basic blocks seen so far."
             },
+            "total_states": {
+                "value": 0,
+                "description": "Total number of states stepped."
+            },
         }
 
         # key: AST, value: number of nodes in its AST
@@ -125,6 +129,8 @@ class Metrics(ExplorationTechnique):
         except:
             pass
         self._max('total_bbs', len(self.seen_bbls))
+
+        self.metrics['total_states']['value'] += 1
 
         return simgr.step_state(state, **kwargs)
 

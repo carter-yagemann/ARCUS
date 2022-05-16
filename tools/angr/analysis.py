@@ -1069,6 +1069,9 @@ def main():
 
         if not options.metrics is None:
             # enable metrics recording
+            if os.path.isfile(os.path.realpath(options.metrics)):
+                # delete old metrics file
+                os.remove(options.metrics)
             metrics_tech = metrics.Metrics()
             simgr.use_technique(metrics_tech)
 
