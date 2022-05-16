@@ -61,10 +61,16 @@ class Metrics(ExplorationTechnique):
                 "description": "Maximum number of steps taken from a starting"
                         " state so far."
             },
+            "total_bbs": {
+                "value": 0,
+                "descrpition": "Total unique basic blocks seen so far."
+            },
         }
 
         # key: AST, value: number of nodes in its AST
         self.ast_cache = dict()
+
+        self.seen_bbls = set()
 
         # some warning flags
         self.has_warn_call_depth = False
@@ -78,7 +84,7 @@ class Metrics(ExplorationTechnique):
         appended to the same file.
         """
         if os.path.isfile(os.path.realpath(ofp)):
-            with open(ofp, 'r') as ifile:
+            with open(os.path.expanduser(ofp), 'r') as ifile:
                 data = json.loads(ifile.read())
         elif os.path.exists(ofp):
             log.error("Output filepath exists, but is not a file, cannot"
@@ -89,7 +95,7 @@ class Metrics(ExplorationTechnique):
 
         data[name] = self.metrics
 
-        with open(ofp, 'w') as ofile:
+        with open(os.path.expanduser(ofp), 'w') as ofile:
             ofile.write(json.dumps(data))
 
     def step_state(self, simgr, state, **kwargs):
@@ -111,6 +117,14 @@ class Metrics(ExplorationTechnique):
             self.has_warn_call_depth = True
 
         self._max('max_steps', len(state.history.bbl_addrs))
+
+        try:
+            self.seen_bbls.add(state.addr)
+        except KeyboardInterrupt as ex:
+            raise ex
+        except:
+            pass
+        self._max('total_bbs', len(self.seen_bbls))
 
         return simgr.step_state(state, **kwargs)
 
