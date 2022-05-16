@@ -41,6 +41,7 @@ import explore
 from globals_deep import SimStateDeepGlobals
 import griffin
 import hooks
+import metrics
 import perf
 import plugins.detectors
 import plugins.hooks
@@ -49,7 +50,7 @@ import reporting
 import taint
 import xed
 
-PROGRAM_VERSION = '1.0.0'
+PROGRAM_VERSION = '1.1.0'
 PROGRAM_USAGE = 'Usage: %prog [options] tracer_output_directory'
 
 class CriticalMemoryException(Exception):
@@ -140,6 +141,8 @@ def parse_args():
             help='Level for Analysis Garbage Collector (default: Warn)')
     group_logging.add_option('--stack-depth', action='store', type='int', default=10,
             help='Max depth to show when printing a stack (default: 10)')
+    group_logging.add_option('--metrics', action='store', type='str', default=None,
+            help='Record metrics to provided filepath')
     parser.add_option_group(group_logging)
 
     group_debug = OptionGroup(parser, 'Debugging Options')
@@ -1064,6 +1067,11 @@ def main():
             simgr.populate(name, [])
         maybe_unsat = False
 
+        if not options.metrics is None:
+            # enable metrics recording
+            metrics_tech = metrics.Metrics()
+            simgr.use_technique(metrics_tech)
+
         mem_mgr.enable()
         while len(simgr.stashes['active']) > 0:
             simgr.step()
@@ -1123,6 +1131,11 @@ def main():
     except angr.errors.AngrTracerError as ex:
         log.error("Angr stopped early: %s" % str(ex))
 
+    if not options.metrics is None:
+        log.info("Saving metrics to: %s" % options.metrics)
+        metrics_tech.save_snapshot(options.metrics, 'analysis')
+        simgr.remove_technique(metrics_tech)
+
     mem_mgr.disable()
 
     try:
@@ -1180,6 +1193,11 @@ def main():
                 try:
                     explorer_tech = explorer.explorer(orig_preds, bb_seq, options)
                     simgr.use_technique(explorer_tech)
+
+                    if not options.metrics is None:
+                        # reinitialize metrics to reset values
+                        metrics_tech = metrics.Metrics()
+                        simgr.use_technique(metrics_tech)
                 except KeyboardInterrupt:
                     # let the outer try-except catch these
                     raise ex
@@ -1230,6 +1248,10 @@ def main():
                 log.debug("Explorer %s complete" % explorer.__name__)
                 mem_mgr.disable()
                 simgr.remove_technique(explorer_tech)
+                if not options.metrics is None:
+                    log.info("Saving metrics to: %s" % options.metrics)
+                    metrics_tech.save_snapshot(options.metrics, e_short_name)
+                    simgr.remove_technique(metrics_tech)
                 assert len(simgr._techniques) == 0
 
     except KeyboardInterrupt:
