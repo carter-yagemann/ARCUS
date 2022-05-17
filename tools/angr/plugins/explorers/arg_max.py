@@ -141,9 +141,9 @@ class ArgumentMax(ExplorationTechnique):
 
         try:
             candidates = [succ for succ in state.step() if succ.solver.satisfiable()]
-        except angr.errors.SimUnsatError:
+        except Exception as ex:
             # state cannot be stepped, we're done with this run
-            log.debug("Cannot step, rewinding")
+            log.debug("Cannot step (%s), rewinding" % str(ex))
             self._rewind(simgr)
             if len(simgr.stashes['active']) > 0:
                 succs['active'] = [simgr.stashes['active'][0]]

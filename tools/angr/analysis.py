@@ -46,6 +46,7 @@ import perf
 import plugins.detectors
 import plugins.hooks
 import plugins.explorers
+import ptcfg
 import reporting
 import taint
 import xed
@@ -583,6 +584,7 @@ def set_log_levels(options):
     logging.getLogger('angr.state_plugins.heap').setLevel(options.logging_angr_heap)
     logging.getLogger(agc.__name__).setLevel(options.logging_agc)
     logging.getLogger(dwarf.__name__).setLevel(options.logging)
+    logging.getLogger(ptcfg.__name__).setLevel(options.logging)
 
     # hook plugins
     for module in list(plugins.hooks.loaded.values()):

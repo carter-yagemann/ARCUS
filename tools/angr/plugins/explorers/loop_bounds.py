@@ -589,7 +589,11 @@ class LoopBounds(ExplorationTechnique):
         succs = {'active': [], 'missed': []}
 
         # get all satisfiable candidates, otherwise we cannot continue and should rewind
-        candidates = [succ for succ in state.step().all_successors if succ.solver.satisfiable()]
+        try:
+            candidates = [succ for succ in state.step().all_successors if succ.solver.satisfiable()]
+        except Exception as ex:
+            log.debug("Cannot step: %s" % str(ex))
+            candidates = []
 
         # figure out where to go next (which state to set as active)
         if len(self.cycles) > 0 and state.addr in self.cycles[0]:
