@@ -15,11 +15,15 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import logging
+
 import angr
 from angr.analyses.cfg import CFGEmulated
 import networkx
 import pyvex
 import xed
+
+log = logging.getLogger(name=__name__)
 
 def prune_cfg(cfg, pt):
     """Prune an Angr CFG using a PT trace. pt can be a path to a GRIFFIN
@@ -107,15 +111,26 @@ def cfg_from_trace(addrs, project, cfg_args={}):
     assert(base_graph.number_of_nodes() == len(set(addrs)))
 
     # keep_state and state_add_options are set according to
-    # the Angr docs so this CFG can be used to generate a DDG:
+    # the angr docs so this CFG can be used to generate a DDG:
     #
     #     https://docs.angr.io/built-in-analyses/backward_slice
     #
-    return project.analyses.CFGEmulated(address_whitelist=addrs,
-                                        base_graph=base_graph,
-                                        keep_state=True,
-                                        state_add_options=angr.sim_options.refs,
-                                        **cfg_args)
+    try:
+        cfg = project.analyses.CFGEmulated(address_whitelist=addrs,
+                                           base_graph=base_graph,
+                                           keep_state=True,
+                                           state_add_options=angr.sim_options.refs,
+                                           **cfg_args)
+    except (RecursionError, AttributeError) as ex:
+        log.error("Failed to create CFG: %s" % str(ex))
+        cfg = project.analyses.CFGEmulated(address_whitelist=addrs,
+                                           base_graph=base_graph,
+                                           keep_state=True,
+                                           state_add_options=angr.sim_options.refs,
+                                           max_steps=1,
+                                           **cfg_args)
+
+    return cfg
 
 def slice2str(bb_seq, slice, curr_obj_only=False):
     """Given a sequence of basic blocks (i.e. a trace) and a slice, returns a

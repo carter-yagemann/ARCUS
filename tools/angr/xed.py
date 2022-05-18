@@ -95,19 +95,19 @@ def _disasm_pt_file_iter(trace_path, event='block', pids=None):
     # Use pt to disasmble
     command = [pt_path, trace_path]
 
-    pt = subprocess.Popen(command, stdout=subprocess.PIPE, bufsize=1)
+    pt = subprocess.Popen(command, stdout=subprocess.PIPE, bufsize=1, universal_newlines=True)
 
     curr_pid = -1
     for line in pt.stdout:
         # Update current PID if trace switched
-        res = pid_regex.match(line.decode())
+        res = pid_regex.match(line)
         if res:
             curr_pid = pid_encoder(res.groups())[1]
 
         if not pids is None and not curr_pid in pids:
             continue  # PID filter
 
-        res = event_regex.match(line.decode())
+        res = event_regex.match(line)
         if res:
             yield event_encoder(res.groups())
 
