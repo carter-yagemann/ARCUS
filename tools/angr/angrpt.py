@@ -385,7 +385,7 @@ class Tracer(ExplorationTechnique):
                 while self._trace[idx + 1] in last_block.instruction_addrs:
                     idx += 1
 
-                log.info('...resolved: disparate block sizes')
+                log.info('...resolved: disparate block sizes (angr ahead of trace)')
 
                 if self._trace[idx + 1] == state.addr:
                     state.globals['trace_idx'] = idx + 1
@@ -393,6 +393,17 @@ class Tracer(ExplorationTechnique):
                 else:
                     state.globals['trace_idx'] = idx
                     return True
+
+            elif last_block.vex.direct_next:
+                # disparate block sizes!
+                # angr's block size is *smaller* than the trace's
+                # allow angr to catch up.
+                log.info('...resolved: disparate block sizes (trace ahead of angr)')
+
+                state.globals['sync_idx'] = idx + 1  # trace address
+                state.globals['trace_idx'] = idx
+                state.globals['sync_timer'] = 5
+                return True
 
         prev_addr = state.history.bbl_addrs[-1]
         prev_obj = ldr.find_object_containing(prev_addr)
