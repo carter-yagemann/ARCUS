@@ -74,19 +74,16 @@ def blame_load_concrete_val(state, preds, load_addr):
     diverge_seg = ldr.find_segment_containing(load_addr)
     if diverge_seg and not diverge_seg.is_writable:
         log.warn("Read corrupted value from read-only memory!")
+
     # iterate over predecessors to find when value at memory address last changed
-    curr_val = state.solver.eval_one(state.mem[load_addr].uint64_t.resolved)
-    log.debug("Current value: %#x" % curr_val)
+    curr_val = state.mem[load_addr].uint64_t.resolved
+    log.debug("Current value: %s" % curr_val)
     for prev_state in preds[::-1]:
         if prev_state is None:
             continue
-        p_mem = prev_state.mem
-        p_solver = prev_state.solver
-        prev_val = p_solver.eval(p_mem[load_addr].uint64_t.resolved)
-        log.debug("Addr: %#x Unique: %s Value: %#x" % (prev_state.addr,
-                p_solver.unique(p_mem[load_addr].uint64_t.resolved),
-                prev_val))
-        if prev_val != curr_val:
+
+        prev_val = prev_state.mem[load_addr].uint64_t.resolved
+        if not state.solver.is_true(curr_val == prev_val):
             return prev_state
 
 def blame_load_unconstrained_val(state, preds, load_addr):
@@ -102,18 +99,13 @@ def blame_load_unconstrained_val(state, preds, load_addr):
     ldr = state.project.loader
 
     # iterate over predecessors to find when memory lost its unique value
-    curr_val = state.solver.eval(state.mem[load_addr].uint64_t.resolved)
+    curr_val = state.mem[load_addr].uint64_t.resolved
     for prev_state in preds[::-1]:
         if prev_state is None:
             continue
-        p_mem = prev_state.mem
-        p_solver = prev_state.solver
-        val_unique = p_solver.unique(p_mem[load_addr].uint64_t.resolved)
-        prev_val = p_solver.eval(state.mem[load_addr].uint64_t.resolved)
-        log.debug("Addr: %#x Unique: %s Value: %#x" % (prev_state.addr,
-                val_unique,
-                prev_val))
-        if val_unique or prev_val != curr_val:
+
+        prev_val = prev_state.mem[load_addr].uint64_t.resolved
+        if not state.solver.is_true(curr_val == prev_val):
             return prev_state
 
 def analyze_state(simgr, trace, state, report):

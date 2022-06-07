@@ -367,7 +367,7 @@ class TestAnalysis(unittest.TestCase):
                         'plugins': 'loop_bounds,arg_max',
                         'max-arg': '1024',
                         'timeout': 120,
-                        'reports': [{'count': 2, 'prefix': 'neg'}]},
+                        'reports': [{'count': 1, 'prefix': 'neg'}]},
         'ovf-06-ben':  {'explore': True,
                         'plugins': 'loop_bounds,arg_max',
                         'max-arg': '1024',
