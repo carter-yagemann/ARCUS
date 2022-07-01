@@ -303,21 +303,28 @@ def handle_alloc(sym_name: str, cc: SimCC, state: SimState) -> None:
     except angr.errors.SimValueError:
         return
 
+    sim_proc = state.project.hooked_by(state.addr)
+    if sim_proc is None:
+        log.warning("Cannot find simulation procedure for %s" % state.project.loader.describe_addr(state.addr))
+        return
+
+    args = [state.solver.eval(bv) for bv in cc.get_args(state, sim_proc.prototype)]
+
     if sym_name == "malloc":
-        state.deep["temp_size"] = cc.arg(state, 0)
+        state.deep["temp_size"] = args[0]
     elif sym_name == "calloc":
-        state.deep["temp_size"] = cc.arg(state, 0) * cc.arg(state, 1)
+        state.deep["temp_size"] = args[0] * args[1]
     elif sym_name == "realloc":
-        state.deep["temp_size"] = cc.arg(state, 1)
-        old_ptr = cc.arg(state, 0)
+        state.deep["temp_size"] = args[1]
+        old_ptr = args[0]
         try:
             if state.solver.eval_one(old_ptr) != 0:
                 remove_from_alloc_addrs(old_ptr, state)
         except angr.errors.SimValueError:
             pass
     elif sym_name == "reallocarray":
-        state.deep["temp_size"] = cc.arg(state, 1) * cc.arg(state, 2)
-        old_ptr = cc.arg(state, 0)
+        state.deep["temp_size"] = args[1] * args[2]
+        old_ptr = args[0]
         try:
             if state.solver.eval_one(old_ptr) != 0:
                 remove_from_alloc_addrs(old_ptr, state)
@@ -335,7 +342,7 @@ def has_bv_been_freed(bv, state):
     return (False, None)
 
 def allocate(cc: SimCC, state: SimState):
-    new_ptr = cc.get_return_val(state)
+    new_ptr = state.solver.eval(cc.RETURN_VAL.get_value(state))
     log.debug("Adding %s to alloc_addrs" % new_ptr)
     state.deep["alloc_addrs"][new_ptr] = state.deep["temp_size"]
     state.deep["temp_size"] = None
@@ -343,7 +350,13 @@ def allocate(cc: SimCC, state: SimState):
         del state.deep["freed_addrs"][new_ptr]
 
 def handle_free(cc: SimCC, state: SimState) -> bool:
-    ptr = cc.arg(state, 0)
+    sim_proc = state.project.hooked_by(state.addr)
+    if sim_proc is None:
+        log.warning("Cannot find simulation procedure for %s" % state.project.loader.describe_addr(state.addr))
+        return False
+
+    args = cc.get_args(state, sim_proc.prototype)
+    ptr = state.solver.eval(args[0])
     log.debug("Handling free at %#x with ptr %s" % (state.addr, ptr))
 
     if ptr in state.deep["alloc_addrs"]:
@@ -387,6 +400,7 @@ def handle_free(cc: SimCC, state: SimState) -> bool:
     return False
 
 def update_points_to(state, addr):
+    addr = state.solver.eval(addr)
     bits = state.arch.bits
     endness = state.arch.memory_endness
     is_equal = lambda a, b: state.solver.is_true(a == b)
@@ -397,7 +411,7 @@ def update_points_to(state, addr):
         return
 
     # read from the memory address as if it were storing a pointer
-    new_ptr = state.memory.load(addr, size=bits // 8, endness=endness)
+    new_ptr = state.solver.eval(state.memory.load(addr, size=bits // 8, endness=endness))
 
     if addr in state.deep["points_to"]:
         old_ptr = state.deep["points_to"][addr][0]
@@ -573,8 +587,11 @@ def check_for_vulns(simgr: SimulationManager, proj: Project) -> bool:
         sim_proc = proj.hooked_by(state.addr)
 
         if not sim_proc is None:
+
+            args = cc.get_args(state, sim_proc.prototype)
+
             for arg_idx in range(sim_proc.num_args):
-                arg = cc.arg(state, arg_idx)
+                arg = args[arg_idx]
                 uaf, ptr = has_bv_been_freed(arg, state)
                 if uaf:
                     metadata = UAFMetadata(

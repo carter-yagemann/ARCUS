@@ -250,7 +250,7 @@ def infer_function_prototype(state, func_path):
     special_regs = [state.arch.ip_offset, state.arch.sp_offset,
                     state.arch.bp_offset, state.arch.lr_offset]
     clobbered = set([reg for reg in special_regs if isinstance(reg, int)])
-    stack_boundary = state.solver.eval(state.registers.load(state.arch.sp_offset))
+    stack_boundary = state.solver.eval(state.registers.load(state.arch.sp_offset, size=state.arch.bits // 8))
 
     log.debug("Starting function prototype inference")
 
@@ -289,7 +289,7 @@ def infer_function_prototype(state, func_path):
     # infer type of each argument (also inspired by Goër, et al.)
     args = list()
     for offset in reg_reads:
-        starting_val = state.solver.eval(state.registers.load(offset))
+        starting_val = state.solver.eval(state.registers.load(offset, size=state.arch.bits // 8))
         section = state.project.loader.find_section_containing(starting_val)
         val_size = None
         if starting_val in func_path:

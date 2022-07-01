@@ -24,6 +24,25 @@ import taint
 
 log = logging.getLogger(__name__)
 
+def get_simproc(state):
+    """Returns the simulation procedure this state is about to enter,
+    if one exists, otherwise returns None."""
+    sym_name = state.project.loader.find_plt_stub_name(state.addr)
+    if sym_name is None:
+        return None
+
+    sym = state.project.loader.find_symbol(sym_name)
+    if sym is None:
+        return None
+
+    hook_addr, _ = state.project.simos.prepare_function_symbol(sym_name,
+            basic_addr=sym.rebased_addr)
+
+    if state.project.is_hooked(hook_addr):
+        return state.project.hooked_by(hook_addr)
+
+    return None
+
 def add_detection(state, handler, bad_addr=None, bad_idx=None):
     caller_addr = state.history.bbl_addrs[-1]
     if caller_addr in detections:
@@ -37,7 +56,13 @@ def check_scan_args(state, fmt_idx):
 
     Returns True if state is vulnerable, otherwise False.
     """
-    fmt_arg = state.project.factory.cc().arg(state, fmt_idx)
+    simproc = get_simproc(state)
+    if simproc is None:
+        log.warning("Cannot find simulation procedure for %s" % state.project.loader.describe_addr(state.addr))
+        return False
+
+    args = state.project.factory.cc().get_args(state, simproc.prototype)
+    fmt_arg = args[fmt_idx]
     try:
         fmt_ptr = state.solver.eval(fmt_arg)
     except angr.errors.SimUnsatError:
@@ -69,7 +94,20 @@ def check_fmt_str(state, fmt_idx):
 
     Returns True if state is vulnerable, otherwise False.
     """
-    fmt_arg = state.project.factory.cc().arg(state, fmt_idx)
+    simproc = get_simproc(state)
+    if simproc is None:
+        log.warning("Cannot find simulation procedure for %s" % state.project.loader.describe_addr(state.addr))
+        return False
+
+    args = state.project.factory.cc().get_args(state, simproc.prototype)
+
+    if len(args) <= fmt_idx:
+        log.error("Function prototype only has %d arguments, "
+                "but format string is suppose to be at index %d" % (len(args), fmt_idx))
+        return False
+
+    fmt_arg = args[fmt_idx]
+
     if state.solver.symbolic(fmt_arg):
         log.warn("Symbolic format string pointer")
         return add_detection(state, analyze_state_sym_str, bad_idx=fmt_idx)
@@ -148,9 +186,9 @@ def find_bad_addr(states, state_idx, arg_idx):
 
         # find state that wrote the register's value
         write_idx = state_idx - 1
-        final_val = bug_state.solver.eval(bug_state.registers.load(reg_offset))
+        final_val = bug_state.solver.eval(bug_state.registers.load(reg_offset, size=bug_state.arch.bits // 8))
         for state in states[:state_idx][::-1]:
-            if state.solver.eval(state.registers.load(reg_offset)) != final_val:
+            if state.solver.eval(state.registers.load(reg_offset, state.arch.bits // 8)) != final_val:
                 break
             write_idx -= 1
 

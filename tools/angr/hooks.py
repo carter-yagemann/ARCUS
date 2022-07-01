@@ -26,24 +26,6 @@ import plugins.hooks
 
 log = logging.getLogger(name=__name__)
 
-class SyscallStub(angr.SimProcedure):
-    """Angr's fallback procedure for syscalls is silent, which makes figuring out
-    divergences needlessly difficult. Thus, we replace it with our own."""
-
-    def run(self, resolves=None):
-        self.resolves = resolves
-        self.successors.artifacts['resolves'] = resolves
-        log.warn("No procedure for %s, returning unconstrained return value" % self.display_name)
-        return self.state.solver.Unconstrained("syscall_stub_%s" % self.display_name,
-                                               self.state.arch.bits,
-                                               key=('syscall', '?', self.display_name))
-
-    def __repr__(self):
-        if 'resolves' in self.kwargs:
-            return '<Syscall stub (%s)>' % self.kwargs['resolves']
-        else:
-            return '<Syscall stub>'
-
 class linux_getdents(angr.SimProcedure):
 
     def run(self, fd, dirp, count):
@@ -232,16 +214,6 @@ class strlen(angr.SimProcedure):
 
         return result
 
-def patch_linux_syscall_simprocedures(project):
-    """Some of Angr's provided SimProcedures for Linux syscalls don't work well with our
-    analysis, so we replace them with custome ones."""
-    for syscall in linux_hooks:
-        project.simos.syscall_library.add(syscall, linux_hooks[syscall])
-
-    # Angr's fallback procedure for syscalls is silent, which makes figuring out
-    # divergences needlessly difficult. Thus, we replace it with our own.
-    project.simos.syscall_library.fallback_proc = SyscallStub
-
 def apply_hooks(project):
     """Applies any hooks that seem relevant to the project."""
     for obj_name in project.loader.shared_objects:
@@ -264,8 +236,8 @@ def apply_hooks(project):
             except Exception as ex:
                 log.warn("Failed to hook %s: %s" % (obj_name, str(ex)))
 
-    # apply custom syscall related hooks
-    patch_linux_syscall_simprocedures(project)
+    # allowing angr to use this simproc will cause a desync
+    project.unhook_symbol('__libc_start_main')
 
     # angr should use our epoll simulated procedures everywhere
     project.hook_symbol('epoll_ctl', linux_epoll_ctl())

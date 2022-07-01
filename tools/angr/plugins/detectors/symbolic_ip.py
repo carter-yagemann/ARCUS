@@ -147,11 +147,12 @@ def analyze_blame(simgr, blame_state, report):
 
             # print parameters passed to simprocedure
             simproc = proj.hooked_by(blame_addr)
+            state_args = simproc.cc.get_args(blame_state, simproc.prototype)
             sim_args = list()
             report_details['parameters'] = list()
             for idx in range(simproc.num_args):
                 try:
-                    arg = simproc.cc.arg(blame_state, idx)
+                    arg = state_args[idx]
                     arg_min = blame_state.solver.min(arg)
                     arg_max = blame_state.solver.max(arg)
                     if arg_min == arg_max:

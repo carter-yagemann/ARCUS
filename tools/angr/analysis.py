@@ -720,7 +720,7 @@ def symbolize_api(state, prototype, parent_addr=None):
     for arg in prototype:
         # helper lambdas for loading and storing arguments based on offset type
         if arg['offset_type'] == 'Register':
-            arg_load = lambda : state.registers.load(arg['offset'])
+            arg_load = lambda : state.registers.load(arg['offset'], size=state.arch.bits // 8)
             arg_store = lambda data: state.registers.store(arg['offset'], data)
         elif arg['offset_type'] == 'Memory':
             arg_load = lambda : state.memory.load(arg['offset'], size=state.arch.bits // 8,
@@ -851,7 +851,7 @@ def lookup_prototype(symbol, state):
             arg_sizes.append(state.arch.bits // 8)
         is_float.append(arg['value_type'] == 'Float')
 
-    stack = state.solver.eval(state.registers.load(state.arch.sp_offset))
+    stack = state.solver.eval(state.registers.load(state.arch.sp_offset, size=state.arch.bits // 8))
 
     for arg, loc in zip(prototype, state.project.factory.cc().arg_locs(is_float, arg_sizes)):
         if isinstance(loc, SimRegArg):

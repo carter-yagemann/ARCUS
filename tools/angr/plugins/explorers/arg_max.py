@@ -81,16 +81,20 @@ class ArgumentMax(ExplorationTechnique):
         loader = self.project.loader
 
         for idx, state in enumerate(self.orig_preds):
-            if loader.find_object_containing(state.addr) == loader.extern_object:
-                # external object, too late to change arg values
+            simproc = state.project.hooked_by(state.addr)
+            if simproc is None:
+                # not a simproc
                 continue
-            sym_name = loader.find_plt_stub_name(state.addr)
+
+            sym_name = simproc.display_name
             if not sym_name in self.simproc_args:
                 # we don't care about this symbol
                 continue
+
             target_idxs = self.simproc_args[sym_name]
-            args_info = state.project.factory.cc().get_arg_info(state, [False] * (max(target_idxs) + 1))
-            if not True in [state.solver.symbolic(args_info[idx][3]) for idx in target_idxs]:
+
+            proc_args = state.project.factory.cc().get_args(state, simproc.prototype)
+            if not True in [state.solver.symbolic(proc_args[idx]) for idx in target_idxs]:
                 # all arguments we would want to max are concrete, nothing to do
                 continue
 
@@ -125,19 +129,23 @@ class ArgumentMax(ExplorationTechnique):
                     state.globals['wander_budget'], state.addr)
 
         # if we're heading into a function we care about, maximize the target arguments
-        sym_name = loader.find_plt_stub_name(state.addr)
+        simproc = self.project.hooked_by(state.addr)
+        if simproc is None:
+            sym_name = ''
+        else:
+            sym_name = simproc.display_name
+
         if sym_name in self.simproc_args:
             target_idxs = self.simproc_args[sym_name]
             log.info("Maxing arguments in: %s:%s" % (sym_name, str(target_idxs)))
-            args_info = state.project.factory.cc().get_arg_info(state, [False] * (max(target_idxs) + 1))
+            args_info = state.project.factory.cc().get_arg_info(state, simproc.prototype)
             for idx in target_idxs:
                 loc = args_info[idx][2]
                 val = args_info[idx][3]
                 max_val = state.solver.max(val)
                 state.add_constraints(
                         state.solver.Or(val == max_val,
-                                        val >= (1 << state.arch.bits),
-                                        val == (state.memory._maximum_symbolic_size - 1)))
+                                        val >= (1 << state.arch.bits)))
 
         try:
             candidates = [succ for succ in state.step() if succ.solver.satisfiable()]

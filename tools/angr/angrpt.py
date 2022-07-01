@@ -315,7 +315,8 @@ class Tracer(ExplorationTechnique):
         elif state.history.jumpkind.startswith('Ijk_Sys'):
             # syscalls
             state.globals['sync_idx'] = idx + 1
-            state.globals['sync_timer'] = 1
+            state.globals['sync_timer'] = 2
+            state.globals['call_depth'] += 1
         elif state.history.jumpkind.startswith('Ijk_Exit') or state.globals['call_depth'] < 0:
             # termination!
             state.globals['trace_idx'] = len(self._trace) - 1

@@ -173,7 +173,7 @@ class BugReport(object):
         """
         state = state.copy()  # avoid messing up original stack
         arch = state.project.arch
-        reg_load = state.registers.load
+        reg_load = lambda offset: state.registers.load(offset, size=state.arch.bits // 8)
 
         self.report['registers']['ip'] = self.eval_bv(reg_load(arch.ip_offset), state.solver)
         self.report['registers']['sp'] = self.eval_bv(reg_load(arch.sp_offset), state.solver)

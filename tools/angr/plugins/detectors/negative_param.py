@@ -45,8 +45,15 @@ def check_args(state, indexes):
 
     Returns None.
     """
+    simproc = state.project.hooked_by(state.addr)
+    if simproc is None:
+        log.warning("Cannot find simulation procedure for %s" % state.project.loader.describe_addr(state.addr))
+        return
+
+    args = state.project.factory.cc().get_args(state, simproc.prototype)
+
     for idx in indexes:
-        arg = state.project.factory.cc().arg(state, idx)
+        arg = args[idx]
         try:
             arg_val = state.solver.max(arg)
         except angr.errors.SimUnsatError:
@@ -56,7 +63,7 @@ def check_args(state, indexes):
             ex.idx = idx
             ex.name = state.project.loader.find_plt_stub_name(state.addr)
             ex.value = arg_val
-            ex.offset = state.project.factory.cc().arg_locs(is_fp=[False] * (idx + 1))[idx]
+            ex.offset = state.project.factory.cc().arg_locs(simproc.prototype)[idx]
             raise ex
 
 def blame_load_concrete_val(state, preds, load_addr):
@@ -258,7 +265,11 @@ def check_for_vulns(simgr, proj):
         # This plugin cannot handle states with symbolic program counters
         return True
 
-    sym_name = proj.loader.find_plt_stub_name(state.addr)
+    simproc = proj.hooked_by(state.addr)
+    if simproc is None:
+        return True
+
+    sym_name = simproc.display_name
     if sym_name in never_negative and get_call_depth(state) > 0:
         try:
             check_args(state, never_negative[sym_name])

@@ -37,7 +37,6 @@ class libc_atol(angr.SimProcedure):
 
     def run(self, s):
         self.argument_types = {0: self.ty_ptr(angr.sim_type.SimTypeString())}
-        self.return_type = angr.sim_type.SimTypeLong(self.state.arch, True)
 
         if self.state.solver.symbolic(s):
             ret = self.handle_symbolic(s)
@@ -59,10 +58,6 @@ class libc_strrchr(angr.SimProcedure):
     def run(self, s_addr, c_int, s_strlen=None):
         """This SimProcedure is a lot looser than Angr's strchr, but that's okay
         because we have a concrete trace."""
-        self.argument_types = {0: self.ty_ptr(angr.sim_type.SimTypeString()),
-                       1: angr.sim_type.SimTypeInt(32, True)}
-        self.return_type = self.ty_ptr(angr.sim_type.SimTypeChar())
-
         Or = self.state.solver.Or
         And = self.state.solver.And
 
@@ -96,7 +91,7 @@ class libc_getenv(angr.SimProcedure):
             log.debug("getenv: searching for %s" % name_str)
 
         envpp = self.state.solver.eval(self.state.posix.environ)
-        ret_val = self.state.solver.BVS('getenv', self.state.arch.bytes)
+        ret_val = self.state.solver.BVS('getenv', self.arch.bits)
         ret_expr = (ret_val == 0)
         while True:
             try:
