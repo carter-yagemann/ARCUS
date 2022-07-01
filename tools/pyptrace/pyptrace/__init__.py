@@ -7,7 +7,10 @@ Python wrapper for ptrace.
 import json
 import ctypes
 import platform
-from collections import Sequence
+try:
+    from collections.abc import Sequence
+except ImportError:
+    from collections import Sequence
 import functools
 
 from pyptrace.const import *
