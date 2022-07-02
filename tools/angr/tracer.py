@@ -33,7 +33,7 @@ from elftools.common.exceptions import ELFError
 
 import perf
 
-PROGRAM_VERSION = '2.0.0'
+PROGRAM_VERSION = '3.0.0'
 PROGRAM_USAGE = 'Usage: %prog [options] <output_directory> <tracee_path> [tracee_args]...'
 
 BREAKPOINTS = dict()

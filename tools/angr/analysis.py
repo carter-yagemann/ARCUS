@@ -51,7 +51,7 @@ import reporting
 import taint
 import xed
 
-PROGRAM_VERSION = '1.1.0'
+PROGRAM_VERSION = '2.0.0'
 PROGRAM_USAGE = 'Usage: %prog [options] tracer_output_directory'
 
 class CriticalMemoryException(Exception):
