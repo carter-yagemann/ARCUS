@@ -20,36 +20,37 @@ import angr
 
 log = logging.getLogger(name=__name__)
 
-class _tiffMapProc(angr.SimProcedure):
 
+class _tiffMapProc(angr.SimProcedure):
     def run(self, fd, pbase, psize):
         # save current position of fd
-        orig_pos = self.inline_call(angr.SIM_PROCEDURES['linux_kernel']['lseek'],
-                fd, 0, 1).ret_expr
+        orig_pos = self.inline_call(
+            angr.SIM_PROCEDURES["linux_kernel"]["lseek"], fd, 0, 1
+        ).ret_expr
         # self.state.posix.fstat() doesn't seem reliable, seek to end to determine size
-        size = self.state.solver.eval(self.inline_call(
-                angr.SIM_PROCEDURES['linux_kernel']['lseek'],
-                fd, 0, 2).ret_expr)
+        size = self.state.solver.eval(
+            self.inline_call(
+                angr.SIM_PROCEDURES["linux_kernel"]["lseek"], fd, 0, 2
+            ).ret_expr
+        )
         # rewind to beginning
-        self.inline_call(angr.SIM_PROCEDURES['linux_kernel']['lseek'],
-                fd, 0, 0)
+        self.inline_call(angr.SIM_PROCEDURES["linux_kernel"]["lseek"], fd, 0, 0)
 
-        buf = self.inline_call(angr.SIM_PROCEDURES['libc']['malloc'], size).ret_expr
-        self.inline_call(angr.SIM_PROCEDURES['posix']['read'],
-                fd, buf, size)
+        buf = self.inline_call(angr.SIM_PROCEDURES["libc"]["malloc"], size).ret_expr
+        self.inline_call(angr.SIM_PROCEDURES["posix"]["read"], fd, buf, size)
 
-        self.state.memory.store(pbase, buf, endness='Iend_LE')
+        self.state.memory.store(pbase, buf, endness="Iend_LE")
         self.state.mem[psize].uint32_t = size
 
         # restore position of fd
-        self.inline_call(angr.SIM_PROCEDURES['linux_kernel']['lseek'],
-            fd, orig_pos, 0)
+        self.inline_call(angr.SIM_PROCEDURES["linux_kernel"]["lseek"], fd, orig_pos, 0)
 
         return 1
 
+
 libtiff_hooks = {
-    '_tiffMapProc': _tiffMapProc,
+    "_tiffMapProc": _tiffMapProc,
 }
 
-hook_condition = ('libtiff\.so.*', libtiff_hooks)
+hook_condition = ("libtiff\.so.*", libtiff_hooks)
 is_main_object = False

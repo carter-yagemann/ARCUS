@@ -1,7 +1,7 @@
 from angr.sim_state import SimState
 from angr.project import Project
 from angr.analyses.cfg.cfg_emulated import CFGEmulated
-import IPython # noqa
+import IPython  # noqa
 import networkx as nx
 from copy import deepcopy
 from angr.sim_variable import SimRegisterVariable
@@ -15,10 +15,9 @@ class MemTrack:
     """
     Class to contain results of a slice on a single CFG.
     """
-    def __init__(self, rw: str, last_node: CodeLocation, reg: str):
-        """
 
-        """
+    def __init__(self, rw: str, last_node: CodeLocation, reg: str):
+        """ """
         self.state = None
         self._rw = rw
         self._last_node = last_node
@@ -86,8 +85,13 @@ class MemTrackHolder:
                 return obj
         raise Exception("Invalid instruction address for MemTrack")
 
-    def add_state(self, state: SimState, block_addr: Optional[int] = None,
-                  stmt_idx: Optional[int] = None, inst_addr: Optional[int] = None):
+    def add_state(
+        self,
+        state: SimState,
+        block_addr: Optional[int] = None,
+        stmt_idx: Optional[int] = None,
+        inst_addr: Optional[int] = None,
+    ):
         if (block_addr is None or stmt_idx is None) and inst_addr is None:
             raise Exception("Not enough arguments")
 
@@ -122,6 +126,7 @@ class SliceConstraints:
     Analyze paths in CFG and store MemTrack for each
     indirect control flow transfer.
     """
+
     def __init__(self, project: Project, cfg: CFGEmulated, target_addr: int):
         """
         Initialize a SliceConstraints object.
@@ -157,7 +162,9 @@ class SliceConstraints:
 
         # Create new state for symbolic execution
         slice_state = self.p.factory.blank_state()
-        self.final_state = self._symbolic_exec(slice_state, bb_order, tyenv, slice_stmts)
+        self.final_state = self._symbolic_exec(
+            slice_state, bb_order, tyenv, slice_stmts
+        )
 
     def get_descriptor(self) -> List[Tuple[str, int, str, int]]:
         """
@@ -185,8 +192,9 @@ class SliceConstraints:
         # Get the stmt id of the statement beyond the last
         return len(bb_vex.statements)
 
-    def _prune_ddg(self, dep_graph: DiGraph, cl: CodeLocation) -> Tuple[List[CodeLocation],
-                                                                        DiGraph]:
+    def _prune_ddg(
+        self, dep_graph: DiGraph, cl: CodeLocation
+    ) -> Tuple[List[CodeLocation], DiGraph]:
         pruned_ddg = deepcopy(dep_graph)
 
         # Remove rbp, rsp, and __libc_start_main__ edges in pruned_ddg
@@ -194,13 +202,15 @@ class SliceConstraints:
         rsp = SimRegisterVariable(48, 8)
 
         for src, dst, data in dep_graph.edges(data=True):
-            if data['type'] == 'reg':
-                if str(type(src.sim_procedure)) == "class <angr.procedures.glibc" \
-                                                   ".__libc_start_main.__libc_start_main'>":
+            if data["type"] == "reg":
+                if (
+                    str(type(src.sim_procedure)) == "class <angr.procedures.glibc"
+                    ".__libc_start_main.__libc_start_main'>"
+                ):
                     start_edge = True
                 else:
                     start_edge = False
-                if data['data'] == rbp or data['data'] == rsp or start_edge:
+                if data["data"] == rbp or data["data"] == rsp or start_edge:
                     # Remove edge
                     if src.sim_procedure is not None:
                         src = self._find_sim_proc_node(src, pruned_ddg)
@@ -245,7 +255,9 @@ class SliceConstraints:
 
         return final_deps, pruned_ddg
 
-    def _get_imark_for_vex_idx(self, irsb: pyvex.block.IRSB, cl: CodeLocation) -> SliceStatement:
+    def _get_imark_for_vex_idx(
+        self, irsb: pyvex.block.IRSB, cl: CodeLocation
+    ) -> SliceStatement:
         last_imark = None
         for i, stmt in enumerate(irsb.statements):
             if isinstance(stmt, pyvex.IRStmt.IMark):
@@ -254,8 +266,9 @@ class SliceConstraints:
             if i == cl.stmt_idx:
                 return last_imark
 
-    def _process_slice(self, final_deps: List[CodeLocation]) ->\
-            Tuple[Dict[int, List[SliceStatement]], Dict[int, pyvex.block.IRTypeEnv]]:
+    def _process_slice(
+        self, final_deps: List[CodeLocation]
+    ) -> Tuple[Dict[int, List[SliceStatement]], Dict[int, pyvex.block.IRTypeEnv]]:
         # Get sliced vex statements and tyenv per irsb
         slice_stmts = {}
         tyenv = {}
@@ -290,8 +303,9 @@ class SliceConstraints:
     def _get_reg(self, node):
         irsb = self.p.factory.block(node.block_addr, opt_level=0).vex
         stmt = irsb.statements[node.stmt_idx]
-        register = irsb.arch.translate_register_name(stmt.offset,
-                                                     stmt.data.result_size(irsb.tyenv) // 8)
+        register = irsb.arch.translate_register_name(
+            stmt.offset, stmt.data.result_size(irsb.tyenv) // 8
+        )
         return register
 
     def _read_pattern(self, edge_1, edge_2, edge_3, reg_node):
@@ -304,15 +318,15 @@ class SliceConstraints:
 
         matches = [False, False, False]
 
-        if 'subtype' in edge_1.keys():
-            if edge_1['type'] == 'tmp':
-                if 'mem_addr' in edge_1['subtype']:
+        if "subtype" in edge_1.keys():
+            if edge_1["type"] == "tmp":
+                if "mem_addr" in edge_1["subtype"]:
                     matches[0] = True
 
-        if edge_2['type'] == 'tmp':
+        if edge_2["type"] == "tmp":
             matches[1] = True
 
-        if edge_3['type'] == 'reg':
+        if edge_3["type"] == "reg":
             matches[2] = True
 
         result = matches[0] and matches[1] and matches[2]
@@ -333,12 +347,12 @@ class SliceConstraints:
 
         matches = [False, False]
 
-        if edge_1['type'] == 'reg':
+        if edge_1["type"] == "reg":
             matches[0] = True
 
-        if 'subtype' in edge_2.keys():
-            if edge_2['type'] == 'tmp':
-                if 'mem_data' in edge_2['subtype']:
+        if "subtype" in edge_2.keys():
+            if edge_2["type"] == "tmp":
+                if "mem_data" in edge_2["subtype"]:
                     matches[1] = True
 
         result = matches[0] and matches[1]
@@ -350,8 +364,9 @@ class SliceConstraints:
 
         return result, register
 
-    def _analyze_path(self, ddg: DiGraph, first_node: CodeLocation) -> Tuple[List[int],
-                                                                             List[MemTrack]]:
+    def _analyze_path(
+        self, ddg: DiGraph, first_node: CodeLocation
+    ) -> Tuple[List[int], List[MemTrack]]:
         curr_node = first_node
         curr_edge = None
         prev_node = None
@@ -375,18 +390,20 @@ class SliceConstraints:
             node_history[0] = node_history[1]
             node_history[1] = prev_node
 
-            is_write, write_reg = self._write_pattern(edge_history[1], edge_history[2],
-                                                      node_history[0])
-            is_read, read_reg = self._read_pattern(edge_history[0], edge_history[1],
-                                                   edge_history[2], node_history[1])
+            is_write, write_reg = self._write_pattern(
+                edge_history[1], edge_history[2], node_history[0]
+            )
+            is_read, read_reg = self._read_pattern(
+                edge_history[0], edge_history[1], edge_history[2], node_history[1]
+            )
 
             if is_write:
                 # print('Write', write_reg, 'at', hex(prev_node.ins_addr), 'on path', first_node)
-                write = MemTrack('write', prev_node, write_reg)
+                write = MemTrack("write", prev_node, write_reg)
                 tracking.append(write)
             if is_read:
                 # print('Read', read_reg, 'at', hex(prev_node.ins_addr), 'on path', first_node)
-                read = MemTrack('read', prev_node, read_reg)
+                read = MemTrack("read", prev_node, read_reg)
                 tracking.append(read)
 
             # Get next node and edge if not at end of graph
@@ -409,9 +426,9 @@ class SliceConstraints:
         last_merge = -1
         for i in range(len(order_2)):
             if order_2[i] in order_1:
-                if i > last_merge+1:
+                if i > last_merge + 1:
                     pos = new_bb_order.index(order_2[i])
-                    for j in range(last_merge+1, i):
+                    for j in range(last_merge + 1, i):
                         new_bb_order.insert(pos, order_2[j])
                         pos += 1
                 last_merge = i
@@ -436,11 +453,15 @@ class SliceConstraints:
 
         return bb_order, track_data
 
-    def _step_irsb(self, stmts: List[pyvex.block.IRSB],
-                   tyenv: pyvex.block.IRTypeEnv, state: SimState) -> SimState:
-        custom_irsb = pyvex.IRSB.empty_block(self.p.arch, 0x500000,
-                                             statements=stmts,
-                                             size=len(stmts))
+    def _step_irsb(
+        self,
+        stmts: List[pyvex.block.IRSB],
+        tyenv: pyvex.block.IRTypeEnv,
+        state: SimState,
+    ) -> SimState:
+        custom_irsb = pyvex.IRSB.empty_block(
+            self.p.arch, 0x500000, statements=stmts, size=len(stmts)
+        )
 
         # Make tyenv from previous tyenv data
         custom_irsb.tyenv = tyenv
@@ -456,8 +477,13 @@ class SliceConstraints:
 
         return successors[0]
 
-    def _symbolic_exec(self, slice_state: SimState, bb_order, tyenv,
-                       slice_stmts: Dict[int, List[SliceStatement]]):
+    def _symbolic_exec(
+        self,
+        slice_state: SimState,
+        bb_order,
+        tyenv,
+        slice_stmts: Dict[int, List[SliceStatement]],
+    ):
         # Concretize rbp and rsp since their actual values don't matter
         slice_state.regs.rbp = 0x600000
         slice_state.regs.rsp = 0x700000
@@ -469,7 +495,9 @@ class SliceConstraints:
         for block in bb_order:
             split_idx = self._mem_manager.indexes(block)
             for idx in split_idx:
-                statements = [obj.stmt for obj in slice_stmts[block] if obj.cl.stmt_idx <= idx]
+                statements = [
+                    obj.stmt for obj in slice_stmts[block] if obj.cl.stmt_idx <= idx
+                ]
                 saved_state = self._step_irsb(statements, tyenv[block], new_state)
                 self._mem_manager.add_state(saved_state, block_addr=block, stmt_idx=idx)
             all_statements = [obj.stmt for obj in slice_stmts[block]]

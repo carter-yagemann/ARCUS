@@ -25,8 +25,10 @@ from elftools.elf.elffile import ELFFile
 
 log = logging.getLogger(name=__name__)
 
+
 class DwarfException(Exception):
     pass
+
 
 class DwarfDebugInfo(object):
     """Class for accessing DWARF debug information in ELF objects (if available)"""
@@ -36,11 +38,11 @@ class DwarfDebugInfo(object):
 
         Raises DwarfException if no DWARF info is available.
         """
-        log.debug('Loading DWARF info from: %s' % filepath)
+        log.debug("Loading DWARF info from: %s" % filepath)
         self.filepath = filepath
         self.filename = os.path.basename(filepath)
 
-        with open(self.filepath, 'rb') as ifile:
+        with open(self.filepath, "rb") as ifile:
             elffile = ELFFile(ifile)
 
             if not elffile.has_dwarf_info():
@@ -52,34 +54,39 @@ class DwarfDebugInfo(object):
 
     def get_function(self, address):
         """Given a relative virtual address (RVA), return the name of the function
-           it belongs to. Returns None if address is invalid."""
+        it belongs to. Returns None if address is invalid."""
         for CU in self.dwarfinfo.iter_CUs():
             for DIE in CU.iter_DIEs():
                 try:
-                    if DIE.tag == 'DW_TAG_subprogram':
-                        lowpc = DIE.attributes['DW_AT_low_pc'].value
+                    if DIE.tag == "DW_TAG_subprogram":
+                        lowpc = DIE.attributes["DW_AT_low_pc"].value
 
                         # DWARF v4 in section 2.17 describes how to interpret the
                         # DW_AT_high_pc attribute based on the class of its form.
                         # For class 'address' it's taken as an absolute address
                         # (similarly to DW_AT_low_pc); for class 'constant', it's
                         # an offset from DW_AT_low_pc.
-                        highpc_attr = DIE.attributes['DW_AT_high_pc']
+                        highpc_attr = DIE.attributes["DW_AT_high_pc"]
                         highpc_attr_class = describe_form_class(highpc_attr.form)
-                        if highpc_attr_class == 'address':
+                        if highpc_attr_class == "address":
                             highpc = highpc_attr.value
-                        elif highpc_attr_class == 'constant':
+                        elif highpc_attr_class == "constant":
                             highpc = lowpc + highpc_attr.value
                         else:
-                            log.error('Invalid DW_AT_high_pc class: %s' % str(highpc_attr_class))
+                            log.error(
+                                "Invalid DW_AT_high_pc class: %s"
+                                % str(highpc_attr_class)
+                            )
                             continue
 
                         if lowpc <= address <= highpc:
-                            return DIE.attributes['DW_AT_name'].value.decode('utf8')
+                            return DIE.attributes["DW_AT_name"].value.decode("utf8")
                 except KeyError:
                     continue
 
-        log.error("Failed to get function name for %#x in %s" % (address, self.filename))
+        log.error(
+            "Failed to get function name for %#x in %s" % (address, self.filename)
+        )
         return None
 
     def get_src_line(self, address):
@@ -104,7 +111,9 @@ class DwarfDebugInfo(object):
                 # Looking for a range of addresses in two consecutive states that
                 # contain the required address.
                 if prevstate and prevstate.address <= address < entry.state.address:
-                    filename = lineprog['file_entry'][prevstate.file - 1].name.decode('utf8')
+                    filename = lineprog["file_entry"][prevstate.file - 1].name.decode(
+                        "utf8"
+                    )
                     line = prevstate.line
                     return (filename, line)
                 prevstate = entry.state

@@ -20,16 +20,17 @@ import angr
 
 log = logging.getLogger(name=__name__)
 
-class abc2mtex_read_settings(angr.SimProcedure):
 
+class abc2mtex_read_settings(angr.SimProcedure):
     def run(self):
         # real function calls fopen and then returns void because we never
         # have a settings file, this SimProcedure saves time
         return
 
+
 abc2mtex_hooks = {
-    'read_settings': abc2mtex_read_settings,
+    "read_settings": abc2mtex_read_settings,
 }
 
-hook_condition = ('abc2mtex', abc2mtex_hooks)
+hook_condition = ("abc2mtex", abc2mtex_hooks)
 is_main_object = True

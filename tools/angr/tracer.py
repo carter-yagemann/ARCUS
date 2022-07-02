@@ -33,49 +33,93 @@ from elftools.common.exceptions import ELFError
 
 import perf
 
-PROGRAM_VERSION = '3.0.0'
-PROGRAM_USAGE = 'Usage: %prog [options] <output_directory> <tracee_path> [tracee_args]...'
+PROGRAM_VERSION = "3.0.0"
+PROGRAM_USAGE = (
+    "Usage: %prog [options] <output_directory> <tracee_path> [tracee_args]..."
+)
 
 BREAKPOINTS = dict()
 
+
 def parse_args():
     """Parses sys.argv."""
-    parser = OptionParser(usage=PROGRAM_USAGE,
-                          version='%prog ' + PROGRAM_VERSION)
-    parser.add_option('-u', '--uid', action='store', type='int', default=None,
-            help='Run tracee with user ID UID (default: user\'s UID if using sudo, '
-            'otherwise root\'s)')
-    parser.add_option('-g', '--gid', action='store', type='int', default=None,
-            help='Run tracee with group ID GID (default: user\'s GID if using sudo, '
-            'otherwise root\'s)')
+    parser = OptionParser(usage=PROGRAM_USAGE, version="%prog " + PROGRAM_VERSION)
+    parser.add_option(
+        "-u",
+        "--uid",
+        action="store",
+        type="int",
+        default=None,
+        help="Run tracee with user ID UID (default: user's UID if using sudo, "
+        "otherwise root's)",
+    )
+    parser.add_option(
+        "-g",
+        "--gid",
+        action="store",
+        type="int",
+        default=None,
+        help="Run tracee with group ID GID (default: user's GID if using sudo, "
+        "otherwise root's)",
+    )
 
-    group_snapshot = OptionGroup(parser, 'Snapshot Arguments')
-    group_snapshot.add_option('--concrete-argv', action='store_true', default=False,
-            help='Make argv concrete in saved state')
-    group_snapshot.add_option('--concrete-env', action='store_true', default=False,
-            help='Make env concrete in saved state')
-    group_snapshot.add_option('--concrete-fs', action='store_true', default=False,
-            help='Make files in filesystem concrete')
-    group_snapshot.add_option('--snapshot-rva', action='store', type='int', default=None,
-            help="Override address to snapshot, relative to main object's base address")
+    group_snapshot = OptionGroup(parser, "Snapshot Arguments")
+    group_snapshot.add_option(
+        "--concrete-argv",
+        action="store_true",
+        default=False,
+        help="Make argv concrete in saved state",
+    )
+    group_snapshot.add_option(
+        "--concrete-env",
+        action="store_true",
+        default=False,
+        help="Make env concrete in saved state",
+    )
+    group_snapshot.add_option(
+        "--concrete-fs",
+        action="store_true",
+        default=False,
+        help="Make files in filesystem concrete",
+    )
+    group_snapshot.add_option(
+        "--snapshot-rva",
+        action="store",
+        type="int",
+        default=None,
+        help="Override address to snapshot, relative to main object's base address",
+    )
     parser.add_option_group(group_snapshot)
 
-    group_advance = OptionGroup(parser, 'Advance Arguments')
-    group_advance.add_option('--wait-exec', action='store', type='str', default=None,
-            metavar='NAME', help="Do not trace the root process, wait until "
-            "a process with NAME is created and trace it instead (useful for programs "
-            "with certain worker or plug-in architectures)")
-    group_advance.add_option('--snapshot-api', action='store_true', default=False,
-            help='Take a snapshot every time an API is invoked')
+    group_advance = OptionGroup(parser, "Advance Arguments")
+    group_advance.add_option(
+        "--wait-exec",
+        action="store",
+        type="str",
+        default=None,
+        metavar="NAME",
+        help="Do not trace the root process, wait until "
+        "a process with NAME is created and trace it instead (useful for programs "
+        "with certain worker or plug-in architectures)",
+    )
+    group_advance.add_option(
+        "--snapshot-api",
+        action="store_true",
+        default=False,
+        help="Take a snapshot every time an API is invoked",
+    )
     parser.add_option_group(group_advance)
 
-    group_debug = OptionGroup(parser, 'Debug Arguments')
-    group_debug.add_option('--time', action='store_true', default=False,
-            help='Report runtime of tracee')
-    group_debug.add_option('--no-trace', action='store_true', default=False,
-            help='Skip recording a trace')
-    group_debug.add_option('--no-state', action='store_true', default=False,
-            help='Skip saving a state')
+    group_debug = OptionGroup(parser, "Debug Arguments")
+    group_debug.add_option(
+        "--time", action="store_true", default=False, help="Report runtime of tracee"
+    )
+    group_debug.add_option(
+        "--no-trace", action="store_true", default=False, help="Skip recording a trace"
+    )
+    group_debug.add_option(
+        "--no-state", action="store_true", default=False, help="Skip saving a state"
+    )
     parser.add_option_group(group_debug)
 
     parser.disable_interspersed_args()
@@ -85,21 +129,24 @@ def parse_args():
         sys.exit(1)
     return (options, args)
 
+
 def sha256_file(filepath):
     """Returns a sha256 has of a file's contents. Returns None on error."""
     if not os.path.isfile(filepath):
         return None
 
     try:
-        with open(filepath, 'rb') as ifile:
+        with open(filepath, "rb") as ifile:
             return sha256(ifile.read()).hexdigest()
     except:
         return None
+
 
 def waitpid(pid, options):
     """Wrapper for waitpid that returns True if the process exited."""
     _, status = os.waitpid(pid, options)
     return os.WIFEXITED(status)
+
 
 def set_breakpoint(pid, addr):
     """Sets a breakpoint."""
@@ -111,8 +158,9 @@ def set_breakpoint(pid, addr):
 
     # place an int3 (0xcc) on the exact byte the caller specified
     mask = (1 << (8 * pyptrace.WORD_SIZE)) - 0x100
-    trap = (data & mask) | 0xcc
+    trap = (data & mask) | 0xCC
     pyptrace.pokedata(pid, addr, trap)
+
 
 def rm_breakpoint(pid, addr):
     """Removes a breakpoint."""
@@ -123,9 +171,11 @@ def rm_breakpoint(pid, addr):
 
     del BREAKPOINTS[pid][addr]
 
+
 def is_breakpoint(pid, addr):
     """Checks if there's a breakpoint at the given address."""
     return pid in BREAKPOINTS and addr in BREAKPOINTS[pid]
+
 
 def next_event(pid):
     """Continue running the PID until an event occurs.
@@ -155,6 +205,7 @@ def next_event(pid):
 
     return regs
 
+
 def step_and_resume(pid):
     """Given a PID that's currently stopped on one of our traps, step over
     the trap and resume execution. Assumes caller already "fixed" RIP (i.e.,
@@ -178,6 +229,7 @@ def step_and_resume(pid):
     set_breakpoint(pid, old_rip)
     pyptrace.cont(pid, 0)
 
+
 def get_virtual_entrypoint(pid, bin_path, entry):
     """Returns the virtual entrypoint, corrected for the actual
     loaded address of the process. If the ELF file is DYN, this will adjust
@@ -194,26 +246,26 @@ def get_virtual_entrypoint(pid, bin_path, entry):
     """
     va_bounds = get_object_va(pid, bin_path)
     if va_bounds is None:
-        raise ValueError('Unable to find map of pid {}'.format(pid))
+        raise ValueError("Unable to find map of pid {}".format(pid))
     va_start, va_end = va_bounds
 
-    with open(bin_path, 'rb') as ifile:
+    with open(bin_path, "rb") as ifile:
         parsed_elf = elffile.ELFFile(ifile)
         elf_type = parsed_elf.header.e_type
         if entry is None:
             entry = parsed_elf.header.e_entry
 
-        if elf_type == 'ET_DYN':
+        if elf_type == "ET_DYN":
             return entry + va_start
-        elif elf_type == 'ET_EXEC':
+        elif elf_type == "ET_EXEC":
             if entry < va_start or entry >= va_end:
                 raise ValueError(
-                        'Entry address of non-PIE ELF did '
-                        'not match found memory map'
+                    "Entry address of non-PIE ELF did " "not match found memory map"
                 )
             return entry
         else:
-            raise ValueError('Unhandled ELF type {}'.format(elf_type))
+            raise ValueError("Unhandled ELF type {}".format(elf_type))
+
 
 def get_object_va(pid, bin_path):
     """Returns the VA range of an object's *first* segment loaded into a
@@ -225,12 +277,13 @@ def get_object_va(pid, bin_path):
     Returns a tuple (va_start, va_end), or None if it cannot be found.
     """
     bin_path = os.path.abspath(bin_path)
-    with open('/proc/%d/maps' % pid, 'r') as ifile:
+    with open("/proc/%d/maps" % pid, "r") as ifile:
         for row in ifile:
             if bin_path in row:
-                va_start, va_end = row.split(' ')[0].split('-', 1)
+                va_start, va_end = row.split(" ")[0].split("-", 1)
                 return int(va_start, 16), int(va_end, 16)
     return None
+
 
 def pid2exe(pid):
     """Given a pid, return the real path to the program it is executing.
@@ -240,9 +293,10 @@ def pid2exe(pid):
     None if there was an error.
     """
     try:
-        return os.path.realpath('/proc/%d/exe' % pid)
+        return os.path.realpath("/proc/%d/exe" % pid)
     except:
         return None
+
 
 def pid2argv(pid):
     """Given a pid, extract its argv, returning a list.
@@ -251,10 +305,11 @@ def pid2argv(pid):
     A string list similar to sys.argv, otherwise None if there was an error.
     """
     try:
-        with open('/proc/%d/cmdline' % pid, 'rb') as ifile:
-            return [arg.decode('utf-8') for arg in ifile.read().split(b'\x00')][:-1]
+        with open("/proc/%d/cmdline" % pid, "rb") as ifile:
+            return [arg.decode("utf-8") for arg in ifile.read().split(b"\x00")][:-1]
     except:
         return None
+
 
 def pid2objects(pid):
     """Given a pid, returns a list of objects currently loaded into its
@@ -271,15 +326,16 @@ def pid2objects(pid):
     """
     objs = set()
     try:
-        with open('/proc/%d/maps' % pid, 'r') as ifile:
+        with open("/proc/%d/maps" % pid, "r") as ifile:
             for line in ifile.readlines():
-                token = line.split(' ')[-1].strip()
+                token = line.split(" ")[-1].strip()
                 if os.path.isfile(token):
                     objs.add(token)
     except FileNotFoundError:
         pass
 
     return list(objs)
+
 
 def hook_plt(pid):
     """Places hooks into the PLT of the main object to capture API calls.
@@ -288,8 +344,8 @@ def hook_plt(pid):
     pid -- PID of the tracee to hook, should already be attached in ptrace.
     """
     stub_dict = {
-        'x86': 16,
-        'x64': 16,
+        "x86": 16,
+        "x64": 16,
     }
 
     objs = pid2objects(pid)
@@ -299,7 +355,7 @@ def hook_plt(pid):
             # ava bounds of object
             va_bounds = get_object_va(pid, obj_path)
             if va_bounds is None:
-                sys.stderr.write('Failed to find VA range for %s\n' % obj_name)
+                sys.stderr.write("Failed to find VA range for %s\n" % obj_name)
                 continue
             va_start, va_end = va_bounds
             # elf type, plt section info
@@ -309,25 +365,30 @@ def hook_plt(pid):
                 continue  # not an ELF object
             elf_type = elf.header.e_type
             elf_arch = elf.get_machine_arch()
-            plt = elf.get_section_by_name('.plt')
+            plt = elf.get_section_by_name(".plt")
             if plt is None:
                 sys.stderr.write("Failed to hook PLT in %s\n" % obj_name)
                 continue
             plt_size = plt.data_size
             # plt AVA
-            plt_addr = plt['sh_addr']
-            if elf_type == 'ET_DYN':
+            plt_addr = plt["sh_addr"]
+            if elf_type == "ET_DYN":
                 plt_addr += va_start
             if plt_addr < va_start:
-                sys.stderr.write('Calculated invalid address for PLT in %s\n' % obj_name)
+                sys.stderr.write(
+                    "Calculated invalid address for PLT in %s\n" % obj_name
+                )
                 continue
             # place hooks
             if not elf_arch in stub_dict:
-                sys.stderr.write('PLT stub size is not known for architecture: %s\n' % elf_arch)
+                sys.stderr.write(
+                    "PLT stub size is not known for architecture: %s\n" % elf_arch
+                )
                 continue
             stub_size = stub_dict[elf_arch]
             for stub_addr in range(plt_addr, plt_addr + plt_size, stub_size):
                 set_breakpoint(pid, stub_addr)
+
 
 def attach_delayed(tracee, tracee_args, output_dir, options):
     """Spawn tracee and monitor until someone tries to exec the program
@@ -338,22 +399,29 @@ def attach_delayed(tracee, tracee_args, output_dir, options):
     """
     # if the user didn't specify a uid/gid but sudo is being used, get the user's
     # IDs via the sudo environment variables
-    if options.uid is None and 'SUDO_UID' in os.environ:
-        options.uid = int(os.environ['SUDO_UID'])
-    if options.gid is None and 'SUDO_GID' in os.environ:
-        options.gid = int(os.environ['SUDO_GID'])
+    if options.uid is None and "SUDO_UID" in os.environ:
+        options.uid = int(os.environ["SUDO_UID"])
+    if options.gid is None and "SUDO_GID" in os.environ:
+        options.gid = int(os.environ["SUDO_GID"])
 
     pid = os.fork()
     if pid == 0:  # within tracee
-        if options.gid: os.setgid(options.gid)
-        if options.uid: os.setuid(options.uid)
+        if options.gid:
+            os.setgid(options.gid)
+        if options.uid:
+            os.setuid(options.uid)
         pyptrace.traceme()
         ret = os.execv(tracee, tracee_args)
         sys.stderr.write("Failed to execv\n")
         sys.exit(ret)
     elif pid > 0:  # within tracer
         # wait for the target program to appear
-        trace_opts = pyptrace.PTRACE_O_TRACEEXEC | pyptrace.PTRACE_O_TRACECLONE | pyptrace.PTRACE_O_TRACEFORK | pyptrace.PTRACE_O_TRACEVFORK
+        trace_opts = (
+            pyptrace.PTRACE_O_TRACEEXEC
+            | pyptrace.PTRACE_O_TRACECLONE
+            | pyptrace.PTRACE_O_TRACEFORK
+            | pyptrace.PTRACE_O_TRACEVFORK
+        )
         trapped_pids = {pid}
         while True:
             # wait for next event
@@ -374,7 +442,10 @@ def attach_delayed(tracee, tracee_args, output_dir, options):
                     trapped_pids.add(waitpid)
                     ptrace_event = ((status >> 8) & ~signal.SIGTRAP) >> 8
 
-                    if waitname == options.wait_exec and ptrace_event == pyptrace.PTRACE_EVENT_EXEC:
+                    if (
+                        waitname == options.wait_exec
+                        and ptrace_event == pyptrace.PTRACE_EVENT_EXEC
+                    ):
                         # we've trapped the target, time to set everything up
                         # detach from all other pids
                         for pid in trapped_pids - {waitpid}:
@@ -391,21 +462,28 @@ def attach_delayed(tracee, tracee_args, output_dir, options):
 
                         # dump environment and configure GRIFFIN
                         if not options.no_state:
-                            dump_state(output_dir, tracee_args, not options.concrete_argv,
-                                       not options.concrete_env)
+                            dump_state(
+                                output_dir,
+                                tracee_args,
+                                not options.concrete_argv,
+                                not options.concrete_env,
+                            )
                         if not options.no_trace:
-                            if TRACE_INTERFACE == 'GRIFFIN':
+                            if TRACE_INTERFACE == "GRIFFIN":
                                 enable_griffin(options.wait_exec)
-                            elif TRACE_INTERFACE == 'PERF':
+                            elif TRACE_INTERFACE == "PERF":
                                 enable_perf(waitpid)
                         dump_files(output_dir, tracee_args, not options.concrete_fs)
 
                         # trap target at desired snapshot address
-                        options.snapshot_rva = get_virtual_entrypoint(waitpid, waitexe,
-                                options.snapshot_rva)
+                        options.snapshot_rva = get_virtual_entrypoint(
+                            waitpid, waitexe, options.snapshot_rva
+                        )
                         set_breakpoint(waitpid, options.snapshot_rva)
                         if next_event(waitpid) is None:
-                            sys.stderr.write("Tracee exited before reaching entry point\n")
+                            sys.stderr.write(
+                                "Tracee exited before reaching entry point\n"
+                            )
                             return (0, None)
                         rm_breakpoint(waitpid, options.snapshot_rva)
                         return (waitpid, waitexe)
@@ -423,6 +501,7 @@ def attach_delayed(tracee, tracee_args, output_dir, options):
         sys.stderr.write("Failed to fork\n")
         sys.exit(1)
 
+
 def attach(tracee, tracee_args, output_dir, options):
     """Create and attach to the tracee. Upon returning, the tracee will be paused
     at its entry point.
@@ -432,22 +511,26 @@ def attach(tracee, tracee_args, output_dir, options):
     """
     # if the user didn't specify a uid/gid but sudo is being used, get the user's
     # IDs via the sudo environment variables
-    if options.uid is None and 'SUDO_UID' in os.environ:
-        options.uid = int(os.environ['SUDO_UID'])
-    if options.gid is None and 'SUDO_GID' in os.environ:
-        options.gid = int(os.environ['SUDO_GID'])
+    if options.uid is None and "SUDO_UID" in os.environ:
+        options.uid = int(os.environ["SUDO_UID"])
+    if options.gid is None and "SUDO_GID" in os.environ:
+        options.gid = int(os.environ["SUDO_GID"])
 
     # dump environment and configure GRIFFIN
     if not options.no_state:
-        dump_state(output_dir, tracee_args, not options.concrete_argv, not options.concrete_env)
-    if not options.no_trace and TRACE_INTERFACE == 'GRIFFIN':
+        dump_state(
+            output_dir, tracee_args, not options.concrete_argv, not options.concrete_env
+        )
+    if not options.no_trace and TRACE_INTERFACE == "GRIFFIN":
         enable_griffin(os.path.basename(tracee))
     dump_files(output_dir, tracee_args, not options.concrete_fs)
 
     pid = os.fork()
     if pid == 0:  # within tracee
-        if options.gid: os.setgid(options.gid)
-        if options.uid: os.setuid(options.uid)
+        if options.gid:
+            os.setgid(options.gid)
+        if options.uid:
+            os.setuid(options.uid)
         pyptrace.traceme()
         ret = os.execv(tracee, tracee_args)
         sys.stderr.write("Failed to execv\n")
@@ -455,7 +538,7 @@ def attach(tracee, tracee_args, output_dir, options):
     elif pid > 0:  # within tracer
         os.waitpid(pid, 0)
 
-        if not options.no_trace and TRACE_INTERFACE == 'PERF':
+        if not options.no_trace and TRACE_INTERFACE == "PERF":
             enable_perf(pid)
 
         options.snapshot_rva = get_virtual_entrypoint(pid, tracee, options.snapshot_rva)
@@ -469,55 +552,69 @@ def attach(tracee, tracee_args, output_dir, options):
         sys.stderr.write("Failed to fork\n")
         sys.exit(1)
 
+
 def determine_trace_interface():
     """Determine which tracer to use"""
-    if os.path.exists('/sys/kernel/debug/pt_monitor'):
+    if os.path.exists("/sys/kernel/debug/pt_monitor"):
         sys.stderr.write("Using GRIFFIN tracing interface\n")
-        return 'GRIFFIN'
-    elif len(resolve_path('perf')) > 0:
+        return "GRIFFIN"
+    elif len(resolve_path("perf")) > 0:
         sys.stderr.write("Using Perf tracing interface\n")
-        return 'PERF'
+        return "PERF"
     else:
         sys.stderr.write("No trace interface found\n")
         return None
 
+
 def enable_griffin(prog_name):
     """Sets up GRIFFIN to trace prog_name."""
-    if os.path.exists('/tmp/tracer.lock'):
+    if os.path.exists("/tmp/tracer.lock"):
         sys.stderr.write("/tmp/tracer.lock exists, is someone already tracing?\n")
         sys.exit(2)
-    open('/tmp/tracer.lock', 'w').close()
-    with open('/proc/sys/vm/drop_caches', 'wb') as ifile:
+    open("/tmp/tracer.lock", "w").close()
+    with open("/proc/sys/vm/drop_caches", "wb") as ifile:
         ifile.write(b"3\n")
-    with open('/sys/kernel/debug/pt_monitor', 'w') as ifile:
+    with open("/sys/kernel/debug/pt_monitor", "w") as ifile:
         ifile.write(prog_name)
+
 
 def disable_griffin(dir):
     """Disables GRIFFIN and copies/gzips trace to dir/trace.griffin.gz"""
-    trace_path = os.path.join(dir, 'trace.griffin.gz')
-    with open('/var/log/pt.log', 'rb') as ifile:
-        with gzip.open(trace_path, 'wb') as ofile:
+    trace_path = os.path.join(dir, "trace.griffin.gz")
+    with open("/var/log/pt.log", "rb") as ifile:
+        with gzip.open(trace_path, "wb") as ofile:
             ofile.write(ifile.read())
-    with open('/sys/kernel/debug/pt_monitor', 'wb') as ifile:
+    with open("/sys/kernel/debug/pt_monitor", "wb") as ifile:
         ifile.write(b"\x00")
-    if os.path.exists('/tmp/tracer.lock'):
-        os.remove('/tmp/tracer.lock')
+    if os.path.exists("/tmp/tracer.lock"):
+        os.remove("/tmp/tracer.lock")
+
 
 def enable_perf(pid):
     """Sets up Perf to trace PID."""
     global perf_proc
 
     # make sure there isn't already a perf.data file
-    if os.path.exists('perf.data'):
-        os.remove('perf.data')
+    if os.path.exists("perf.data"):
+        os.remove("perf.data")
 
-    perf_bin = resolve_path('perf')
+    perf_bin = resolve_path("perf")
     if len(perf_bin) > 0:
-        cmd = [perf_bin, 'record', '-e', 'intel_pt//u', '-T', '--switch-events', '-p', str(pid)]
+        cmd = [
+            perf_bin,
+            "record",
+            "-e",
+            "intel_pt//u",
+            "-T",
+            "--switch-events",
+            "-p",
+            str(pid),
+        ]
         perf_proc = subprocess.Popen(cmd)
-        while not os.path.exists('perf.data'):
+        while not os.path.exists("perf.data"):
             # wait for perf to initialize
             time.sleep(1)
+
 
 def disable_perf(dir):
     """Disables Perf and decodes its trace into dir/trace.perf.gz"""
@@ -526,69 +623,89 @@ def disable_perf(dir):
     # wait for perf to finish
     perf_proc.wait()
 
-    if not os.path.isfile('perf.data'):
+    if not os.path.isfile("perf.data"):
         sys.stderr.write("Warning: no perf.data generated\n")
         return
 
     try:
         sys.stderr.write("Disassembling Perf trace, this may take awhile...\n")
-        perf.disasm_perf('perf.data', os.path.join(dir, 'trace.perf.gz'))
+        perf.disasm_perf("perf.data", os.path.join(dir, "trace.perf.gz"))
     except Exception as ex:
         sys.stderr.write("Failed to decode perf.data: %s\n" % str(ex))
 
-    os.remove('perf.data')
+    os.remove("perf.data")
+
 
 def dump_state(dir, args, sym_argv=False, sym_env=False):
     """Creates dir/state.json formatted for use by analysis.py."""
-    state_path = os.path.join(dir, 'state.json')
+    state_path = os.path.join(dir, "state.json")
     state = dict()
     # argv
-    state['argv'] = list()
+    state["argv"] = list()
     for arg in args:
         if not sym_argv:
-            state['argv'].append({"type": "str", "value": arg})
+            state["argv"].append({"type": "str", "value": arg})
         else:
-            state['argv'].append({"type": "BVS", "value": len(arg) * 8})
+            state["argv"].append({"type": "BVS", "value": len(arg) * 8})
     # env
-    state['env'] = list()
+    state["env"] = list()
     for key in os.environ:
         val = os.environ[key]
         if not sym_env:
-            state['env'].append({"key_type": "str", "key_val": key, "key_size": None,
-                                 "val_type": "str", "val_val": val, "val_size": None})
+            state["env"].append(
+                {
+                    "key_type": "str",
+                    "key_val": key,
+                    "key_size": None,
+                    "val_type": "str",
+                    "val_val": val,
+                    "val_size": None,
+                }
+            )
         else:
-            state['env'].append({"key_type": "BVS", "key_val": "env", "key_size": len(key) * 8,
-                                 "val_type": "BVS", "val_val": "env", "val_size": len(val) * 8})
+            state["env"].append(
+                {
+                    "key_type": "BVS",
+                    "key_val": "env",
+                    "key_size": len(key) * 8,
+                    "val_type": "BVS",
+                    "val_val": "env",
+                    "val_size": len(val) * 8,
+                }
+            )
 
-    with open(state_path, 'w') as ofile:
+    with open(state_path, "w") as ofile:
         json.dump(state, ofile)
 
+
 def dump_settings(dir, args, setdict):
-    """Creates dir/settings.json """
-    settings_path = os.path.join(dir,'settings.json')
+    """Creates dir/settings.json"""
+    settings_path = os.path.join(dir, "settings.json")
     settings = dict()
     # version
-    settings['version'] = PROGRAM_VERSION
+    settings["version"] = PROGRAM_VERSION
     # settings
-    settings['settings'] = setdict
+    settings["settings"] = setdict
     # tracee_cmd
-    settings['traced-cmd'] = args[1:]
+    settings["traced-cmd"] = args[1:]
 
-    with open(settings_path, 'w') as ofile:
+    with open(settings_path, "w") as ofile:
         json.dump(settings, ofile)
+
 
 def dump_regs(output_dir, pid):
     """Dumps the registers for pid in JSON format to dir/regs.json."""
-    regs_path = os.path.join(output_dir, 'regs.json')
+    regs_path = os.path.join(output_dir, "regs.json")
     ret, regs = pyptrace.getregs(pid)
 
-    reg_names = [attr for attr in dir(regs) if not attr.startswith('_')]
+    reg_names = [attr for attr in dir(regs) if not attr.startswith("_")]
     reg_dict = {reg_name: getattr(regs, reg_name).real for reg_name in reg_names}
 
-    del reg_dict['orig_rax']  # we don't need it
+    del reg_dict["orig_rax"]  # we don't need it
 
-    with open(regs_path, 'w') as ofile:
+    with open(regs_path, "w") as ofile:
         json.dump(reg_dict, ofile)
+
 
 def dump_mem(dir, pid, main_bin, blobs_dir=None):
     """Dumps the memory for pid into a set of files in dir.
@@ -606,9 +723,9 @@ def dump_mem(dir, pid, main_bin, blobs_dir=None):
     main_bin -- The absolute path of the main object executable.
     blobs_dir -- An optional directory to place binary blobs.
     """
-    memdir = os.path.join(dir, 'mem/')
-    bindir = os.path.join(dir, 'bin/')
-    misc = os.path.join(dir, 'misc.json')
+    memdir = os.path.join(dir, "mem/")
+    bindir = os.path.join(dir, "bin/")
+    misc = os.path.join(dir, "misc.json")
     misc_json = dict()
     fetched_bins = list()
 
@@ -619,17 +736,17 @@ def dump_mem(dir, pid, main_bin, blobs_dir=None):
     if not blobs_dir is None and not os.path.exists(blobs_dir):
         os.mkdir(blobs_dir)
 
-    with open('/proc/%d/maps' % pid, 'r') as ifile:
-        mem_fd = os.open('/proc/%d/mem' % pid, os.O_RDONLY)
+    with open("/proc/%d/maps" % pid, "r") as ifile:
+        mem_fd = os.open("/proc/%d/mem" % pid, os.O_RDONLY)
         for row in ifile:
-            va_start, va_end = [int(va, 16) for va in row.split(' ', 1)[0].split('-')]
+            va_start, va_end = [int(va, 16) for va in row.split(" ", 1)[0].split("-")]
             if not 0 < (va_end - va_start) < 0x80000000:
                 continue  # too big, skip
-            full_name = row.strip().split(' ')[-1]
+            full_name = row.strip().split(" ")[-1]
             name = os.path.basename(full_name)
-            if va_start >= 0xf000000000000000:
+            if va_start >= 0xF000000000000000:
                 continue  # [vsyscall]
-            if name == '[vvar]':
+            if name == "[vvar]":
                 continue  # [vvar] cannot be read
 
             # dump memory segment
@@ -642,7 +759,7 @@ def dump_mem(dir, pid, main_bin, blobs_dir=None):
                 blob_hash = sha256(raw_mem).hexdigest()
                 blob_path = os.path.join(blobs_dir, blob_hash)
                 if not os.path.exists(blob_path):
-                    with open(blob_path, 'wb') as ofile:
+                    with open(blob_path, "wb") as ofile:
                         ofile.write(raw_mem)
 
                 # use relative path for portability
@@ -650,7 +767,7 @@ def dump_mem(dir, pid, main_bin, blobs_dir=None):
                 os.symlink(orelpath, ofilepath)
             else:
                 # no blobs dir, just write directly
-                with open(ofilepath, 'wb') as ofile:
+                with open(ofilepath, "wb") as ofile:
                     ofile.write(raw_mem)
 
             # fetch binary if segment was mapped from file
@@ -660,7 +777,7 @@ def dump_mem(dir, pid, main_bin, blobs_dir=None):
 
                 if not blobs_dir is None:
                     # again, use blobs dir to save space
-                    with open(full_name, 'rb') as ifile:
+                    with open(full_name, "rb") as ifile:
                         blob_hash = sha256(ifile.read()).hexdigest()
                         blob_path = os.path.join(blobs_dir, blob_hash)
                         if not os.path.exists(blob_path):
@@ -675,28 +792,29 @@ def dump_mem(dir, pid, main_bin, blobs_dir=None):
 
                 # record which bin is main in misc.json
                 if full_name == os.path.abspath(main_bin):
-                    misc_json['main'] = binfn
+                    misc_json["main"] = binfn
 
         os.close(mem_fd)
 
     # additional important information
-    misc_json['brk'] = get_tracee_brk(pid)
-    with open(os.path.join(dir, 'misc.json'), 'w') as ofile:
+    misc_json["brk"] = get_tracee_brk(pid)
+    with open(os.path.join(dir, "misc.json"), "w") as ofile:
         json.dump(misc_json, ofile)
+
 
 def dump_files(outdir, tracee_args, symbolic_files=False):
     """Save copies of files touched by the tracee.
 
     Currently, this just checks each argv to see if it's a valid filepath.
     """
-    files_json = {'files': {}, 'cwd': None}
-    files_dir = os.path.join(outdir, 'files')
+    files_json = {"files": {}, "cwd": None}
+    files_dir = os.path.join(outdir, "files")
 
     if not os.path.exists(files_dir):
         os.mkdir(files_dir)
 
     # record cwd
-    files_json['cwd'] = os.getcwd()
+    files_json["cwd"] = os.getcwd()
 
     # check tracee's argv for any valid filepaths
     for arg in tracee_args:
@@ -705,8 +823,10 @@ def dump_files(outdir, tracee_args, symbolic_files=False):
             dest = os.path.join(files_dir, shasum)
             if not os.path.exists(dest):
                 copyfile(arg, dest)
-            files_json['files'][os.path.abspath(arg)] = {'data': os.path.join('files/', shasum),
-                                                         'symbolic': symbolic_files}
+            files_json["files"][os.path.abspath(arg)] = {
+                "data": os.path.join("files/", shasum),
+                "symbolic": symbolic_files,
+            }
 
         # We do not handle directories because they can be very deep,
         # have symlinks pointing outside the directory, etc. It's also
@@ -717,8 +837,9 @@ def dump_files(outdir, tracee_args, symbolic_files=False):
         # to keep the default mode as simple and hands-off as possible.
 
     # write files.json
-    with open(os.path.join(outdir, 'files.json'), 'w') as ofile:
+    with open(os.path.join(outdir, "files.json"), "w") as ofile:
         json.dump(files_json, ofile)
+
 
 def get_tracee_brk(pid):
     """Get the tracee's current brk."""
@@ -728,7 +849,7 @@ def get_tracee_brk(pid):
     ret, orig_word = pyptrace.peekdata(pid, code_addr)
 
     # setup a brk(0) syscall
-    pyptrace.pokedata(pid, code_addr, 0x50f)  # syscall
+    pyptrace.pokedata(pid, code_addr, 0x50F)  # syscall
     ret, new_regs = pyptrace.getregs(pid)
     new_regs.rax = 12
     new_regs.rdi = 0
@@ -747,6 +868,7 @@ def get_tracee_brk(pid):
 
     return curr_brk
 
+
 def snapshot_api(pid, trace_dir):
     """Creates an intermediate API snapshot.
 
@@ -760,11 +882,11 @@ def snapshot_api(pid, trace_dir):
     pid -- PID of the trapped tracee to snapshot.
     trace_dir -- Path to the root directory of the output trace.
     """
-    api_dir = os.path.join(trace_dir, 'api')
+    api_dir = os.path.join(trace_dir, "api")
     if not os.path.isdir(api_dir):
         os.mkdir(api_dir)
 
-    blobs_dir = os.path.join(api_dir, 'blobs')
+    blobs_dir = os.path.join(api_dir, "blobs")
     if not os.path.isdir(blobs_dir):
         os.mkdir(blobs_dir)
 
@@ -791,18 +913,20 @@ def snapshot_api(pid, trace_dir):
         # dump failed, destroy snapshot
         rmtree(snap_dir)
 
+
 def resolve_path(name):
     """Tries to find name in PATH.
 
     Returns empty string if no match is found.
     """
-    path_dirs = os.environ['PATH'].split(':')
+    path_dirs = os.environ["PATH"].split(":")
     for path_dir in path_dirs:
         candidate = os.path.join(path_dir, name)
         if os.path.isfile(candidate):
             return candidate
 
-    return ''  # no match
+    return ""  # no match
+
 
 def handle_signals(tracee_pid, output_dir, options):
     """Handles signals as they arrive to the tracer.
@@ -880,6 +1004,7 @@ def handle_signals(tracee_pid, output_dir, options):
 
     return True
 
+
 def main():
     """The main method."""
     options, args = parse_args()
@@ -915,7 +1040,7 @@ def main():
     start_time = time.time()
 
     # simplifies analysis
-    os.environ['LD_BIND_NOW'] = "1"
+    os.environ["LD_BIND_NOW"] = "1"
 
     tracee_pid = 0
     try:
@@ -924,7 +1049,9 @@ def main():
             tracee_pid = attach(tracee_path, tracee_args, output_dir, options)
         else:
             # delayed attachment
-            tracee_pid, tracee_path = attach_delayed(tracee_path, tracee_args, output_dir, options)
+            tracee_pid, tracee_path = attach_delayed(
+                tracee_path, tracee_args, output_dir, options
+            )
     except:
         sys.stderr.write("**ERROR OCCURRED IN TRACER\n")
         sys.stderr.write("%s\n" % str(traceback.format_exc()))
@@ -953,18 +1080,21 @@ def main():
         time_delta = time.time() - start_time
         sys.stderr.write("Time: %f sec\n" % time_delta)
     if not options.no_trace:
-        if TRACE_INTERFACE == 'GRIFFIN':
+        if TRACE_INTERFACE == "GRIFFIN":
             disable_griffin(output_dir)
-        elif TRACE_INTERFACE == 'PERF':
+        elif TRACE_INTERFACE == "PERF":
             disable_perf(output_dir)
 
     dump_settings(output_dir, args, options.__dict__)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     TRACE_INTERFACE = determine_trace_interface()
     if TRACE_INTERFACE is None:
-        sys.stderr.write("No suitable trace interface found, please "
-                         "install Perf or compile the ARCUS kernel\n")
+        sys.stderr.write(
+            "No suitable trace interface found, please "
+            "install Perf or compile the ARCUS kernel\n"
+        )
         sys.exit(1)
 
     main()

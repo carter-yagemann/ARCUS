@@ -30,12 +30,14 @@ log = logging.getLogger(__name__)
 # TODO - Entire plugin is hardcoded for 64-bit code pointers (uint64_t), replace
 #        with arch independent types.
 
+
 def is_plt(ldr, addr):
     """Returns True if addr is the start of a PLT."""
     obj = ldr.find_object_containing(addr)
-    if obj and addr in getattr(obj, 'reverse_plt', ()):
+    if obj and addr in getattr(obj, "reverse_plt", ()):
         return True
     return False
+
 
 def find_node(graph, state):
     """Finds the correct node that represents the provided state."""
@@ -49,7 +51,11 @@ def find_node(graph, state):
         curr_len = 0
         curr_node = node
         for idx in range(sense):
-            next = [pred for pred in graph.get_predecessors(curr_node) if pred.addr == prev_addrs[idx]]
+            next = [
+                pred
+                for pred in graph.get_predecessors(curr_node)
+                if pred.addr == prev_addrs[idx]
+            ]
             if len(next) > 0:
                 curr_node = next[0]
                 curr_len += 1
@@ -62,6 +68,7 @@ def find_node(graph, state):
 
     log.debug("find_node: best match len = %d" % match_len)
     return match_node
+
 
 def analyze_blame(simgr, blame_state, report):
     """Try to figure out the root cause behind a blamed state's behavior.
@@ -78,7 +85,9 @@ def analyze_blame(simgr, blame_state, report):
 
     blame_addr = blame_state.addr
     blame_irsb = blame_state.block(blame_addr).vex
-    blame_idx = [idx for idx, pred in enumerate(tech.predecessors) if pred == blame_state][0]
+    blame_idx = [
+        idx for idx, pred in enumerate(tech.predecessors) if pred == blame_state
+    ][0]
 
     log.info("Analyzing root cause for behavior of %s" % ldr.describe_addr(blame_addr))
     log.debug("Blamed IRSB:\n%s" % str(blame_irsb))
@@ -89,7 +98,9 @@ def analyze_blame(simgr, blame_state, report):
 
     # find existing (negligent) guardians for blamed IRSB
     log.debug("Creating partial CFG...")
-    partial_cfg = ptcfg.cfg_from_trace(pred_addrs, proj, cfg_args={'initial_state': pred_states[0]})
+    partial_cfg = ptcfg.cfg_from_trace(
+        pred_addrs, proj, cfg_args={"initial_state": pred_states[0]}
+    )
     blame_node = find_node(partial_cfg, blame_state)
     log.debug("Creating partial CDG...")
     partial_cdg = proj.analyses.CDG(partial_cfg)
@@ -97,8 +108,8 @@ def analyze_blame(simgr, blame_state, report):
 
     # filter out guardians that are SimProcedures
     existing_guards = [guard for guard in existing_guards if not guard.is_simprocedure]
-    log.debug('Existing Guardians: %s' % str(existing_guards))
-    log.debug('Found %d guardians' % len(existing_guards))
+    log.debug("Existing Guardians: %s" % str(existing_guards))
+    log.debug("Found %d guardians" % len(existing_guards))
 
     if len(existing_guards) > 0:
         # pick closest guardian
@@ -110,10 +121,12 @@ def analyze_blame(simgr, blame_state, report):
             curr_closest = (None, -1)
             for guard in existing_guards:
                 dist = shortest_path_length(partial_cfg.graph, guard, blame_node)
-                log.debug('Distance from %s to blamed node: %d' % (str(guard), dist))
+                log.debug("Distance from %s to blamed node: %d" % (str(guard), dist))
                 if curr_closest[0] is None or dist < curr_closest[1]:
                     curr_closest = (guard, dist)
-            log.debug('Picking %s with distance %d' % (str(curr_closest[0]), curr_closest[1]))
+            log.debug(
+                "Picking %s with distance %d" % (str(curr_closest[0]), curr_closest[1])
+            )
             failed_guard = curr_closest[0]
     else:
         # TODO - What do we do if no guardians exist? (e.g. bad string passed to strcpy)
@@ -135,21 +148,33 @@ def analyze_blame(simgr, blame_state, report):
                     break
                 pred_idx -= 1
 
-            report_details = {'type': 'input_validation',
-                              'callee': {'address': blame_state.addr,
-                                         'description': ldr.describe_addr(blame_state.addr)}}
+            report_details = {
+                "type": "input_validation",
+                "callee": {
+                    "address": blame_state.addr,
+                    "description": ldr.describe_addr(blame_state.addr),
+                },
+            }
             if pred:
-                log.info("Recommendation: Verify the parameters passed to %s by %s" % (str(blame_node), pred))
-                report_details['caller'] = {'address': curr_state.addr,
-                                            'description': pred}
+                log.info(
+                    "Recommendation: Verify the parameters passed to %s by %s"
+                    % (str(blame_node), pred)
+                )
+                report_details["caller"] = {
+                    "address": curr_state.addr,
+                    "description": pred,
+                }
             else:
-                log.info("Recommendation: Verify the parameters passed to %s" % (str(blame_node)))
+                log.info(
+                    "Recommendation: Verify the parameters passed to %s"
+                    % (str(blame_node))
+                )
 
             # print parameters passed to simprocedure
             simproc = proj.hooked_by(blame_addr)
             state_args = simproc.cc.get_args(blame_state, simproc.prototype)
             sim_args = list()
-            report_details['parameters'] = list()
+            report_details["parameters"] = list()
             for idx in range(simproc.num_args):
                 try:
                     arg = state_args[idx]
@@ -157,21 +182,28 @@ def analyze_blame(simgr, blame_state, report):
                     arg_max = blame_state.solver.max(arg)
                     if arg_min == arg_max:
                         sim_args.append("%#x" % arg_min)  # concrete, no range
-                        report_details['parameters'].append({'type': 'concrete',
-                                                             'value': arg_min})
+                        report_details["parameters"].append(
+                            {"type": "concrete", "value": arg_min}
+                        )
                     else:
                         sim_args.append("[%#x-%#x]" % (arg_min, arg_max))
-                        report_details['parameters'].append({'type': 'symbolic',
-                                                             'value_min': arg_min,
-                                                             'value_max': arg_max})
+                        report_details["parameters"].append(
+                            {
+                                "type": "symbolic",
+                                "value_min": arg_min,
+                                "value_max": arg_max,
+                            }
+                        )
                 except angr.errors.SimUnsatError:
                     sim_args.append("N/A")
-                    report_details['parameters'].append({'type': 'unknown'})
+                    report_details["parameters"].append({"type": "unknown"})
 
-            log.info("Parameters: %s" % ', '.join(sim_args))
-            report.add_detail('recommendation', report_details)
+            log.info("Parameters: %s" % ", ".join(sim_args))
+            report.add_detail("recommendation", report_details)
         else:
-            log.error("Cannot determine root cause: No guardians and blamed node isn't a simulated")
+            log.error(
+                "Cannot determine root cause: No guardians and blamed node isn't a simulated"
+            )
         return
 
     # find last time trace visited the failed guardian
@@ -196,23 +228,44 @@ def analyze_blame(simgr, blame_state, report):
     succ_taken_addr = tech.predecessors[failed_guard_idx + 1].addr
     succs_miss = [succ for succ in succs.successors if succ.addr != succ_taken_addr]
 
-    log.debug("Possible exits (%d/%d): %s" % (len(succs_miss), len(succs.all_successors), str(succs_miss)))
+    log.debug(
+        "Possible exits (%d/%d): %s"
+        % (len(succs_miss), len(succs.all_successors), str(succs_miss))
+    )
     if len(succs_miss) > 1:
-        log.warn("Found %d ways to avoid blamed state, only going to analyze one" % len(succs_miss))
+        log.warn(
+            "Found %d ways to avoid blamed state, only going to analyze one"
+            % len(succs_miss)
+        )
 
     if len(succs_miss) > 0 and len(succs_miss[0].history.recent_constraints) > 0:
         new_con_str = str(succs_miss[0].history.recent_constraints)
         log.info("Recommendation: Add %s to %s" % (new_con_str, str(failed_guard)))
-        report.add_detail('recommendation', {'type': 'add_constraints',
-                                             'guard': {'address': failed_guard_state.addr,
-                                                       'description': guard_addr_desc},
-                                             'constraints': new_con_str})
+        report.add_detail(
+            "recommendation",
+            {
+                "type": "add_constraints",
+                "guard": {
+                    "address": failed_guard_state.addr,
+                    "description": guard_addr_desc,
+                },
+                "constraints": new_con_str,
+            },
+        )
     else:
         log.info("Recommendation: Add additional checks to %s" % str(failed_guard))
-        report.add_detail('recommendation', {'type': 'add_constraints',
-                                             'guard': {'address': failed_guard_state.addr,
-                                                       'description': guard_addr_desc},
-                                             'constraints': None})
+        report.add_detail(
+            "recommendation",
+            {
+                "type": "add_constraints",
+                "guard": {
+                    "address": failed_guard_state.addr,
+                    "description": guard_addr_desc,
+                },
+                "constraints": None,
+            },
+        )
+
 
 def blame_load_concrete_val(state, tech, load_addr):
     """Try to find a state to blame for an address containing the wrong concrete value.
@@ -233,15 +286,20 @@ def blame_load_concrete_val(state, tech, load_addr):
     # iterate over predecessors to find when value at memory address last changed
     curr_val = state.mem[load_addr].uint64_t.resolved
     log.debug("Current value: %s" % curr_val)
-    log.debug("Num predecessors: %d" % len([s for s in tech.predecessors if not s is None]))
+    log.debug(
+        "Num predecessors: %d" % len([s for s in tech.predecessors if not s is None])
+    )
     for prev_state in tech.predecessors[::-1]:
         if prev_state is None:
             continue
 
         prev_val = prev_state.mem[load_addr].uint64_t.resolved
         if not state.solver.is_true(curr_val == prev_val):
-            log.info("Blaming for incorrect value: %s" % ldr.describe_addr(prev_state.addr))
+            log.info(
+                "Blaming for incorrect value: %s" % ldr.describe_addr(prev_state.addr)
+            )
             return prev_state
+
 
 def blame_load_unconstrained_val(state, tech, load_addr):
     """Try to find a state to blame for an address containing an unconstrained value.
@@ -257,18 +315,24 @@ def blame_load_unconstrained_val(state, tech, load_addr):
 
     # iterate over predecessors to find when memory lost its unique value
     curr_val = state.mem[load_addr].uint64_t.resolved
-    log.debug("Num predecessors: %d" % len([s for s in tech.predecessors if not s is None]))
+    log.debug(
+        "Num predecessors: %d" % len([s for s in tech.predecessors if not s is None])
+    )
     for prev_state in tech.predecessors[::-1]:
         if prev_state is None:
             continue
 
         prev_val = prev_state.mem[load_addr].uint64_t.resolved
         if not state.solver.is_true(curr_val == prev_val):
-            log.info("Blaming for unconstrained value: %s" % ldr.describe_addr(prev_state.addr))
+            log.info(
+                "Blaming for unconstrained value: %s"
+                % ldr.describe_addr(prev_state.addr)
+            )
             return prev_state
 
+
 def analyze_state(simgr, trace, state, report):
-    log.info('Symbolic IP detected. Analyzing state...')
+    log.info("Symbolic IP detected. Analyzing state...")
     # some objects we're going to reference frequently
     proj = state.project
     ldr = state.project.loader
@@ -306,25 +370,36 @@ def analyze_state(simgr, trace, state, report):
 
     blame_state = None
 
-    if diverge_irsb.jumpkind.startswith("Ijk_Boring") and taint.is_cond_branch(diverge_irsb):
+    if diverge_irsb.jumpkind.startswith("Ijk_Boring") and taint.is_cond_branch(
+        diverge_irsb
+    ):
         try:
             cond_mems = taint.get_cond_exit_mem_addr(diverge_state, result_state)
-            log.debug("Conditional addresses: [%s]" % ','.join([hex(addr) for addr in cond_mems]))
+            log.debug(
+                "Conditional addresses: [%s]"
+                % ",".join([hex(addr) for addr in cond_mems])
+            )
 
             # try blaming using each address until a state is found or we run out of addresses
             # we prioritize high addresses first because these are most likely to be stack or heap
             for addr in sorted(cond_mems, reverse=True):
                 log.debug("Considering %#x" % addr)
-                if not diverge_state.solver.symbolic(diverge_state.mem[addr].uint64_t.resolved):
+                if not diverge_state.solver.symbolic(
+                    diverge_state.mem[addr].uint64_t.resolved
+                ):
                     blame_state = blame_load_concrete_val(diverge_state, tech, addr)
                 else:
-                    blame_state = blame_load_unconstrained_val(diverge_state, tech, addr)
+                    blame_state = blame_load_unconstrained_val(
+                        diverge_state, tech, addr
+                    )
 
                 if blame_state:
                     break
 
         except taint.TaintException as ex:
-            log.error("Failed to find memory dependency for conditional branch: %s" % str(ex))
+            log.error(
+                "Failed to find memory dependency for conditional branch: %s" % str(ex)
+            )
             return
 
     elif not diverge_irsb.direct_next:
@@ -335,7 +410,9 @@ def analyze_state(simgr, trace, state, report):
         except taint.TaintException as ex:
             log.error("Failed to derive indirect target memory address: %s" % str(ex))
             return
-        if not diverge_state.solver.symbolic(diverge_state.mem[target_mem].uint64_t.resolved):
+        if not diverge_state.solver.symbolic(
+            diverge_state.mem[target_mem].uint64_t.resolved
+        ):
             blame_state = blame_load_concrete_val(diverge_state, tech, target_mem)
         else:
             blame_state = blame_load_unconstrained_val(diverge_state, tech, target_mem)
@@ -348,9 +425,13 @@ def analyze_state(simgr, trace, state, report):
         return
 
     # report blamed state
-    report.add_detail('blame', {'address': blame_state.addr,
-                                'description': ldr.describe_addr(blame_state.addr)})
-
+    report.add_detail(
+        "blame",
+        {
+            "address": blame_state.addr,
+            "description": ldr.describe_addr(blame_state.addr),
+        },
+    )
 
     # since we have a state to blame, we can mark this bug with a more concise hash
     blame_addr = blame_state.addr
@@ -366,26 +447,27 @@ def analyze_state(simgr, trace, state, report):
     else:
         diverge_rva = diverge_addr
 
-    report.set_hash('%x' % (blame_rva ^ (diverge_rva << 1)))
+    report.set_hash("%x" % (blame_rva ^ (diverge_rva << 1)))
 
     # Phase 2: Find the root cause for the blamed state's behavior
     analyze_blame(simgr, blame_state, report)
 
+
 def check_impending_hijack(simgr, state):
     """If the provided state is about to execute a return or call, checks if doing
-       so will result in a control hijack."""
+    so will result in a control hijack."""
     loader = state.project.loader
 
     try:
         state_irsb = state.block(state.addr).vex
     except angr.errors.SimEngineError:
         # program reached unmapped memory
-        simgr.stashes['sip'].append(state)
+        simgr.stashes["sip"].append(state)
         simgr._techniques[0].predecessors.append(state)
         return True
 
-    is_ret = state_irsb.jumpkind.startswith('Ijk_Ret')
-    if 'call_depth' in state.globals and state.globals['call_depth'] < 1 and is_ret:
+    is_ret = state_irsb.jumpkind.startswith("Ijk_Ret")
+    if "call_depth" in state.globals and state.globals["call_depth"] < 1 and is_ret:
         # if tracing is started mid-execution, the stack used for analysis will have
         # fewer frames than the real execution, so we should not perform this check
         # if we've ran out
@@ -397,36 +479,41 @@ def check_impending_hijack(simgr, state):
         succs = state.step()
         if len(succs.unconstrained_successors) > 0:
             # program counter became unconstrained
-            simgr.stashes['sip'].append(succs.unconstrained_successors[0])
+            simgr.stashes["sip"].append(succs.unconstrained_successors[0])
             simgr._techniques[0].predecessors.append(state)
             return True
         elif len(succs.successors) > 0:
             for succ in succs.successors:
-                if succ.solver.symbolic(succ._ip) or loader.find_object_containing(succ.addr) is None:
+                if (
+                    succ.solver.symbolic(succ._ip)
+                    or loader.find_object_containing(succ.addr) is None
+                ):
                     # program counter is symbolic or jumped to unmapped memory
-                    simgr.stashes['sip'].append(succ)
+                    simgr.stashes["sip"].append(succ)
                     simgr._techniques[0].predecessors.append(state)
                     return True
 
     return False
+
 
 def check_for_vulns(simgr, proj):
     """Check for symbolic instruction pointer"""
     global checked_traced
 
     # angr will crash if either of these checks is True, so it's okay to move these states
-    simgr.move('active', 'sip', lambda s: s.solver.symbolic(s._ip))
-    simgr.move('unconstrained', 'sip', lambda s: s.solver.symbolic(s._ip))
+    simgr.move("active", "sip", lambda s: s.solver.symbolic(s._ip))
+    simgr.move("unconstrained", "sip", lambda s: s.solver.symbolic(s._ip))
 
-    if len(simgr.stashes['traced']) > 0 and not checked_traced:
+    if len(simgr.stashes["traced"]) > 0 and not checked_traced:
         checked_traced = True
         # If program segfaulted because of a corrupted return pointer, trace will end
         # on the return IRSB. We need to take one more step to see the bug manifest.
-        check_impending_hijack(simgr, simgr.stashes['traced'][0])
+        check_impending_hijack(simgr, simgr.stashes["traced"][0])
 
     return True
 
+
 checked_traced = False
 
-stash_name = 'sip'
-pretty_name = 'Symbolic IP'
+stash_name = "sip"
+pretty_name = "Symbolic IP"

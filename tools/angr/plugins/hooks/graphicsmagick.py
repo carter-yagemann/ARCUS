@@ -23,12 +23,17 @@ import time
 
 log = logging.getLogger(name=__name__)
 
+
 class gm_clock_gettime(angr.SimProcedure):
     def run(self, which_clock, timespec_ptr):
         if not self.state.solver.is_true(which_clock == 0):
             result = {
-                'tv_sec': self.state.solver.BVV(0, self.arch.bits, key=('api', 'clock_gettime', 'tv_sec')),
-                'tv_nsec': self.state.solver.BVV(0, self.arch.bits, key=('api', 'clock_gettime', 'tv_nsec')),
+                "tv_sec": self.state.solver.BVV(
+                    0, self.arch.bits, key=("api", "clock_gettime", "tv_sec")
+                ),
+                "tv_nsec": self.state.solver.BVV(
+                    0, self.arch.bits, key=("api", "clock_gettime", "tv_nsec")
+                ),
             }
 
         if self.state.solver.is_true(timespec_ptr == 0):
@@ -36,11 +41,15 @@ class gm_clock_gettime(angr.SimProcedure):
 
         if angr.options.USE_SYSTEM_TIMES in self.state.options:
             flt = time.time()
-            result = {'tv_sec': int(flt), 'tv_nsec': int(flt * 1000000000)}
+            result = {"tv_sec": int(flt), "tv_nsec": int(flt * 1000000000)}
         else:
             result = {
-                'tv_sec': self.state.solver.BVS('tv_sec', self.arch.bits, key=('api', 'clock_gettime', 'tv_sec')),
-                'tv_nsec': self.state.solver.BVS('tv_nsec', self.arch.bits, key=('api', 'clock_gettime', 'tv_nsec')),
+                "tv_sec": self.state.solver.BVS(
+                    "tv_sec", self.arch.bits, key=("api", "clock_gettime", "tv_sec")
+                ),
+                "tv_nsec": self.state.solver.BVS(
+                    "tv_nsec", self.arch.bits, key=("api", "clock_gettime", "tv_nsec")
+                ),
             }
 
         self.state.mem[timespec_ptr].struct.timespec = result
@@ -54,24 +63,24 @@ class gm_magick_get_token(angr.SimProcedure):
 
 class gm_ret_sym(angr.SimProcedure):
     def run(self):
-        return self.state.solver.BVS('sym_ret', self.arch.bits)
+        return self.state.solver.BVS("sym_ret", self.arch.bits)
 
 
 class gm_locale_compare(angr.SimProcedure):
     def run(self):
-        res = self.state.solver.BVS('local_compare_result', self.arch.bits)
+        res = self.state.solver.BVS("local_compare_result", self.arch.bits)
         self.state.solver.add(claripy.Or(res == 0, res == 1, res == -1))
         return res
 
 
 gm_hooks = {
-    'clock_gettime': gm_clock_gettime,
-    'ReadLogConfigureFile': gm_magick_get_token,
-    'MagickGetToken': gm_magick_get_token,
-    'UnregisterMagickInfo': gm_magick_get_token,
-    'LocaleCompare': gm_locale_compare,
-    'ReadBlob': gm_ret_sym,
+    "clock_gettime": gm_clock_gettime,
+    "ReadLogConfigureFile": gm_magick_get_token,
+    "MagickGetToken": gm_magick_get_token,
+    "UnregisterMagickInfo": gm_magick_get_token,
+    "LocaleCompare": gm_locale_compare,
+    "ReadBlob": gm_ret_sym,
 }
 
-hook_condition = ('gm', gm_hooks)
+hook_condition = ("gm", gm_hooks)
 is_main_object = True

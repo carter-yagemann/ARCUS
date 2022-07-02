@@ -22,6 +22,7 @@ from angr.state_plugins.plugin import SimStatePlugin
 
 log = logging.getLogger(name=__name__)
 
+
 class SimStateDeepGlobals(SimStatePlugin):
     """Based on angr's original globals state plugin, only difference is this one deep copies"""
 
@@ -36,7 +37,9 @@ class SimStateDeepGlobals(SimStatePlugin):
     def set_state(self, state):
         pass
 
-    def merge(self, others, merge_conditions, common_ancestor=None): # pylint: disable=unused-argument
+    def merge(
+        self, others, merge_conditions, common_ancestor=None
+    ):  # pylint: disable=unused-argument
 
         for other in others:
             for k in other.keys():
@@ -45,7 +48,7 @@ class SimStateDeepGlobals(SimStatePlugin):
 
         return True
 
-    def widen(self, others): # pylint: disable=unused-argument
+    def widen(self, others):  # pylint: disable=unused-argument
         l.warning("Widening is unimplemented for globals")
         return False
 
@@ -77,5 +80,5 @@ class SimStateDeepGlobals(SimStatePlugin):
         return self._backer.pop(k, alt)
 
     @SimStatePlugin.memo
-    def copy(self, memo):   # pylint: disable=unused-argument
+    def copy(self, memo):  # pylint: disable=unused-argument
         return SimStateDeepGlobals(dict(self._backer))

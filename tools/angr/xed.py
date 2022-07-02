@@ -23,47 +23,63 @@ from threading import Timer, Event
 
 returncode = 0
 
+
 class PTNotFound(Exception):
     pass
+
 
 class DisasmError(Exception):
     pass
 
+
 def find_pt():
     """Searches a couple of places for pt. This search assumes Linux."""
-    if os.path.isfile('../pt/pt'):  # This can happen if someone follows the README closely
-        return '../pt/pt'
-    candidate = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../pt/pt')
+    if os.path.isfile(
+        "../pt/pt"
+    ):  # This can happen if someone follows the README closely
+        return "../pt/pt"
+    candidate = os.path.join(os.path.dirname(os.path.realpath(__file__)), "../pt/pt")
     if os.path.isfile(candidate):
         return candidate
-    path_dirs = os.environ['PATH'].split(':')
+    path_dirs = os.environ["PATH"].split(":")
     for path_dir in path_dirs:
-        candidate = os.path.join(path_dir, 'pt')
+        candidate = os.path.join(path_dir, "pt")
         if os.path.isfile(candidate):
             return candidate
-    return '' # Failed to find a match
+    return ""  # Failed to find a match
+
 
 # Each event has a RE for extracting data and a lambda for encoding it
 disasm_events = {
-    'block':   (re.compile('^  block: ([0-9a-f]+)'),
-                lambda x: int(x[0], 16)),
-    'icall':   (re.compile('^  icall: ([0-9a-f]+)'),
-                lambda x: int(x[0], 16)),
-    'syscall': (re.compile('^  syscall: ([0-9a-f]+)'),
-                lambda x: int(x[0], 16)),
-    'process': (re.compile('^process: tgid=([0-9]+), cmd=(.*)'),
-                lambda x: (int(x[0], 10), x[1])),
-    'thread':  (re.compile('^thread: tgid=([0-9]+), pid=([0-9]+)'),
-                lambda x: (int(x[0], 10), int(x[1], 10))),
-    'image':   (re.compile('^image: tgid=([0-9]+), base=([0-9a-f]+), size=([0-9a-f]+), name=(.*)'),
-                lambda x: (int(x[0], 10), int(x[1], 16), int(x[2], 16), x[3])),
-    'xpage':   (re.compile('^xpage: tgid=([0-9]+), base=([0-9a-f]+), size=([0-9a-f]+)'),
-                lambda x: (int(x[0], 10), int(x[1], 16), int(x[2], 16))),
-    'buffer':  (re.compile('^buffer: pid=([0-9]+), size=([0-9a-f]+)'),
-                lambda x: (int(x[0], 10), int(x[1], 16))),
+    "block": (re.compile("^  block: ([0-9a-f]+)"), lambda x: int(x[0], 16)),
+    "icall": (re.compile("^  icall: ([0-9a-f]+)"), lambda x: int(x[0], 16)),
+    "syscall": (re.compile("^  syscall: ([0-9a-f]+)"), lambda x: int(x[0], 16)),
+    "process": (
+        re.compile("^process: tgid=([0-9]+), cmd=(.*)"),
+        lambda x: (int(x[0], 10), x[1]),
+    ),
+    "thread": (
+        re.compile("^thread: tgid=([0-9]+), pid=([0-9]+)"),
+        lambda x: (int(x[0], 10), int(x[1], 10)),
+    ),
+    "image": (
+        re.compile(
+            "^image: tgid=([0-9]+), base=([0-9a-f]+), size=([0-9a-f]+), name=(.*)"
+        ),
+        lambda x: (int(x[0], 10), int(x[1], 16), int(x[2], 16), x[3]),
+    ),
+    "xpage": (
+        re.compile("^xpage: tgid=([0-9]+), base=([0-9a-f]+), size=([0-9a-f]+)"),
+        lambda x: (int(x[0], 10), int(x[1], 16), int(x[2], 16)),
+    ),
+    "buffer": (
+        re.compile("^buffer: pid=([0-9]+), size=([0-9a-f]+)"),
+        lambda x: (int(x[0], 10), int(x[1], 16)),
+    ),
 }
 
-def _disasm_pt_file_iter(trace_path, event='block', pids=None):
+
+def _disasm_pt_file_iter(trace_path, event="block", pids=None):
     """Disassembles a PT trace, yielding event info tuples.
 
     This should not be called directly, use disasm_pt_file() instead.
@@ -77,7 +93,7 @@ def _disasm_pt_file_iter(trace_path, event='block', pids=None):
     if not event in disasm_events:
         raise DisasmError("Unknown event type: %s" % event)
     event_regex, event_encoder = disasm_events[event]
-    pid_regex, pid_encoder = disasm_events['thread']
+    pid_regex, pid_encoder = disasm_events["thread"]
 
     # Input validation
     if isinstance(pids, int):
@@ -86,16 +102,20 @@ def _disasm_pt_file_iter(trace_path, event='block', pids=None):
         raise DisasmError("Expected pids to be None, int, or list of ints")
 
     pt_path = find_pt()
-    if pt_path == '':
+    if pt_path == "":
         raise PTNotFound("Cannot find pt")
 
     if not os.path.isfile(trace_path):
-        raise DisasmError("Trace filepath does not exist or is not a file: %s" % trace_path)
+        raise DisasmError(
+            "Trace filepath does not exist or is not a file: %s" % trace_path
+        )
 
     # Use pt to disasmble
     command = [pt_path, trace_path]
 
-    pt = subprocess.Popen(command, stdout=subprocess.PIPE, bufsize=1, universal_newlines=True)
+    pt = subprocess.Popen(
+        command, stdout=subprocess.PIPE, bufsize=1, universal_newlines=True
+    )
 
     curr_pid = -1
     for line in pt.stdout:
@@ -114,7 +134,8 @@ def _disasm_pt_file_iter(trace_path, event='block', pids=None):
     pt.wait()
     returncode = pt.returncode
 
-def disasm_pt_file(trace_path, event='block', pids=None):
+
+def disasm_pt_file(trace_path, event="block", pids=None):
     """Disassembles a PT trace, returning a list of events.
 
     By default, block events are yielded. See disasm_events for other possible events.

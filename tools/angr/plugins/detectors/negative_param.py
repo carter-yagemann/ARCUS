@@ -25,8 +25,10 @@ import taint
 
 log = logging.getLogger(__name__)
 
+
 class ArgNegativeException(Exception):
     pass
+
 
 def check_args(state, indexes):
     """Checks if arguments that should not be negative are.
@@ -47,7 +49,10 @@ def check_args(state, indexes):
     """
     simproc = state.project.hooked_by(state.addr)
     if simproc is None:
-        log.warning("Cannot find simulation procedure for %s" % state.project.loader.describe_addr(state.addr))
+        log.warning(
+            "Cannot find simulation procedure for %s"
+            % state.project.loader.describe_addr(state.addr)
+        )
         return
 
     args = state.project.factory.cc().get_args(state, simproc.prototype)
@@ -58,13 +63,14 @@ def check_args(state, indexes):
             arg_val = state.solver.max(arg)
         except angr.errors.SimUnsatError:
             continue
-        if arg_val >= 0xf000000000000000:
+        if arg_val >= 0xF000000000000000:
             ex = ArgNegativeException("negative-size-param")
             ex.idx = idx
             ex.name = state.project.loader.find_plt_stub_name(state.addr)
             ex.value = arg_val
             ex.offset = state.project.factory.cc().arg_locs(simproc.prototype)[idx]
             raise ex
+
 
 def blame_load_concrete_val(state, preds, load_addr):
     """Try to find a state to blame for an address containing a bad concrete value.
@@ -93,6 +99,7 @@ def blame_load_concrete_val(state, preds, load_addr):
         if not state.solver.is_true(curr_val == prev_val):
             return prev_state
 
+
 def blame_load_unconstrained_val(state, preds, load_addr):
     """Try to find a state to blame for an address containing an unconstrained value.
 
@@ -115,6 +122,7 @@ def blame_load_unconstrained_val(state, preds, load_addr):
         if not state.solver.is_true(curr_val == prev_val):
             return prev_state
 
+
 def analyze_state(simgr, trace, state, report):
     # some objects we're going to reference frequently
     proj = state.project
@@ -131,15 +139,17 @@ def analyze_state(simgr, trace, state, report):
     caller_addr = None
     for addr in state.history.bbl_addrs.hardcopy[::-1]:
         obj = ldr.find_object_containing(addr)
-        if addr in getattr(obj, 'reverse_plt', ()):
+        if addr in getattr(obj, "reverse_plt", ()):
             # we don't want the PLT stub
             continue
-        if state.block(addr).vex.jumpkind.startswith('Ijk_Call'):
+        if state.block(addr).vex.jumpkind.startswith("Ijk_Call"):
             caller_addr = addr
             break
 
     if caller_addr is None:
-        log.error("Cannot find the caller that passed the negative parameter to the callee")
+        log.error(
+            "Cannot find the caller that passed the negative parameter to the callee"
+        )
         return
 
     # find a memory address that held the bad value
@@ -171,7 +181,9 @@ def analyze_state(simgr, trace, state, report):
         log.debug("Tainted regs: %s" % str(set(tainted_regs)))
         # get all memory accesses
         accesses = dict()
-        for tmp, ast in taint.get_mem_accesses(prev_state, state, loads=True, stores=False):
+        for tmp, ast in taint.get_mem_accesses(
+            prev_state, state, loads=True, stores=False
+        ):
             accesses[tmp] = ast
         log.debug("Accesses in previous IRSB: %s" % str(accesses))
         # see if a tainted tmp is also a memory access
@@ -202,12 +214,18 @@ def analyze_state(simgr, trace, state, report):
         log.error("Failed to find state to blame")
         return
 
-    log.info("Blaming %s for negative value passed to %s" %
-            (ldr.describe_addr(blame_state.addr), ex.name))
-    report.add_detail('blame', {'address': blame_state.addr,
-                                'description': ldr.describe_addr(blame_state.addr)})
-    report.add_detail('victim', {'address': state.addr,
-                                 'description': ex.name})
+    log.info(
+        "Blaming %s for negative value passed to %s"
+        % (ldr.describe_addr(blame_state.addr), ex.name)
+    )
+    report.add_detail(
+        "blame",
+        {
+            "address": blame_state.addr,
+            "description": ldr.describe_addr(blame_state.addr),
+        },
+    )
+    report.add_detail("victim", {"address": state.addr, "description": ex.name})
 
     # hash for this bug based on blame and caller addresses
     blame_addr = blame_state.addr
@@ -223,20 +241,23 @@ def analyze_state(simgr, trace, state, report):
     else:
         caller_rva = caller_addr
 
-    report.set_hash('%x' % (blame_rva ^ (caller_rva << 1)))
+    report.set_hash("%x" % (blame_rva ^ (caller_rva << 1)))
 
     if state.project.is_hooked(blame_state.addr):
         # if the blamed state is a SimProcedure, we want to also report the caller
         caller_addr = blame_state.history.bbl_addrs[-2]
         caller_desc = ldr.describe_addr(caller_addr)
         log.info("Blamed state was called by %s" % caller_desc)
-        report.add_detail('caller', {'address': caller_addr,
-                                     'description': caller_desc})
+        report.add_detail(
+            "caller", {"address": caller_addr, "description": caller_desc}
+        )
+
 
 def get_call_depth(state):
-    if not 'call_depth' in state.globals:
+    if not "call_depth" in state.globals:
         return 0
-    return state.globals['call_depth']
+    return state.globals["call_depth"]
+
 
 def check_for_vulns(simgr, proj):
     """Check for args that should never be negative being negative.
@@ -245,21 +266,21 @@ def check_for_vulns(simgr, proj):
     """
     global detected_state
     never_negative = {
-        'calloc':       [0, 1],
-        'fread':        [1, 2],
-        'fwrite':       [1, 2],
-        'malloc':       [0],
-        'memcpy':       [2],
-        'memset':       [2],
-        'realloc':      [1],
-        'reallocarray': [1, 2],
-        'strncpy':      [2],
+        "calloc": [0, 1],
+        "fread": [1, 2],
+        "fwrite": [1, 2],
+        "malloc": [0],
+        "memcpy": [2],
+        "memset": [2],
+        "realloc": [1],
+        "reallocarray": [1, 2],
+        "strncpy": [2],
     }
 
-    if len(simgr.stashes['active']) < 1:
+    if len(simgr.stashes["active"]) < 1:
         return False
 
-    state = simgr.stashes['active'][0]
+    state = simgr.stashes["active"][0]
 
     if state.solver.symbolic(state._ip):
         # This plugin cannot handle states with symbolic program counters
@@ -274,15 +295,18 @@ def check_for_vulns(simgr, proj):
         try:
             check_args(state, never_negative[sym_name])
         except ArgNegativeException as ex:
-            log.info("Arg index %d of %s is likely negative (%s): %#x" %
-                    (ex.idx, ex.name, str(ex), ex.value))
+            log.info(
+                "Arg index %d of %s is likely negative (%s): %#x"
+                % (ex.idx, ex.name, str(ex), ex.value)
+            )
             ex.preds = simgr._techniques[0].predecessors.copy()
             bad_state = state.copy()
-            simgr.stashes['neg'].append(bad_state)
+            simgr.stashes["neg"].append(bad_state)
             detected_state[bad_state] = ex
 
     return True
 
+
 detected_state = dict()
-stash_name = 'neg'
-pretty_name = 'Negative Parameter'
+stash_name = "neg"
+pretty_name = "Negative Parameter"

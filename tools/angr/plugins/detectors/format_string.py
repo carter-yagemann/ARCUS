@@ -24,6 +24,7 @@ import taint
 
 log = logging.getLogger(__name__)
 
+
 def get_simproc(state):
     """Returns the simulation procedure this state is about to enter,
     if one exists, otherwise returns None."""
@@ -35,13 +36,15 @@ def get_simproc(state):
     if sym is None:
         return None
 
-    hook_addr, _ = state.project.simos.prepare_function_symbol(sym_name,
-            basic_addr=sym.rebased_addr)
+    hook_addr, _ = state.project.simos.prepare_function_symbol(
+        sym_name, basic_addr=sym.rebased_addr
+    )
 
     if state.project.is_hooked(hook_addr):
         return state.project.hooked_by(hook_addr)
 
     return None
+
 
 def add_detection(state, handler, bad_addr=None, bad_idx=None):
     caller_addr = state.history.bbl_addrs[-1]
@@ -49,6 +52,7 @@ def add_detection(state, handler, bad_addr=None, bad_idx=None):
         return False  # duplicate
     detections[caller_addr] = (handler, bad_addr, bad_idx)
     return True
+
 
 def check_scan_args(state, fmt_idx):
     """Check if any of the arguments in the format string perform an
@@ -58,7 +62,10 @@ def check_scan_args(state, fmt_idx):
     """
     simproc = get_simproc(state)
     if simproc is None:
-        log.warning("Cannot find simulation procedure for %s" % state.project.loader.describe_addr(state.addr))
+        log.warning(
+            "Cannot find simulation procedure for %s"
+            % state.project.loader.describe_addr(state.addr)
+        )
         return False
 
     args = state.project.factory.cc().get_args(state, simproc.prototype)
@@ -77,16 +84,17 @@ def check_scan_args(state, fmt_idx):
         return False
 
     fmt_str = state.memory.load(fmt_ptr, size=res[2][0])
-    fmt_str = state.solver.eval(fmt_str, cast_to=bytes).decode('ascii')
+    fmt_str = state.solver.eval(fmt_str, cast_to=bytes).decode("ascii")
     fmt_len = len(fmt_str)
 
     for idx, char in enumerate(fmt_str[:-1]):
         # check for string scan with no size specifier
-        if char == '%' and fmt_str[idx + 1] == 's':
+        if char == "%" and fmt_str[idx + 1] == "s":
             log.warn("Scanning string of unbounded size")
             return add_detection(state, analyze_state_unbounded_arg)
 
     return False
+
 
 def check_fmt_str(state, fmt_idx):
     """Check if the format string pointer or data is symbolic, which
@@ -96,14 +104,19 @@ def check_fmt_str(state, fmt_idx):
     """
     simproc = get_simproc(state)
     if simproc is None:
-        log.warning("Cannot find simulation procedure for %s" % state.project.loader.describe_addr(state.addr))
+        log.warning(
+            "Cannot find simulation procedure for %s"
+            % state.project.loader.describe_addr(state.addr)
+        )
         return False
 
     args = state.project.factory.cc().get_args(state, simproc.prototype)
 
     if len(args) <= fmt_idx:
-        log.error("Function prototype only has %d arguments, "
-                "but format string is suppose to be at index %d" % (len(args), fmt_idx))
+        log.error(
+            "Function prototype only has %d arguments, "
+            "but format string is suppose to be at index %d" % (len(args), fmt_idx)
+        )
         return False
 
     fmt_arg = args[fmt_idx]
@@ -139,10 +152,11 @@ def check_fmt_str(state, fmt_idx):
         log.error("Symbolic format string")
         return add_detection(state, analyze_state_sym_str, bad_addr=fmt_ptr)
 
-    fmt_str = state.solver.eval(fmt_str, cast_to=bytes).decode('ascii')
-    fmt_str = fmt_str.replace("\n", '\\n').replace("\t", '\\t')
+    fmt_str = state.solver.eval(fmt_str, cast_to=bytes).decode("ascii")
+    fmt_str = fmt_str.replace("\n", "\\n").replace("\t", "\\t")
     log.debug("Format String: '%s'" % fmt_str)
     return False
+
 
 def _taint_irexpr(expr, tainted_tmps, load_tmps, load_addrs):
     """Given an non-OP IRExpr, add any tmps or regs to the provided sets.
@@ -158,13 +172,17 @@ def _taint_irexpr(expr, tainted_tmps, load_tmps, load_addrs):
         elif isinstance(expr.addr, pyvex.expr.RdTmp):
             load_tmps.add(expr.addr.tmp)
 
+
 def taint_irexpr(expr, tainted_tmps, load_tmps, load_addrs):
     """Given an IRExpr, add any tmps or loads to the provided sets."""
-    if isinstance(expr, (pyvex.expr.Qop, pyvex.expr.Triop, pyvex.expr.Binop, pyvex.expr.Unop)):
+    if isinstance(
+        expr, (pyvex.expr.Qop, pyvex.expr.Triop, pyvex.expr.Binop, pyvex.expr.Unop)
+    ):
         for arg in expr.args:
             _taint_irexpr(arg, tainted_tmps, load_tmps, load_addrs)
     else:
         _taint_irexpr(expr, tainted_tmps, load_tmps, load_addrs)
+
 
 def find_bad_addr(states, state_idx, arg_idx):
     """Given a series of states, a state index and an argument index, return the memory address
@@ -180,15 +198,24 @@ def find_bad_addr(states, state_idx, arg_idx):
     """
     bug_state = states[state_idx]
     # get location of argument
-    loc = bug_state.project.factory.cc().arg_locs(is_fp=[False] * (arg_idx + 1))[arg_idx]
+    loc = bug_state.project.factory.cc().arg_locs(is_fp=[False] * (arg_idx + 1))[
+        arg_idx
+    ]
     if isinstance(loc, angr.calling_conventions.SimRegArg):
         reg_offset = bug_state.arch.registers[loc.reg_name][0]
 
         # find state that wrote the register's value
         write_idx = state_idx - 1
-        final_val = bug_state.solver.eval(bug_state.registers.load(reg_offset, size=bug_state.arch.bits // 8))
+        final_val = bug_state.solver.eval(
+            bug_state.registers.load(reg_offset, size=bug_state.arch.bits // 8)
+        )
         for state in states[:state_idx][::-1]:
-            if state.solver.eval(state.registers.load(reg_offset, state.arch.bits // 8)) != final_val:
+            if (
+                state.solver.eval(
+                    state.registers.load(reg_offset, state.arch.bits // 8)
+                )
+                != final_val
+            ):
                 break
             write_idx -= 1
 
@@ -220,8 +247,9 @@ def find_bad_addr(states, state_idx, arg_idx):
 
         if len(load_tmps) > 0:
             # found some tmps holding load addresses, resolve them
-            tmps = taint.get_mem_accesses(write_state, states[write_idx + 1],
-                                          loads=True, stores=False)
+            tmps = taint.get_mem_accesses(
+                write_state, states[write_idx + 1], loads=True, stores=False
+            )
             for tmp, ast in tmps:
                 if tmp in load_tmps:
                     return write_state.solver.eval(ast)
@@ -230,7 +258,9 @@ def find_bad_addr(states, state_idx, arg_idx):
             return load_addrs[0]
         else:
             # couldn't find anything of value
-            log.error("Could not find any memory addresses used to calculate register argument")
+            log.error(
+                "Could not find any memory addresses used to calculate register argument"
+            )
             return None
 
     elif isinstance(loc, angr.calling_conventions.SimStackArg):
@@ -238,6 +268,7 @@ def find_bad_addr(states, state_idx, arg_idx):
     else:
         log.error("Unknown argument type: %s" % type(loc))
         return None
+
 
 def analyze_state(simgr, trace, state, report):
     prev_addr = state.history.bbl_addrs[-1]
@@ -247,13 +278,17 @@ def analyze_state(simgr, trace, state, report):
 
     return detections[prev_addr][0](simgr, trace, state, report)
 
+
 def analyze_state_unbounded_arg(simgr, trace, state, report):
     # an unbounded arg is its own root cause
     ldr = state.project.loader
     prev_state_desc = ldr.describe_addr(state.history.bbl_addrs[-1])
     log.info("Blaming caller for having an unbounded arg: %s" % prev_state_desc)
-    report.add_detail('blame', {'address': state.history.bbl_addrs[-1],
-                                'description': prev_state_desc})
+    report.add_detail(
+        "blame",
+        {"address": state.history.bbl_addrs[-1], "description": prev_state_desc},
+    )
+
 
 def analyze_state_sym_str(simgr, trace, state, report):
     # some objects we're going to reference frequently
@@ -271,7 +306,9 @@ def analyze_state_sym_str(simgr, trace, state, report):
     try:
         detected_idx = pred_states.index(state)
     except ValueError:
-        log.error("Cannot find detected state in technique's predecessors, cannot continue")
+        log.error(
+            "Cannot find detected state in technique's predecessors, cannot continue"
+        )
         return
 
     if bad_addr is None:
@@ -295,47 +332,52 @@ def analyze_state_sym_str(simgr, trace, state, report):
         if detected_idx > 0:
             description = ldr.describe_addr(pred_states[detected_idx - 1].addr)
             log.info("Blaming for corrupting format string: %s" % description)
-            report.add_detail('blame', {'address': pred_states[detected_idx - 1].addr,
-                                        'description': description})
+            report.add_detail(
+                "blame",
+                {
+                    "address": pred_states[detected_idx - 1].addr,
+                    "description": description,
+                },
+            )
         else:
             log.error("Failed to find state to blame")
         return
 
     blame_desc = ldr.describe_addr(blame_state.addr)
     log.info("Blaming for corrupting format string: %s" % blame_desc)
-    report.add_detail('blame', {'address': blame_state.addr,
-                                'description': blame_desc})
+    report.add_detail("blame", {"address": blame_state.addr, "description": blame_desc})
+
 
 def check_for_vulns(simgr, proj):
     """Check for format string, args mismatch."""
     # key: function name
     # val: index of format string argument
     formatparsers = {
-        'vsnprintf': 2,
-        'vsprintf':  1,
-        'vdprintf':  1,
-        'vfprintf':  1,
-        'snprintf':  2,
-        'vprintf':   0,
-        'sprintf':   1,
-        'dprintf':   1,
-        'fprintf':   1,
-        'printf':    0,
+        "vsnprintf": 2,
+        "vsprintf": 1,
+        "vdprintf": 1,
+        "vfprintf": 1,
+        "snprintf": 2,
+        "vprintf": 0,
+        "sprintf": 1,
+        "dprintf": 1,
+        "fprintf": 1,
+        "printf": 0,
     }
 
     scanners = {
-        'vsscanf': 1,
-        'vfscanf': 1,
-        'fscanf':  1,
-        'sscanf':  1,
-        'vscanf':  0,
-        'scanf':   0,
+        "vsscanf": 1,
+        "vfscanf": 1,
+        "fscanf": 1,
+        "sscanf": 1,
+        "vscanf": 0,
+        "scanf": 0,
     }
 
-    if len(simgr.stashes['active']) < 1:
+    if len(simgr.stashes["active"]) < 1:
         return False
 
-    state = simgr.stashes['active'][0]
+    state = simgr.stashes["active"][0]
 
     if state.solver.symbolic(state._ip):
         # This plugin cannot handle states with symbolic program counters
@@ -344,18 +386,19 @@ def check_for_vulns(simgr, proj):
     sym_name = proj.loader.find_plt_stub_name(state.addr)
     if sym_name is None:
         return True
-    sym_name = sym_name.split('_')[-1]
+    sym_name = sym_name.split("_")[-1]
 
     if sym_name in formatparsers:
         if check_fmt_str(state, formatparsers[sym_name]):
-            simgr.stashes['fmt'].append(state)
+            simgr.stashes["fmt"].append(state)
     if sym_name in scanners:
         if check_scan_args(state, scanners[sym_name]):
-            simgr.stashes['fmt'].append(state)
+            simgr.stashes["fmt"].append(state)
 
     return True
 
+
 detections = dict()
 
-stash_name = 'fmt'
-pretty_name = 'Format String'
+stash_name = "fmt"
+pretty_name = "Format String"

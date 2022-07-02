@@ -26,6 +26,7 @@ import pyvex
 
 log = logging.getLogger(__name__)
 
+
 class ArgumentMax(ExplorationTechnique):
     """Searches for bugs by maxing arguments in certain simulation procedures.
 
@@ -36,33 +37,33 @@ class ArgumentMax(ExplorationTechnique):
 
     simproc_args = {
         # libc
-        'calloc':         [0, 1],
-        'fgets':          [1],
-        'fread':          [1, 2],
-        'fwrite':         [1, 2],
-        'malloc':         [0],
-        'memcpy':         [2],
-        'memset':         [2],
-        'realloc':        [1],
-        'setvbuf':        [3],
-        'snprintf':       [1],
-        '__snprintf_chk': [1, 2],
-        'strncpy':        [2],
-        'vsnprintf':      [1],
+        "calloc": [0, 1],
+        "fgets": [1],
+        "fread": [1, 2],
+        "fwrite": [1, 2],
+        "malloc": [0],
+        "memcpy": [2],
+        "memset": [2],
+        "realloc": [1],
+        "setvbuf": [3],
+        "snprintf": [1],
+        "__snprintf_chk": [1, 2],
+        "strncpy": [2],
+        "vsnprintf": [1],
         # linux kernel
-        'brk':            [0],
-        'mmap':           [1],
-        'munmap':         [1],
+        "brk": [0],
+        "mmap": [1],
+        "munmap": [1],
         # posix
-        'accept':         [2],
-        'bzero':          [1],
-        'pread64':        [2],
-        'pwrite64':       [2],
-        'read':           [2],
-        'recv':           [2],
-        'recvfrom':       [2, 5],
-        'send':           [2],
-        'write':          [2],
+        "accept": [2],
+        "bzero": [1],
+        "pread64": [2],
+        "pwrite64": [2],
+        "read": [2],
+        "recv": [2],
+        "recvfrom": [2, 5],
+        "send": [2],
+        "write": [2],
     }
 
     def __init__(self, predecessors, trace, options):
@@ -74,9 +75,9 @@ class ArgumentMax(ExplorationTechnique):
 
     def setup(self, simgr):
         """Select candidate simprocs to max"""
-        if not 'missed' in simgr.stashes:
-            simgr.populate('missed', [])
-        simgr.drop(stash='active')
+        if not "missed" in simgr.stashes:
+            simgr.populate("missed", [])
+        simgr.drop(stash="active")
 
         loader = self.project.loader
 
@@ -94,7 +95,9 @@ class ArgumentMax(ExplorationTechnique):
             target_idxs = self.simproc_args[sym_name]
 
             proc_args = state.project.factory.cc().get_args(state, simproc.prototype)
-            if not True in [state.solver.symbolic(proc_args[idx]) for idx in target_idxs]:
+            if not True in [
+                state.solver.symbolic(proc_args[idx]) for idx in target_idxs
+            ]:
                 # all arguments we would want to max are concrete, nothing to do
                 continue
 
@@ -104,12 +107,12 @@ class ArgumentMax(ExplorationTechnique):
 
         self._rewind(simgr)
 
-    def step(self, simgr, stash='active', **kwargs):
-        simgr.drop(stash='missed')
+    def step(self, simgr, stash="active", **kwargs):
+        simgr.drop(stash="missed")
 
         # this can happen if a detector plugin removes our active state because
         # further execution is no longer possible (e.g., symbolic IP)
-        if len(simgr.stashes['active']) < 1:
+        if len(simgr.stashes["active"]) < 1:
             log.warn("No more active states, rewinding")
             self._rewind(simgr)
 
@@ -118,34 +121,44 @@ class ArgumentMax(ExplorationTechnique):
     def step_state(self, simgr, state, **kwargs):
         # maintain the predecessors list
         self.predecessors.append(state)
-        succs = {'active': [], 'missed': []}
+        succs = {"active": [], "missed": []}
 
         loader = self.project.loader
         if loader.find_object_containing(state.addr):
-            log.info("Argument Max Explorer: (%d) (%d) %s", len(self.candidates) + 1,
-                    state.globals['wander_budget'], loader.describe_addr(state.addr))
+            log.info(
+                "Argument Max Explorer: (%d) (%d) %s",
+                len(self.candidates) + 1,
+                state.globals["wander_budget"],
+                loader.describe_addr(state.addr),
+            )
         else:
-            log.info("Argument Max Explorer: (%d) (%d) %#x", len(self.candidates) + 1,
-                    state.globals['wander_budget'], state.addr)
+            log.info(
+                "Argument Max Explorer: (%d) (%d) %#x",
+                len(self.candidates) + 1,
+                state.globals["wander_budget"],
+                state.addr,
+            )
 
         # if we're heading into a function we care about, maximize the target arguments
         simproc = self.project.hooked_by(state.addr)
         if simproc is None:
-            sym_name = ''
+            sym_name = ""
         else:
             sym_name = simproc.display_name
 
         if sym_name in self.simproc_args:
             target_idxs = self.simproc_args[sym_name]
             log.info("Maxing arguments in: %s:%s" % (sym_name, str(target_idxs)))
-            args_info = state.project.factory.cc().get_arg_info(state, simproc.prototype)
+            args_info = state.project.factory.cc().get_arg_info(
+                state, simproc.prototype
+            )
             for idx in target_idxs:
                 loc = args_info[idx][2]
                 val = args_info[idx][3]
                 max_val = state.solver.max(val)
                 state.add_constraints(
-                        state.solver.Or(val == max_val,
-                                        val >= (1 << state.arch.bits)))
+                    state.solver.Or(val == max_val, val >= (1 << state.arch.bits))
+                )
 
         try:
             candidates = [succ for succ in state.step() if succ.solver.satisfiable()]
@@ -153,52 +166,53 @@ class ArgumentMax(ExplorationTechnique):
             # state cannot be stepped, we're done with this run
             log.debug("Cannot step (%s), rewinding" % str(ex))
             self._rewind(simgr)
-            if len(simgr.stashes['active']) > 0:
-                succs['active'] = [simgr.stashes['active'][0]]
+            if len(simgr.stashes["active"]) > 0:
+                succs["active"] = [simgr.stashes["active"][0]]
             return succs
 
         if len(candidates) < 1:
             # no candidate states, rewind
             log.debug("Cannot step, rewinding")
             self._rewind(simgr)
-            if len(simgr.stashes['active']) > 0:
-                succs['active'] = [simgr.stashes['active'][0]]
+            if len(simgr.stashes["active"]) > 0:
+                succs["active"] = [simgr.stashes["active"][0]]
             return succs
 
         # shouldn't matter where we go
-        succs['active'] = [candidates[0]]
-        succs['missed'] = candidates[1:]
+        succs["active"] = [candidates[0]]
+        succs["missed"] = candidates[1:]
         # we're wandering freely
-        succs['active'][0].globals['wander_budget'] -= 1
-        if succs['active'][0].globals['wander_budget'] < 1:
+        succs["active"][0].globals["wander_budget"] -= 1
+        if succs["active"][0].globals["wander_budget"] < 1:
             # we've hit our wander limit, it's time to give up and rewind
             log.warning("Wander budget exhausted, ending run")
-            succs['missed'].append(succs['active'][0])
-            succs['active'] = list()
+            succs["missed"].append(succs["active"][0])
+            succs["active"] = list()
 
-        if len(succs['active']) == 0:
+        if len(succs["active"]) == 0:
             log.debug("Rewinding")
             self._rewind(simgr)
-            if len(simgr.stashes['active']) > 0:
-                succs['active'] = [simgr.stashes['active'][0]]
+            if len(simgr.stashes["active"]) > 0:
+                succs["active"] = [simgr.stashes["active"][0]]
 
         return succs
 
     def _rewind(self, simgr):
         """Queues up the next candidate by rewinding and then setting it as active"""
-        simgr.drop(stash='active')
+        simgr.drop(stash="active")
         try:
             active, preds = self.candidates.pop(0)
         except IndexError:
             log.info("No candidates left")
             return
         # once we max out the args, we don't want to wander forever, so set a budget
-        active.globals['wander_budget'] = 150
-        simgr.stashes['active'] = [active]
+        active.globals["wander_budget"] = 150
+        simgr.stashes["active"] = [active]
         self.predecessors = preds
 
     def complete(self, simgr):
         """Returns True when there's nothing left to explore"""
-        return len(simgr.stashes['active']) < 1 and len(self.candidates) < 1
+        return len(simgr.stashes["active"]) < 1 and len(self.candidates) < 1
+
 
 explorer = ArgumentMax

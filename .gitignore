@@ -26,7 +26,6 @@ __pycache__
 # pyptrace tool
 /tools/pyptrace/build
 /tools/pyptrace/dist
-/tools/pyptrace/pyptrace.egg-info/PKG-INFO
 
 /env
 /venv

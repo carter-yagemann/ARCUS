@@ -25,6 +25,7 @@ import xed
 
 log = logging.getLogger(name=__name__)
 
+
 def prune_cfg(cfg, pt):
     """Prune an Angr CFG using a PT trace. pt can be a path to a GRIFFIN
        file or a list of basic block addresses.
@@ -46,7 +47,11 @@ def prune_cfg(cfg, pt):
 
     # first pass: normal nodes that do not appear in the trace
     for node in cfg.graph.nodes():
-        if not node.addr in block_addrs and not node.is_syscall and not node.is_simprocedure:
+        if (
+            not node.addr in block_addrs
+            and not node.is_syscall
+            and not node.is_simprocedure
+        ):
             # cannot remove a node while iterating
             pruned_nodes.append(node)
 
@@ -58,7 +63,11 @@ def prune_cfg(cfg, pt):
         if node.is_syscall or node.is_simprocedure:
             # predecessors list isn't updated when a node is removed from the CFG
             # also self references don't count
-            preds = [pred for pred in node.predecessors if not pred in pruned_nodes and pred != node]
+            preds = [
+                pred
+                for pred in node.predecessors
+                if not pred in pruned_nodes and pred != node
+            ]
             if len(preds) == 0:
                 pruned_nodes.append(node)
 
@@ -69,10 +78,12 @@ def prune_cfg(cfg, pt):
 
     return pruned_nodes
 
+
 class BasicNode(object):
     def __init__(self, addr, size):
         self.addr = addr
         self.size = size
+
 
 def cfg_from_trace(addrs, project, cfg_args={}):
     """Create a CFGEmulated that represents a single linear trace.
@@ -108,7 +119,7 @@ def cfg_from_trace(addrs, project, cfg_args={}):
         prev_addr = addr
 
     # sanity check
-    assert(base_graph.number_of_nodes() == len(set(addrs)))
+    assert base_graph.number_of_nodes() == len(set(addrs))
 
     # keep_state and state_add_options are set according to
     # the angr docs so this CFG can be used to generate a DDG:
@@ -116,21 +127,26 @@ def cfg_from_trace(addrs, project, cfg_args={}):
     #     https://docs.angr.io/built-in-analyses/backward_slice
     #
     try:
-        cfg = project.analyses.CFGEmulated(address_whitelist=addrs,
-                                           base_graph=base_graph,
-                                           keep_state=True,
-                                           state_add_options=angr.sim_options.refs,
-                                           **cfg_args)
+        cfg = project.analyses.CFGEmulated(
+            address_whitelist=addrs,
+            base_graph=base_graph,
+            keep_state=True,
+            state_add_options=angr.sim_options.refs,
+            **cfg_args
+        )
     except (RecursionError, AttributeError) as ex:
         log.error("Failed to create CFG: %s" % str(ex))
-        cfg = project.analyses.CFGEmulated(address_whitelist=addrs,
-                                           base_graph=base_graph,
-                                           keep_state=True,
-                                           state_add_options=angr.sim_options.refs,
-                                           max_steps=1,
-                                           **cfg_args)
+        cfg = project.analyses.CFGEmulated(
+            address_whitelist=addrs,
+            base_graph=base_graph,
+            keep_state=True,
+            state_add_options=angr.sim_options.refs,
+            max_steps=1,
+            **cfg_args
+        )
 
     return cfg
+
 
 def slice2str(bb_seq, slice, curr_obj_only=False):
     """Given a sequence of basic blocks (i.e. a trace) and a slice, returns a
@@ -173,17 +189,23 @@ def slice2str(bb_seq, slice, curr_obj_only=False):
                 if i in chosen_stmts:
                     stmt_strs.append("+[% 3d] %s" % (i, str(stmt)))
                 elif isinstance(stmt, pyvex.stmt.IMark):
-                    stmt_strs.append(" [% 3d] ------ IMark(%s, %d, %d) ------" % (i,
-                            slice.project.loader.describe_addr(stmt.addr), stmt.len,
-                            stmt.delta))
+                    stmt_strs.append(
+                        " [% 3d] ------ IMark(%s, %d, %d) ------"
+                        % (
+                            i,
+                            slice.project.loader.describe_addr(stmt.addr),
+                            stmt.len,
+                            stmt.delta,
+                        )
+                    )
 
     # cleanup: remove IMarks with no chosen statements
     last_stmt_idx = len(stmt_strs) - 1
     stmt_strs_filtered = list()
     for idx, stmt in enumerate(stmt_strs):
-        if idx == last_stmt_idx and 'IMark' in stmt:
+        if idx == last_stmt_idx and "IMark" in stmt:
             continue  # If the last statement is an IMark, it's empty
-        elif idx != last_stmt_idx and 'IMark' in stmt and 'IMark' in stmt_strs[idx + 1]:
+        elif idx != last_stmt_idx and "IMark" in stmt and "IMark" in stmt_strs[idx + 1]:
             continue  # IMark is empty if it's followed by another IMark
         else:
             stmt_strs_filtered.append(stmt)

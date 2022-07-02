@@ -21,6 +21,7 @@ import networkx
 
 log = logging.getLogger(name=__name__)
 
+
 def rewind(preds, condition):
     """Rewind trace until a condition becomes true.
 
@@ -50,6 +51,7 @@ def rewind(preds, condition):
     # if this point is reached, we failed to find a state
     # that satisfies the condition
     return (None, [])
+
 
 def forward(preds, condition):
     """Similar to rewind, except starts at the beginning and iterates forward
@@ -83,6 +85,7 @@ def forward(preds, condition):
     # that satisfies the condition
     return (None, [])
 
+
 def find_all_preds(preds, condition):
     """Similar to rewind, except returns a list of (state, preds) tuples
     for all states that satisfy the condition.
@@ -111,6 +114,7 @@ def find_all_preds(preds, condition):
         curr_preds.append(next)
 
     return matches
+
 
 def simple_cfg(addrs):
     """Create a simple CFG from a linear sequence of addresses.

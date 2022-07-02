@@ -25,14 +25,18 @@ import pefile
 import xed
 import griffin
 
-VERSION = '0.2.0'
+VERSION = "0.2.0"
+
 
 def disasm_xed(options, args):
-    for addr in xed._disasm_pt_file_iter(args[0], 'block'):
+    for addr in xed._disasm_pt_file_iter(args[0], "block"):
         sys.stdout.write("block: " + hex(addr) + "\n")
 
+
 def main():
-    parser = OptionParser(usage='Usage: %prog griffin_trace', version='Griffin Decoder ' + VERSION)
+    parser = OptionParser(
+        usage="Usage: %prog griffin_trace", version="Griffin Decoder " + VERSION
+    )
 
     options, args = parser.parse_args()
 
@@ -46,5 +50,6 @@ def main():
 
     disasm_xed(options, args)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

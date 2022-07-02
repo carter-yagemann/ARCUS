@@ -26,14 +26,16 @@ from plugins.detectors import symbolic_ip as sip
 
 log = logging.getLogger(__name__)
 
+
 def analyze_state(simgr, trace, state, report):
     # for now, we just piggyback off the symbolic IP detector's analysis
     sip.analyze_state(simgr, trace, state, report)
 
+
 def check_for_vulns(simgr, proj):
     vuln_funcs = [
-        'abort',
-        '__stack_chk_fail',
+        "abort",
+        "__stack_chk_fail",
     ]
 
     if len(simgr.active) < 1:
@@ -44,12 +46,15 @@ def check_for_vulns(simgr, proj):
     if not sym_obj is None and sym_obj.name in vuln_funcs:
         # this state is inside a function that's only called if a memory
         # error has occurred
-        log.info("Reached %s, which is an aborting error handler; "
-                 "we've triggered a bug" % sym_obj.name)
+        log.info(
+            "Reached %s, which is an aborting error handler; "
+            "we've triggered a bug" % sym_obj.name
+        )
         simgr.stashes[stash_name].append(state.copy())
         simgr.drop()
 
     return True
 
-stash_name = 'vuln'
-pretty_name = 'Vulnerability Hooks'
+
+stash_name = "vuln"
+pretty_name = "Vulnerability Hooks"

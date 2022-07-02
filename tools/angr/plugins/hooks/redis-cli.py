@@ -20,20 +20,21 @@ import angr
 
 log = logging.getLogger(name=__name__)
 
-class jemalloc_constructor(angr.SimProcedure):
 
+class jemalloc_constructor(angr.SimProcedure):
     def run(self):
         return
 
-class je_malloc(angr.SimProcedure):
 
+class je_malloc(angr.SimProcedure):
     def run(self, size):
-        return self.inline_call(angr.SIM_PROCEDURES['libc']['malloc'], size).ret_expr
+        return self.inline_call(angr.SIM_PROCEDURES["libc"]["malloc"], size).ret_expr
+
 
 rediscli_hooks = {
-    'jemalloc_constructor': jemalloc_constructor,
-    'je_malloc': je_malloc,
+    "jemalloc_constructor": jemalloc_constructor,
+    "je_malloc": je_malloc,
 }
 
-hook_condition = ('redis-cli', rediscli_hooks)
+hook_condition = ("redis-cli", rediscli_hooks)
 is_main_object = True

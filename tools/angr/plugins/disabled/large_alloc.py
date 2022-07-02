@@ -21,16 +21,19 @@ import angr
 
 log = logging.getLogger(__name__)
 
+
 class ArgLimitException(Exception):
     pass
 
-def sizeof_fmt(num, suffix='B'):
+
+def sizeof_fmt(num, suffix="B"):
     """Pretty printing for byte sizes."""
-    for unit in ["",'K','M','G','T','P','E','Z']:
+    for unit in ["", "K", "M", "G", "T", "P", "E", "Z"]:
         if abs(num) < 1024.0:
             return "%3.1f%s%s" % (num, unit, suffix)
         num /= 1024.0
-    return "%.1f%s%s" % (num, 'Yi', suffix)
+    return "%.1f%s%s" % (num, "Yi", suffix)
+
 
 def check_alloc_args(state, indexes, limit):
     """Checks if an allocation function has an absurd parameter value (likely due to vulnerability).
@@ -64,6 +67,7 @@ def check_alloc_args(state, indexes, limit):
             ex.max = arg_val
             raise ex
 
+
 def analyze_state(simgr, trace, state):
     # some objects we're going to reference frequently
     proj = state.project
@@ -79,35 +83,39 @@ def analyze_state(simgr, trace, state):
 
     # TODO - Implement root cause analysis
 
+
 def check_for_vulns(simgr, proj):
     """Check for allocation function receiving large size argument"""
     alloc_funcs = {
-        'malloc':       [0],
-        'calloc':       [0, 1],
-        'realloc':      [1],
-        'reallocarray': [1, 2],
+        "malloc": [0],
+        "calloc": [0, 1],
+        "realloc": [1],
+        "reallocarray": [1, 2],
     }
     alloc_limit = 0x40000000  # 1 GB
 
-    if len(simgr.stashes['active']) < 1:
+    if len(simgr.stashes["active"]) < 1:
         return False
 
-    state = simgr.stashes['active'][0]
+    state = simgr.stashes["active"][0]
 
     sym_name = proj.loader.find_plt_stub_name(state.addr)
     if sym_name in alloc_funcs:
         try:
             check_alloc_args(state, alloc_funcs[sym_name], alloc_limit)
         except ArgLimitException as ex:
-            log.info("Arg %d of %s exceeded limit of %s: %s" %
-                    (ex.idx, ex.name, sizeof_fmt(ex.limit), sizeof_fmt(ex.max)))
+            log.info(
+                "Arg %d of %s exceeded limit of %s: %s"
+                % (ex.idx, ex.name, sizeof_fmt(ex.limit), sizeof_fmt(ex.max))
+            )
             state_copy = state.copy()
-            simgr.stashes['arg'].append(state_copy)
+            simgr.stashes["arg"].append(state_copy)
             # stash exception so we can refer to it during analysis
             detected_states[state_copy] = ex
 
     return True
 
+
 detected_states = dict()
-stash_name = 'arg'
-pretty_name = 'Large Allocation'
+stash_name = "arg"
+pretty_name = "Large Allocation"

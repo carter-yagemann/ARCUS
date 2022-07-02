@@ -1,4 +1,4 @@
-Metadata-Version: 1.0
+Metadata-Version: 2.1
 Name: pyptrace
 Version: 2.0
 Summary: Python wrapper for Linux ptrace system call.
@@ -6,6 +6,8 @@ Home-page: https://carteryagemann.com
 Author: Carter Yagemann
 Author-email: yagemann@gatech.edu
 License: UNKNOWN
-Description: UNKNOWN
 Keywords: linux ptrace
 Platform: UNKNOWN
+
+UNKNOWN
+

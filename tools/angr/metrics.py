@@ -23,6 +23,7 @@ from angr.exploration_techniques import ExplorationTechnique
 
 log = logging.getLogger(name=__name__)
 
+
 class Metrics(ExplorationTechnique):
     """
     An exploration technique that doesn't actually explore, but simply tracks
@@ -39,35 +40,35 @@ class Metrics(ExplorationTechnique):
             "max_constraints": {
                 "value": 0,
                 "description": "The maximum number of constraints seen in a"
-                        " state up to this point.",
+                " state up to this point.",
             },
             "max_ast_nodes": {
                 "value": 0,
                 "description": "The maximum number of AST nodes seen in a"
-                        " state so far, summed across all constraints",
+                " state so far, summed across all constraints",
             },
             "max_sum_ast_depth": {
                 "value": 0,
                 "description": "Maximum AST depth, summed across all "
-                        "constraints, seen in a state so far."
+                "constraints, seen in a state so far.",
             },
             "max_call_depth": {
                 "value": 0,
                 "description": "Maximum call depth reached across states"
-                        " seen so far."
+                " seen so far.",
             },
             "max_steps": {
                 "value": 0,
                 "description": "Maximum number of steps taken from a starting"
-                        " state so far."
+                " state so far.",
             },
             "total_bbs": {
                 "value": 0,
-                "descrpition": "Total unique basic blocks seen so far."
+                "descrpition": "Total unique basic blocks seen so far.",
             },
             "total_states": {
                 "value": 0,
-                "description": "Total number of states stepped."
+                "description": "Total number of states stepped.",
             },
         }
 
@@ -88,39 +89,43 @@ class Metrics(ExplorationTechnique):
         appended to the same file.
         """
         if os.path.isfile(os.path.realpath(ofp)):
-            with open(os.path.expanduser(ofp), 'r') as ifile:
+            with open(os.path.expanduser(ofp), "r") as ifile:
                 data = json.loads(ifile.read())
         elif os.path.exists(ofp):
-            log.error("Output filepath exists, but is not a file, cannot"
-                    " overwrite: %s" % ofp)
+            log.error(
+                "Output filepath exists, but is not a file, cannot"
+                " overwrite: %s" % ofp
+            )
             return
         else:
             data = dict()
 
         data[name] = self.metrics
 
-        with open(os.path.expanduser(ofp), 'w') as ofile:
+        with open(os.path.expanduser(ofp), "w") as ofile:
             ofile.write(json.dumps(data))
 
     def step_state(self, simgr, state, **kwargs):
         num_cons = len(state.solver.constraints)
-        self._max('max_constraints', num_cons)
+        self._max("max_constraints", num_cons)
 
         num_nodes = sum([self._ast_nodes(c) for c in state.solver.constraints])
-        self._max('max_ast_nodes', num_nodes)
+        self._max("max_ast_nodes", num_nodes)
 
         ast_depth = sum([c.depth for c in state.solver.constraints])
-        self._max('max_sum_ast_depth', ast_depth)
+        self._max("max_sum_ast_depth", ast_depth)
 
         # this global is maintained by angrpt.Tracer
-        if 'call_depth' in state.globals:
-            self._max('max_call_depth', state.globals['call_depth'])
+        if "call_depth" in state.globals:
+            self._max("max_call_depth", state.globals["call_depth"])
         elif not self.has_warn_call_depth:
-            log.warning("State does not have 'call_depth' global, metrics will"
-                    " not measure call depth!")
+            log.warning(
+                "State does not have 'call_depth' global, metrics will"
+                " not measure call depth!"
+            )
             self.has_warn_call_depth = True
 
-        self._max('max_steps', len(state.history.bbl_addrs))
+        self._max("max_steps", len(state.history.bbl_addrs))
 
         try:
             self.seen_bbls.add(state.addr)
@@ -128,17 +133,17 @@ class Metrics(ExplorationTechnique):
             raise ex
         except:
             pass
-        self._max('total_bbs', len(self.seen_bbls))
+        self._max("total_bbs", len(self.seen_bbls))
 
-        self.metrics['total_states']['value'] += 1
+        self.metrics["total_states"]["value"] += 1
 
         return simgr.step_state(state, **kwargs)
 
     def _max(self, key, value):
         """Sets the metric identified by key to the max of its current value and
         the newly provided value."""
-        cur_val = self.metrics[key]['value']
-        self.metrics[key]['value'] = max(cur_val, value)
+        cur_val = self.metrics[key]["value"]
+        self.metrics[key]["value"] = max(cur_val, value)
 
     def _ast_nodes(self, con):
         """Given a constraint from angr, return the number of nodes in its

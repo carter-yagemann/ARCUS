@@ -23,6 +23,7 @@ import taint
 
 log = logging.getLogger(__name__)
 
+
 def analyze_state(simgr, trace, state):
     # some objects we're going to reference frequently
     proj = state.project
@@ -31,11 +32,12 @@ def analyze_state(simgr, trace, state):
 
     # TODO - Implement analysis
 
+
 def check_for_vulns(simgr, proj):
-    if len(simgr.stashes['active']) < 1:
+    if len(simgr.stashes["active"]) < 1:
         return False
 
-    state = simgr.stashes['active'][0]
+    state = simgr.stashes["active"][0]
 
     # skip arbitrary read/write checks if state is in the external object
     if proj.loader.find_object_containing(state.addr) == proj.loader.extern_object:
@@ -56,9 +58,10 @@ def check_for_vulns(simgr, proj):
         read_range = read_max - read_min
         if read_range > read_write_limit:
             log.info("Arbitrary read at %#x" % state.addr)
-            simgr.stashes['ard'].append(state.copy())
+            simgr.stashes["ard"].append(state.copy())
 
     return True
 
-stash_name = 'ard'
-pretty_name = 'Arbitrary Read'
+
+stash_name = "ard"
+pretty_name = "Arbitrary Read"

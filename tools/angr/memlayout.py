@@ -21,13 +21,13 @@ import sys
 
 import griffin
 
-PROGRAM_VERSION = '1.0.0'
-PROGRAM_USAGE = 'Usage: %prog griffin_trace'
+PROGRAM_VERSION = "1.0.0"
+PROGRAM_USAGE = "Usage: %prog griffin_trace"
+
 
 def parse_args():
     """Parses sys.argv."""
-    parser = OptionParser(usage=PROGRAM_USAGE,
-                          version='memlayout ' + PROGRAM_VERSION)
+    parser = OptionParser(usage=PROGRAM_USAGE, version="memlayout " + PROGRAM_VERSION)
     options, args = parser.parse_args()
 
     if len(args) != 1:
@@ -35,6 +35,7 @@ def parse_args():
         sys.exit(1)
 
     return (options, args)
+
 
 def main():
     """The main method."""
@@ -47,7 +48,8 @@ def main():
 
     layout = griffin.init_mem_layout(trace_fp)
     for item in layout:
-        sys.stdout.write("%#x  %s\n" % (item['base_va'], item['filepath']))
+        sys.stdout.write("%#x  %s\n" % (item["base_va"], item["filepath"]))
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

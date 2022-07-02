@@ -26,16 +26,16 @@ import xed
 from elftools.elf.elffile import ELFFile
 from elftools.elf.sections import SymbolTableSection
 
-PROGRAM_VERSION = '1.0.1'
-PROGRAM_USAGE = 'Usage: %prog trace'
+PROGRAM_VERSION = "1.0.1"
+PROGRAM_USAGE = "Usage: %prog trace"
 
 # object => list of (sym_name, sym_val) tuples
 SYMBOLS = dict()
 
+
 def parse_args():
     """Parses sys.argv."""
-    parser = OptionParser(usage=PROGRAM_USAGE,
-                          version='snapsymbols ' + PROGRAM_VERSION)
+    parser = OptionParser(usage=PROGRAM_USAGE, version="snapsymbols " + PROGRAM_VERSION)
     options, args = parser.parse_args()
 
     if len(args) < 1:
@@ -44,29 +44,32 @@ def parse_args():
 
     return (options, args)
 
+
 def va2rva(addr, layout):
     """Given an address, return its RVA and object filepath as a tuple."""
     match = (None, None)
     for obj in layout:
-        obj_fp = obj['filepath']
-        obj_base = obj['base_va']
+        obj_fp = obj["filepath"]
+        obj_base = obj["base_va"]
         rva = addr - obj_base
         if rva >= 0 and (match[0] is None or rva < match[0]):
             match = (rva, obj_fp)
     return match
 
+
 def snapshot_addrs(api_dir):
     """Return the starting addresses of the snapshots contained in api_dir."""
     snap_addrs = set()
     for item in os.listdir(api_dir):
-        regs_file = os.path.join(api_dir, item, 'regs.json')
+        regs_file = os.path.join(api_dir, item, "regs.json")
         if os.path.isfile(regs_file):
             try:
-                with open(regs_file, 'r') as ifile:
-                    snap_addrs.add(json.load(ifile)['rip'])
+                with open(regs_file, "r") as ifile:
+                    snap_addrs.add(json.load(ifile)["rip"])
             except:
                 pass
     return snap_addrs
+
 
 def snap2layout(trace_dir, name):
     """Given a snapshot name, return a list where each item contains the keys:
@@ -75,32 +78,37 @@ def snap2layout(trace_dir, name):
     filepath -- Full path to that object on disk.
     """
     layout = list()
-    bin_dir = os.path.join(trace_dir, 'api', name, 'bin')
+    bin_dir = os.path.join(trace_dir, "api", name, "bin")
     for item in os.listdir(bin_dir):
-        info = {'base_va': int(item.split('-', 1)[0], 16),
-                'filepath': os.path.join(os.path.join(bin_dir, item))}
+        info = {
+            "base_va": int(item.split("-", 1)[0], 16),
+            "filepath": os.path.join(os.path.join(bin_dir, item)),
+        }
         layout.append(info)
     return layout
 
+
 def load_symbols(obj_fp):
     """Given the path to an object, add its symbols to the SYMBOLS dictionary."""
-    obj_key = os.path.basename(obj_fp).split('-', 1)[1]
+    obj_key = os.path.basename(obj_fp).split("-", 1)[1]
     SYMBOLS[obj_key] = list()
 
-    with open(obj_fp, 'rb') as ifile:
+    with open(obj_fp, "rb") as ifile:
         elf = ELFFile(ifile)
-        sym_tables = [s for s in elf.iter_sections()
-                      if isinstance(s, SymbolTableSection)]
+        sym_tables = [
+            s for s in elf.iter_sections() if isinstance(s, SymbolTableSection)
+        ]
 
         for section in sym_tables:
             if not isinstance(section, SymbolTableSection):
                 continue
 
-            if section['sh_entsize'] == 0:
+            if section["sh_entsize"] == 0:
                 continue  # empty
 
             for symbol in section.iter_symbols():
-                SYMBOLS[obj_key].append([symbol.name, symbol['st_value']])
+                SYMBOLS[obj_key].append([symbol.name, symbol["st_value"]])
+
 
 def get_symbol(addr, snap_name, trace_dir):
     """Given a VA and the name of a snapshot, try to find a matching symbol.
@@ -112,7 +120,7 @@ def get_symbol(addr, snap_name, trace_dir):
         return None
 
     try:
-        obj_key = os.path.basename(obj_fp).split('-', 1)[1]
+        obj_key = os.path.basename(obj_fp).split("-", 1)[1]
     except IndexError:
         sys.stderr.write("Invalid obj_fp: %s\n" % str(obj_fp))
         return None
@@ -130,12 +138,13 @@ def get_symbol(addr, snap_name, trace_dir):
 
     return None
 
+
 def main():
     """The main method."""
     options, args = parse_args()
 
     trace_dir = args[0]
-    api_dir = os.path.join(trace_dir, 'api')
+    api_dir = os.path.join(trace_dir, "api")
 
     if not os.path.isdir(api_dir):
         sys.stderr.write("Directory not found: %s\n" % api_dir)
@@ -143,7 +152,7 @@ def main():
 
     # trace filepath
     trace_fp = None
-    for can in ['trace.griffin', 'trace.griffin.gz']:
+    for can in ["trace.griffin", "trace.griffin.gz"]:
         can_fp = os.path.join(trace_dir, can)
         if os.path.isfile(can_fp):
             trace_fp = can_fp
@@ -173,5 +182,6 @@ def main():
     for addr in targets:
         sys.stdout.write("%x: %s\n" % (addr, str(targets[addr])))
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

@@ -23,18 +23,20 @@ import angr
 
 log = logging.getLogger(name=__name__)
 
-class AnalysisGC(object):
 
+class AnalysisGC(object):
     def __init__(self, simgr):
         self.simgr = simgr
 
         imp = platform.python_implementation()
-        if imp == 'PyPy':
+        if imp == "PyPy":
             self.reap_predecessors = self.reap_predecessors_pypy
-        elif imp == 'CPython':
+        elif imp == "CPython":
             self.reap_predecessors = self.reap_predecessors_cpython
         else:
-            log.warning("Unknown implementation '%s', fallback to CPython management" % imp)
+            log.warning(
+                "Unknown implementation '%s', fallback to CPython management" % imp
+            )
             self.reap_predecessors = self.reap_predecessors_cpython
 
     def enable(self):
@@ -42,7 +44,7 @@ class AnalysisGC(object):
         self.hwm = None
         self.gc_enter_state = gc.isenabled()
 
-        assert hasattr(self.tech, 'predecessors')
+        assert hasattr(self.tech, "predecessors")
 
         return self
 
