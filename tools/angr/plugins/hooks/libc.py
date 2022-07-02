@@ -16,8 +16,11 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import logging
+import os
+
 import angr
 from angr.procedures.stubs.format_parser import FormatParser
+from cle.backends.externs.simdata.io_file import io_file_data_for_arch
 
 log = logging.getLogger(name=__name__)
 
@@ -56,7 +59,7 @@ class libc_atol(angr.SimProcedure):
 class libc_strrchr(angr.SimProcedure):
 
     def run(self, s_addr, c_int, s_strlen=None):
-        """This SimProcedure is a lot looser than Angr's strchr, but that's okay
+        """This SimProcedure is a lot looser than angr's strchr, but that's okay
         because we have a concrete trace."""
         Or = self.state.solver.Or
         And = self.state.solver.And
@@ -72,6 +75,20 @@ class libc_strrchr(angr.SimProcedure):
             max_search = self.state.solver.eval(s_strlen.ret_expr) + 1
             self.state.add_constraints(Or(And(ret >= s_addr, ret < s_addr + max_search), ret == 0))
 
+        return ret
+
+class libc_gai_strerror(angr.SimProcedure):
+
+    def run(self, errcode):
+        err_buf = self.inline_call(angr.SIM_PROCEDURES['libc']['malloc'], 256).ret_expr
+        self.state.memory.store(err_buf + 255, b"\x00")
+
+        return err_buf
+
+class libc_getaddrinfo(angr.SimProcedure):
+
+    def run(self, node, service, hints, res):
+        ret = self.state.solver.BVS('getaddrinfo_ret', self.arch.bits)
         return ret
 
 class libc_getenv(angr.SimProcedure):
@@ -102,7 +119,6 @@ class libc_getenv(angr.SimProcedure):
                 envp_strlen = self.inline_call(angr.SIM_PROCEDURES['libc']['strlen'], envp)
                 envp_str = self.state.memory.load(envp, envp_strlen.ret_expr)
                 if name_sym or self.state.solver.symbolic(envp_str):
-                    # TODO - this line is buggy because it can cause an arg size mismatch
                     ret_expr = Or(ret_expr, And(ret_val > envp, ret_val < (envp + envp_strlen.ret_expr)))
                 else:
                     # we can make the variable concrete
@@ -220,25 +236,43 @@ class libc_snprintf(FormatParser):
         # size_t has size arch.bits
         return self.state.solver.BVV(out_str.size() // 8, self.state.arch.bits)
 
+class libc__fprintf_chk(FormatParser):
+
+    def run(self, stream, flag, fmt):
+        # look up stream
+        fd_offset = io_file_data_for_arch(self.state.arch)['fd']
+        fileno = self.state.mem[stream + fd_offset:].int.resolved
+        simfd = self.state.posix.get_fd(fileno)
+        if simfd is None:
+            return -1
+
+        # format str is arg index 2
+        fmt_str = self._parse(fmt)
+        out_str = fmt_str.replace(self.va_arg)
+
+        # write to stream
+        simfd.write_data(out_str, out_str.size() // 8)
+
+        return out_str.size() // 8
+
 class libc__snprintf_chk(FormatParser):
     """Custom __snprintf_chk simproc because angr's doesn't honor the size argument"""
 
-    def run(self, dst_ptr, maxlen, size):
-
+    def run(self, s, maxlen, flag, slen, fmt):
         # The format str is at index 4
         fmt_str = self._parse(4)
         out_str = fmt_str.replace(5, self.arg)
 
         # enforce size limit
-        size = self.state.solver.max(size)
-        if (out_str.size() // 8) > size - 1:
-            out_str = out_str.get_bytes(0, max(size - 1, 1))
+        size = self.state.solver.max(slen)
+        if (out_str.size() // 8) > slen - 1:
+            out_str = out_str.get_bytes(0, max(slen - 1, 1))
 
         # store resulting string
-        self.state.memory.store(dst_ptr, out_str)
+        self.state.memory.store(s, out_str)
 
         # place the terminating null byte
-        self.state.memory.store(dst_ptr + (out_str.size() // 8), self.state.solver.BVV(0, 8))
+        self.state.memory.store(s + (out_str.size() // 8), self.state.solver.BVV(0, 8))
 
         # size_t has size arch.bits
         return self.state.solver.BVV(out_str.size() // 8, self.state.arch.bits)
@@ -257,18 +291,25 @@ class libc_strncat(angr.SimProcedure):
         return dst
 
 libc_hooks = {
-    # Additional functions which Angr doesn't provide hooks for
-    '__cxa_atexit':   libc___cxa_atexit,
+    # Additional functions that angr doesn't provide hooks for
     'atol':           libc_atol,
-    'strrchr':        libc_strrchr,
+    '__cxa_atexit':   libc___cxa_atexit,
+    'exit':           angr.SIM_PROCEDURES['libc']['exit'],
+    '__fprintf_chk':  libc__fprintf_chk,
+    'gai_strerror':   libc_gai_strerror,
+    'getaddrinfo':    libc_getaddrinfo,
     'getenv':         libc_getenv,
-    'getcwd':         angr.procedures.linux_kernel.cwd.getcwd,  # kernel and libc have the same API
+    # kernel and libc have the same API
+    'getcwd':         angr.procedures.linux_kernel.cwd.getcwd,
     'getlogin':       libc_getlogin,
     'getpwnam':       libc_getpwnam,
     'realpath':       libc_realpath,
+    # secure_getenv and getenv work the same from a symbolic perspective
+    'secure_getenv':  libc_getenv,
     'snprintf':       libc_snprintf,
     '__snprintf_chk': libc__snprintf_chk,
     'strncat':        libc_strncat,
+    'strrchr':        libc_strrchr,
 }
 
 hook_condition = ('libc\.so.*', libc_hooks)

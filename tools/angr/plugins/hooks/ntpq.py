@@ -48,19 +48,23 @@ class ntpq_signal_no_reset(angr.SimProcedure):
 class ntpq_validate_struct(angr.SimProcedure):
 
     def run(self, opts, pname):
-        # TODO - set opts->zProgName and opts->pzProgPath
-        # see sntp/libopts/init.c
-
         ret = self.state.solver.BVS('validate_struct_ret', self.arch.bits)
         ret_c = self.state.solver.Or(ret == 0, ret == -1)
         self.state.add_constraints(ret_c)
         return ret
+
+class ntpq_env_presets(angr.SimProcedure):
+
+    def run(self, pOpts, type):
+        # do nothing
+        return
 
 ntpq_hooks = {
     'intern_file_load': ntpq_intern_file_load,
     'optionMakePath': ntpq_optionMakePath,
     'signal_no_reset': ntpq_signal_no_reset,
     'validate_struct': ntpq_validate_struct,
+    'env_presets': ntpq_env_presets,
 }
 
 hook_condition = ('ntpq', ntpq_hooks)
