@@ -20,52 +20,53 @@ import angr
 
 log = logging.getLogger(name=__name__)
 
-class ntpq_intern_file_load(angr.SimProcedure):
 
+class ntpq_intern_file_load(angr.SimProcedure):
     def run(self, opts):
         # We never trace ntpq with config files, so we don't need this
         return
 
+
 class ntpq_optionMakePath(angr.SimProcedure):
-
     def run(self, p_buf, b_sz, fname, prg_path):
-        self.return_type = angr.sim_type.SimTypeInt(32, True)
-
         # just symbolize p_buf and we'll constrain it later
         size = self.state.solver.eval(b_sz)
-        data = self.state.solver.BVS('optionMakePath', 8 * size)
+        data = self.state.solver.BVS("optionMakePath", 8 * size)
         self.state.memory.store(p_buf, data)
 
-        ret = self.state.solver.BVS('optionMakePath_ret', 32)
+        ret = self.state.solver.BVS("optionMakePath_ret", self.arch.bits)
         ret_c = self.state.solver.Or(ret == 0, ret == 1)
         self.state.add_constraints(ret_c)
         return ret
 
-class ntpq_signal_no_reset(angr.SimProcedure):
 
+class ntpq_signal_no_reset(angr.SimProcedure):
     def run(self, opts):
         # Don't need signals
         return
 
+
 class ntpq_validate_struct(angr.SimProcedure):
-
     def run(self, opts, pname):
-        self.return_type = angr.sim_type.SimTypeInt(32, True)
-
-        # TODO - set opts->zProgName and opts->pzProgPath
-        # see sntp/libopts/init.c
-
-        ret = self.state.solver.BVS('validate_struct_ret', 32)
+        ret = self.state.solver.BVS("validate_struct_ret", self.arch.bits)
         ret_c = self.state.solver.Or(ret == 0, ret == -1)
         self.state.add_constraints(ret_c)
         return ret
 
+
+class ntpq_env_presets(angr.SimProcedure):
+    def run(self, pOpts, type):
+        # do nothing
+        return
+
+
 ntpq_hooks = {
-    'intern_file_load': ntpq_intern_file_load,
-    'optionMakePath': ntpq_optionMakePath,
-    'signal_no_reset': ntpq_signal_no_reset,
-    'validate_struct': ntpq_validate_struct,
+    "intern_file_load": ntpq_intern_file_load,
+    "optionMakePath": ntpq_optionMakePath,
+    "signal_no_reset": ntpq_signal_no_reset,
+    "validate_struct": ntpq_validate_struct,
+    "env_presets": ntpq_env_presets,
 }
 
-hook_condition = ('ntpq', ntpq_hooks)
+hook_condition = ("ntpq", ntpq_hooks)
 is_main_object = True

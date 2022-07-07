@@ -33,10 +33,10 @@ log = logging.getLogger(__name__)
 
 dangle_threshold = 300
 
-class VulnMetadata:
 
+class VulnMetadata:
     def __init__(self, start_idx, end_idx):
-        self.start_idx = start_idx,
+        self.start_idx = (start_idx,)
         self.end_idx = end_idx
 
     def _get_graphs(self, project, tech):
@@ -58,10 +58,11 @@ class VulnMetadata:
         cdg = project.analyses.CDG(cfg)
         return cfg, cdg
 
-class DFMetadata(VulnMetadata):
 
-    def __init__(self, start_idx, end_idx, first_free_addr, second_free_addr,
-                 buffer_addr):
+class DFMetadata(VulnMetadata):
+    def __init__(
+        self, start_idx, end_idx, first_free_addr, second_free_addr, buffer_addr
+    ):
         """
         :param start_idx: Index in trace of first free
         :param end_idx: Index in trace of second free
@@ -84,17 +85,30 @@ class DFMetadata(VulnMetadata):
         buffer_addr_val = state.solver.eval(self.buffer_addr)
 
         # fill in report details
-        report.add_detail('frees', [{'address': self.first_free_addr,
-                                     'description': first_free_addr_desc},
-                                    {'address': self.second_free_addr,
-                                     'description': second_free_addr_desc}])
-        report.add_detail('buffer', buffer_addr_val)
+        report.add_detail(
+            "frees",
+            [
+                {"address": self.first_free_addr, "description": first_free_addr_desc},
+                {
+                    "address": self.second_free_addr,
+                    "description": second_free_addr_desc,
+                },
+            ],
+        )
+        report.add_detail("buffer", buffer_addr_val)
 
         # print description
-        log.info("For double freeing of buffer %#x, first free was called at %s (before trace"
-                 " index: %d), second free was called by %s (before trace index: %d)" % (
-                 buffer_addr_val, first_free_addr_desc, self.start_idx, second_free_addr_desc,
-                 self.end_idx))
+        log.info(
+            "For double freeing of buffer %#x, first free was called at %s (before trace"
+            " index: %d), second free was called by %s (before trace index: %d)"
+            % (
+                buffer_addr_val,
+                first_free_addr_desc,
+                self.start_idx,
+                second_free_addr_desc,
+                self.end_idx,
+            )
+        )
 
         # generate unique hash for bug
         first_obj = loader.find_object_containing(self.first_free_addr)
@@ -109,12 +123,21 @@ class DFMetadata(VulnMetadata):
         else:
             second_rva = self.second_free_addr
 
-        report.set_hash('%x' % (second_rva ^ (first_rva << 1)))
+        report.set_hash("%x" % (second_rva ^ (first_rva << 1)))
+
 
 class UAFMetadata(VulnMetadata):
-
-    def __init__(self, start_idx, end_idx, free_addr, buffer_addr, buffer_size,
-                 use_offset, use_block, use_temp):
+    def __init__(
+        self,
+        start_idx,
+        end_idx,
+        free_addr,
+        buffer_addr,
+        buffer_size,
+        use_offset,
+        use_block,
+        use_temp,
+    ):
         """
         :param start_idx: Index in trace of free
         :param end_idx: Index in trace of use
@@ -146,30 +169,52 @@ class UAFMetadata(VulnMetadata):
         buffer_size_val = state.solver.eval(self.buffer_size)
 
         # fill in report details
-        report.add_detail('buffer', {'start': buffer_addr_val,
-                                     'size': buffer_size_val,
-                                     'access_index': use_offset_val})
-        report.add_detail('free',   {'address': self.free_addr,
-                                     'description': free_loc_desc})
-        report.add_detail('use',    {'address': self.use_block,
-                                     'description': use_loc_desc})
+        report.add_detail(
+            "buffer",
+            {
+                "start": buffer_addr_val,
+                "size": buffer_size_val,
+                "access_index": use_offset_val,
+            },
+        )
+        report.add_detail(
+            "free", {"address": self.free_addr, "description": free_loc_desc}
+        )
+        report.add_detail(
+            "use", {"address": self.use_block, "description": use_loc_desc}
+        )
 
         # print description
-        log.info("Buffer %#x was freed at %s (before trace index: %d) and then used by %s "
-                 "(trace index: %d), to access offset %d" % (buffer_addr_val,
-                 free_loc_desc, self.start_idx, use_loc_desc, self.end_idx, use_offset_val))
+        log.info(
+            "Buffer %#x was freed at %s (before trace index: %d) and then used by %s "
+            "(trace index: %d), to access offset %d"
+            % (
+                buffer_addr_val,
+                free_loc_desc,
+                self.start_idx,
+                use_loc_desc,
+                self.end_idx,
+                use_offset_val,
+            )
+        )
 
         # see if there was a guardian that could have prevented this
         cfg, cdg = self._get_graphs(state.project, tech)
         blame_node = cfg.model.get_any_node(self.use_block)
 
         guardians = cdg.get_guardians(blame_node)
-        report.add_detail('guards', [{'address': g.addr, 'description': g.name} for g in guardians])
+        report.add_detail(
+            "guards", [{"address": g.addr, "description": g.name} for g in guardians]
+        )
 
         if len(guardians) == 0:
-            log.info("No guardians currently exist in the program that could prevent this use")
+            log.info(
+                "No guardians currently exist in the program that could prevent this use"
+            )
         else:
-            log.info("Blaming guardian: %s at %#x" % (guardians[0].name, guardians[0].addr))
+            log.info(
+                "Blaming guardian: %s at %#x" % (guardians[0].name, guardians[0].addr)
+            )
 
         # generate unique hash for bug
         free_obj = loader.find_object_containing(self.free_addr)
@@ -184,12 +229,21 @@ class UAFMetadata(VulnMetadata):
         else:
             use_rva = self.use_block
 
-        report.set_hash('%x' % (use_rva ^ (free_rva << 1)))
+        report.set_hash("%x" % (use_rva ^ (free_rva << 1)))
+
 
 class DangleMetadata(VulnMetadata):
-
-    def __init__(self, start_idx, end_idx, start_addr, end_addr, caller_addr, buffer_addr,
-                 ptr_loc, ptr_val):
+    def __init__(
+        self,
+        start_idx,
+        end_idx,
+        start_addr,
+        end_addr,
+        caller_addr,
+        buffer_addr,
+        ptr_loc,
+        ptr_val,
+    ):
         """
         :param start_idx: Index in trace where ptr was created
         :param end_idx: Index in trace where ptr became dangling
@@ -222,25 +276,43 @@ class DangleMetadata(VulnMetadata):
         ptr_val_val = state.solver.eval(self.ptr_val)
 
         # fill in report details
-        report.add_detail('buffer', {'start': buffer_addr_val})
-        report.add_detail('dangle', {'store_address': ptr_loc_val,
-                                     'ptr_value': ptr_val_val})
-        report.add_detail('create', {'address': self.start_addr,
-                                     'description': start_desc})
-        report.add_detail('free',   {'address': self.end_addr,
-                                     'description': end_desc,
-                                     'caller': {'address': self.caller_addr,
-                                                'description': caller_desc}
-                                    })
+        report.add_detail("buffer", {"start": buffer_addr_val})
+        report.add_detail(
+            "dangle", {"store_address": ptr_loc_val, "ptr_value": ptr_val_val}
+        )
+        report.add_detail(
+            "create", {"address": self.start_addr, "description": start_desc}
+        )
+        report.add_detail(
+            "free",
+            {
+                "address": self.end_addr,
+                "description": end_desc,
+                "caller": {"address": self.caller_addr, "description": caller_desc},
+            },
+        )
 
         # print description
-        log.info("Pointer at %#x was set at %s (trace index: %d), the buffer it "
-                 "pointed to was freed at %s (trace index: %d) by %s (trace index: %d), "
-                 "and left dangling" % (ptr_loc_val, start_desc, self.start_idx,
-                 end_desc, self.end_idx, caller_desc, self.caller_addr))
+        log.info(
+            "Pointer at %#x was set at %s (trace index: %d), the buffer it "
+            "pointed to was freed at %s (trace index: %d) by %s (trace index: %d), "
+            "and left dangling"
+            % (
+                ptr_loc_val,
+                start_desc,
+                self.start_idx,
+                end_desc,
+                self.end_idx,
+                caller_desc,
+                self.caller_addr,
+            )
+        )
 
         # in this case we don't care about guardians, the caller is to blame
-        log.info("Blaming %s for calling free and then leaving pointers dangling" % caller_desc)
+        log.info(
+            "Blaming %s for calling free and then leaving pointers dangling"
+            % caller_desc
+        )
 
         # generate unique hash for bug
         create_obj = loader.find_object_containing(self.start_addr)
@@ -255,7 +327,8 @@ class DangleMetadata(VulnMetadata):
         else:
             caller_rva = self.caller_addr
 
-        report.set_hash('%x' % (caller_rva ^ (create_rva << 1)))
+        report.set_hash("%x" % (caller_rva ^ (create_rva << 1)))
+
 
 def is_stack_va(addr, state):
     """Returns True if VA is on stack (assumes POSIX environment)."""
@@ -263,10 +336,11 @@ def is_stack_va(addr, state):
         return False
     return True
 
+
 def is_novel(case, state):
     is_equal = lambda a, b: state.solver.is_true(a == b)
 
-    for prev in state.deep['vuln_metadata']:
+    for prev in state.deep["vuln_metadata"]:
         # generic comparison
         if case.start_idx == prev.start_idx and case.end_idx == prev.end_idx:
             return False
@@ -282,19 +356,23 @@ def is_novel(case, state):
                 return False
     return True
 
-def analyze_state(simgr: SimulationManager, trace: List[int], state: SimState,
-                  report: BugReport) -> None:
+
+def analyze_state(
+    simgr: SimulationManager, trace: List[int], state: SimState, report: BugReport
+) -> None:
     tech = simgr._techniques[0]
     # state has a metadata object for every prior detection to facilitate deduplication,
     # last item was first detected in this state and is the only one we need to root cause
     metadata = state.deep["vuln_metadata"][-1]
     metadata.get_root_cause(tech, state, report)
 
+
 def remove_from_alloc_addrs(ptr, state: SimState):
     try:
         del state.deep["alloc_addrs"][ptr]
     except KeyError:
         log.warning("Tried to remove %s from alloc_addrs but received KeyError" % ptr)
+
 
 def handle_alloc(sym_name: str, cc: SimCC, state: SimState) -> None:
     ret_addr = cc.return_addr.get_value(state)
@@ -303,26 +381,37 @@ def handle_alloc(sym_name: str, cc: SimCC, state: SimState) -> None:
     except angr.errors.SimValueError:
         return
 
+    sim_proc = state.project.hooked_by(state.addr)
+    if sim_proc is None:
+        log.warning(
+            "Cannot find simulation procedure for %s"
+            % state.project.loader.describe_addr(state.addr)
+        )
+        return
+
+    args = [state.solver.eval(bv) for bv in cc.get_args(state, sim_proc.prototype)]
+
     if sym_name == "malloc":
-        state.deep["temp_size"] = cc.arg(state, 0)
+        state.deep["temp_size"] = args[0]
     elif sym_name == "calloc":
-        state.deep["temp_size"] = cc.arg(state, 0) * cc.arg(state, 1)
+        state.deep["temp_size"] = args[0] * args[1]
     elif sym_name == "realloc":
-        state.deep["temp_size"] = cc.arg(state, 1)
-        old_ptr = cc.arg(state, 0)
+        state.deep["temp_size"] = args[1]
+        old_ptr = args[0]
         try:
             if state.solver.eval_one(old_ptr) != 0:
                 remove_from_alloc_addrs(old_ptr, state)
         except angr.errors.SimValueError:
             pass
     elif sym_name == "reallocarray":
-        state.deep["temp_size"] = cc.arg(state, 1) * cc.arg(state, 2)
-        old_ptr = cc.arg(state, 0)
+        state.deep["temp_size"] = args[1] * args[2]
+        old_ptr = args[0]
         try:
             if state.solver.eval_one(old_ptr) != 0:
                 remove_from_alloc_addrs(old_ptr, state)
         except angr.errors.SimValueError:
             pass
+
 
 def has_bv_been_freed(bv, state):
     bv_value = state.solver.eval(bv)
@@ -334,26 +423,41 @@ def has_bv_been_freed(bv, state):
 
     return (False, None)
 
+
 def allocate(cc: SimCC, state: SimState):
-    new_ptr = cc.get_return_val(state)
+    new_ptr = state.solver.eval(cc.RETURN_VAL.get_value(state))
     log.debug("Adding %s to alloc_addrs" % new_ptr)
     state.deep["alloc_addrs"][new_ptr] = state.deep["temp_size"]
     state.deep["temp_size"] = None
     if new_ptr in state.deep["freed_addrs"]:
         del state.deep["freed_addrs"][new_ptr]
 
+
 def handle_free(cc: SimCC, state: SimState) -> bool:
-    ptr = cc.arg(state, 0)
+    sim_proc = state.project.hooked_by(state.addr)
+    if sim_proc is None:
+        log.warning(
+            "Cannot find simulation procedure for %s"
+            % state.project.loader.describe_addr(state.addr)
+        )
+        return False
+
+    args = cc.get_args(state, sim_proc.prototype)
+    ptr = state.solver.eval(args[0])
     log.debug("Handling free at %#x with ptr %s" % (state.addr, ptr))
 
     if ptr in state.deep["alloc_addrs"]:
         # all pointers to this buffer are now dangling
         for addr in state.deep["points_to"]:
-            if state.solver.is_true(state.deep["points_to"][addr][2]['buffer_base'] == ptr):
+            if state.solver.is_true(
+                state.deep["points_to"][addr][2]["buffer_base"] == ptr
+            ):
                 log.debug("Pointer at address %s is now dangling" % str(addr))
                 state.deep["points_to"][addr][1] = state.globals["trace_idx"]
-                state.deep["points_to"][addr][2]['free_addr'] = state.addr
-                state.deep["points_to"][addr][2]['caller_addr'] = state.history.bbl_addrs[-2]
+                state.deep["points_to"][addr][2]["free_addr"] = state.addr
+                state.deep["points_to"][addr][2][
+                    "caller_addr"
+                ] = state.history.bbl_addrs[-2]
 
         state.deep["freed_addrs"][ptr] = (
             state.deep["alloc_addrs"][ptr],
@@ -386,7 +490,9 @@ def handle_free(cc: SimCC, state: SimState) -> bool:
     # double free was already reported in a prior state
     return False
 
+
 def update_points_to(state, addr):
+    addr = state.solver.eval(addr)
     bits = state.arch.bits
     endness = state.arch.memory_endness
     is_equal = lambda a, b: state.solver.is_true(a == b)
@@ -397,7 +503,9 @@ def update_points_to(state, addr):
         return
 
     # read from the memory address as if it were storing a pointer
-    new_ptr = state.memory.load(addr, size=bits // 8, endness=endness)
+    new_ptr = state.solver.eval(
+        state.memory.load(addr, size=bits // 8, endness=endness)
+    )
 
     if addr in state.deep["points_to"]:
         old_ptr = state.deep["points_to"][addr][0]
@@ -416,12 +524,17 @@ def update_points_to(state, addr):
             # points to allocated data, record it
             log.debug("Address %s holds pointer %s" % (str(addr), str(new_ptr)))
             # -1 denotes pointer is not dangling
-            state.deep["points_to"][addr] = [new_ptr, -1, {
-                'create_idx':  state.globals['trace_idx'],
-                'create_addr': state.addr,
-                'buffer_base': base,
-            }]
+            state.deep["points_to"][addr] = [
+                new_ptr,
+                -1,
+                {
+                    "create_idx": state.globals["trace_idx"],
+                    "create_addr": state.addr,
+                    "buffer_base": base,
+                },
+            ]
             return
+
 
 def update_dangling(state):
     bits = state.arch.bits
@@ -447,16 +560,27 @@ def update_dangling(state):
                 if is_equal(cur_ptr, buf_ptr):
                     # pointer has dangled too long and hasn't changed, create a DangleMetadata,
                     # but we don't know if it's novel yet (may already be in vuln_metadata)
-                    detection = DangleMetadata(metadata['create_idx'], dangle_idx,
-                            metadata['create_addr'], metadata['free_addr'], metadata['caller_addr'],
-                            metadata['buffer_base'], addr, buf_ptr)
+                    detection = DangleMetadata(
+                        metadata["create_idx"],
+                        dangle_idx,
+                        metadata["create_addr"],
+                        metadata["free_addr"],
+                        metadata["caller_addr"],
+                        metadata["buffer_base"],
+                        addr,
+                        buf_ptr,
+                    )
 
                     if is_novel(detection, state):
-                        log.info("Dangling pointer exceeded threshold, now a use-after-free risk")
-                        state.deep['vuln_metadata'].append(detection)
+                        log.info(
+                            "Dangling pointer exceeded threshold, now a use-after-free risk"
+                        )
+                        state.deep["vuln_metadata"].append(detection)
                         detections = True
                 else:
-                    log.debug("Dangling pointer changed at some point, no longer dangling")
+                    log.debug(
+                        "Dangling pointer changed at some point, no longer dangling"
+                    )
 
                 # can't delete while iterating
                 to_del.append(addr)
@@ -465,6 +589,7 @@ def update_dangling(state):
         del state.deep["points_to"][addr]
 
     return detections
+
 
 def initialize_globals(state: SimState):
     # stores list of freed addresses + sizes
@@ -492,6 +617,7 @@ def initialize_globals(state: SimState):
     # holds issues discovered in the state
     if "vuln_metadata" not in state.deep:
         state.deep["vuln_metadata"] = []
+
 
 def check_for_vulns(simgr: SimulationManager, proj: Project) -> bool:
     if len(simgr.active) < 1:
@@ -573,8 +699,11 @@ def check_for_vulns(simgr: SimulationManager, proj: Project) -> bool:
         sim_proc = proj.hooked_by(state.addr)
 
         if not sim_proc is None:
+
+            args = cc.get_args(state, sim_proc.prototype)
+
             for arg_idx in range(sim_proc.num_args):
-                arg = cc.arg(state, arg_idx)
+                arg = args[arg_idx]
                 uaf, ptr = has_bv_been_freed(arg, state)
                 if uaf:
                     metadata = UAFMetadata(
@@ -589,8 +718,10 @@ def check_for_vulns(simgr: SimulationManager, proj: Project) -> bool:
                     )
 
                     if is_novel(metadata, state):
-                        log.info("SimProc %s was passed a pointer to freed memory (possible "
-                                 "use-after-free)" % sym_name)
+                        log.info(
+                            "SimProc %s was passed a pointer to freed memory (possible "
+                            "use-after-free)" % sym_name
+                        )
 
                         state.deep["vuln_metadata"].append(metadata)
                         simgr.stashes[stash_name].append(state.copy())

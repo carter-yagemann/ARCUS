@@ -27,8 +27,8 @@ import networkx
 
 log = logging.getLogger(__name__)
 
-class CFGNode(object):
 
+class CFGNode(object):
     def __init__(self, state):
         self.addr = state.addr
         self.loader = state.project.loader
@@ -49,21 +49,26 @@ class CFGNode(object):
                 if not sym.name or sym.is_import:
                     idx -= 1
                     continue
-                options.append((sym.relative_addr, '%s+' % sym.name))
+                options.append((sym.relative_addr, "%s+" % sym.name))
                 break
 
             if isinstance(obj, ELF):
                 try:
-                    plt_addr, plt_name = max((a, n) for n, a in obj._plt.items() if a <= rva)
+                    plt_addr, plt_name = max(
+                        (a, n) for n, a in obj._plt.items() if a <= rva
+                    )
                 except ValueError:
                     pass
                 else:
-                    options.append((plt_addr, 'PLT.%s+' % plt_name))
+                    options.append((plt_addr, "PLT.%s+" % plt_name))
 
-            options.append((0, 'offset '))
+            options.append((0, "offset "))
             best_offset, best_prefix = max(options, key=lambda v: v[0])
-            self.desc = "%s%#x (%#x)" % (best_prefix, rva - best_offset,
-                    AT.from_va(addr, obj).to_lva())
+            self.desc = "%s%#x (%#x)" % (
+                best_prefix,
+                rva - best_offset,
+                AT.from_va(addr, obj).to_lva(),
+            )
 
     def __repr__(self):
         return "<CFGNode %s>" % self.desc
@@ -79,6 +84,7 @@ class CFGNode(object):
 
     def __ne__(self, other):
         return not self == other
+
 
 class UAFExplorer(ExplorationTechnique):
     """Searches for use-after-free and double-free (which is treated as a
@@ -112,16 +118,18 @@ class UAFExplorer(ExplorationTechnique):
         # this explorer needs the points-to info collected by the allocation issues
         # detector; if it's not available, bail
         last_state = self.predecessors[-1]
-        if not (hasattr(last_state, 'deep') and "points_to" in last_state.deep):
-            log.error("Cannot find points-to metadata in states, is the allocation"
-                      "issues plugin (allocation_issues.py) enabled?")
+        if not (hasattr(last_state, "deep") and "points_to" in last_state.deep):
+            log.error(
+                "Cannot find points-to metadata in states, is the allocation"
+                "issues plugin (allocation_issues.py) enabled?"
+            )
             return
 
         log.info("Setting up explorer...")
 
-        if not 'missed' in simgr.stashes:
-            simgr.populate('missed', [])
-        simgr.drop(stash='active')
+        if not "missed" in simgr.stashes:
+            simgr.populate("missed", [])
+        simgr.drop(stash="active")
 
         # We need to identify all the states associated with "functions" that manipulate
         # heap data. We use the term "function" loosely here because they are a source
@@ -134,10 +142,10 @@ class UAFExplorer(ExplorationTechnique):
             # we'll need the successor state for determining memory accesses
             succ = self.predecessors[idx + 1]
 
-            if pred.history.jumpkind.startswith('Ijk_Call'):
+            if pred.history.jumpkind.startswith("Ijk_Call"):
                 # state just called, push a new touching_heap onto our "stack"
                 touching_heap.append(False)
-            elif pred.history.jumpkind.startswith('Ijk_Ret') and len(touching_heap) > 1:
+            elif pred.history.jumpkind.startswith("Ijk_Ret") and len(touching_heap) > 1:
                 # state returned, pop so we remember whether the prior function was
                 # manipulating heap
                 touching_heap.pop()
@@ -158,15 +166,15 @@ class UAFExplorer(ExplorationTechnique):
 
         for idx, state in enumerate(self.predecessors):
             if touches_heap[idx]:
-                self.queue.append((state, self.predecessors[:idx - 1].copy()))
+                self.queue.append((state, self.predecessors[: idx - 1].copy()))
         self._rewind(simgr, setup=True)
 
-    def step(self, simgr, stash='active', **kwargs):
-        simgr.drop(stash='missed')
+    def step(self, simgr, stash="active", **kwargs):
+        simgr.drop(stash="missed")
 
         # this can happen if a detector plugin removes our active state because
         # further execution is no longer possible (e.g., symbolic IP)
-        if len(simgr.stashes['active']) < 1:
+        if len(simgr.stashes["active"]) < 1:
             log.debug("No more active states, rewinding")
             self._rewind(simgr)
 
@@ -175,7 +183,7 @@ class UAFExplorer(ExplorationTechnique):
     def step_state(self, simgr, state, **kwargs):
         # maintain the predecessors list
         self.predecessors.append(state)
-        succs = {'active': [], 'missed': []}
+        succs = {"active": [], "missed": []}
 
         # describe where the state currently is in the program
         loader = self.project.loader
@@ -185,15 +193,19 @@ class UAFExplorer(ExplorationTechnique):
             loc_desc = "%#x" % state.addr
 
         # log location and stats
-        log.info("UAF Explorer: (%d) %d/%d %s", len(self.queue),
-                state.globals['uaf_explore_steps'], self.step_limit,
-                loc_desc)
+        log.info(
+            "UAF Explorer: (%d) %d/%d %s",
+            len(self.queue),
+            state.globals["uaf_explore_steps"],
+            self.step_limit,
+            loc_desc,
+        )
 
         # we've reached the step limit, rewind
-        if state.globals['uaf_explore_steps'] >= self.step_limit:
+        if state.globals["uaf_explore_steps"] >= self.step_limit:
             self._rewind(simgr)
-            if len(simgr.stashes['active']) > 0:
-                succs['active'] = [simgr.stashes['active'][0]]
+            if len(simgr.stashes["active"]) > 0:
+                succs["active"] = [simgr.stashes["active"][0]]
             return succs
 
         # get satisfiable successors to this state (otherwise we're stuck)
@@ -203,51 +215,51 @@ class UAFExplorer(ExplorationTechnique):
             # state cannot be stepped, we're done with this run
             log.debug("Cannot step (%s), rewinding" % str(ex))
             self._rewind(simgr)
-            if len(simgr.stashes['active']) > 0:
-                succs['active'] = [simgr.stashes['active'][0]]
+            if len(simgr.stashes["active"]) > 0:
+                succs["active"] = [simgr.stashes["active"][0]]
             return succs
 
         # update stats in candidates
         # filter candidates based on context sensitivity and other heuristics
         for can in candidates:
-            can.globals['uaf_explore_steps'] += 1
+            can.globals["uaf_explore_steps"] += 1
 
-            if can.globals['uaf_explore_steps'] == 1 and can.addr in self.trace:
+            if can.globals["uaf_explore_steps"] == 1 and can.addr in self.trace:
                 # we want paths we haven't already explored, not interested in
                 # states where the first step stays on the traced path
-                succs['missed'].append(can)
+                succs["missed"].append(can)
             elif self._already_explored(can, self.predecessors):
-                succs['missed'].append(can)
+                succs["missed"].append(can)
             else:
-                succs['active'].append(can)
+                succs["active"].append(can)
 
         # the active stash can only have 1 state at a time, if we have more,
         # we'll queue the rest up for later
-        if len(succs['active']) > 1:
-            for succ in succs['active'][1:]:
+        if len(succs["active"]) > 1:
+            for succ in succs["active"][1:]:
                 self.queue.append((succ, self.predecessors.copy()))
-            succs['active'] = [succs['active'][0]]
+            succs["active"] = [succs["active"][0]]
 
         return succs
 
     def complete(self, simgr):
         """Returns True when there's nothing left to explore"""
-        return len(simgr.stashes['active']) < 1 and len(self.queue) < 1
+        return len(simgr.stashes["active"]) < 1 and len(self.queue) < 1
 
     def _rewind(self, simgr, setup=False):
         """Queues up the next candidate by rewinding and then setting it as active"""
         if not setup:
             self._update_graph(self.predecessors)
 
-        simgr.drop(stash='active')
+        simgr.drop(stash="active")
         try:
             state, preds = self.queue.pop()
         except IndexError:
             log.info("No pending states left")
             return
 
-        state.globals['uaf_explore_steps'] = 0
-        simgr.stashes['active'] = [state.copy()]
+        state.globals["uaf_explore_steps"] = 0
+        simgr.stashes["active"] = [state.copy()]
         self.predecessors = preds
 
     def _touches_heap(self, state, successor):
@@ -292,7 +304,7 @@ class UAFExplorer(ExplorationTechnique):
         True if path is not "novel", otherwise False.
         """
         path = list()
-        for pred in preds[-self.ctx_sensitivity:]:
+        for pred in preds[-self.ctx_sensitivity :]:
             path.append(CFGNode(pred))
         path.append(CFGNode(state))
 
@@ -301,5 +313,6 @@ class UAFExplorer(ExplorationTechnique):
                 return False
 
         return True
+
 
 explorer = UAFExplorer

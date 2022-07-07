@@ -23,8 +23,10 @@ import pyvex
 
 log = logging.getLogger(name=__name__)
 
+
 class TaintException(Exception):
     pass
+
 
 def get_tmp_assignment(irsb, tmp):
     """Given a tmp and IRSB, return the statement that assigns the tmp its value."""
@@ -32,6 +34,7 @@ def get_tmp_assignment(irsb, tmp):
         if isinstance(stmt, pyvex.stmt.WrTmp) and stmt.tmp == tmp:
             return stmt
     raise TaintException("Failed to find assignment of t%d" % tmp)
+
 
 def _taint_irexpr(expr, tainted_tmps, tainted_regs=None):
     """Given an non-OP IRExpr, add any tmps or regs to the provided sets.
@@ -47,13 +50,17 @@ def _taint_irexpr(expr, tainted_tmps, tainted_regs=None):
     elif isinstance(expr, pyvex.expr.Load):
         taint_irexpr(expr.addr, tainted_tmps, tainted_regs)
 
+
 def taint_irexpr(expr, tainted_tmps, tainted_regs=None):
     """Given an IRExpr, add any tmps or regs to the provided sets."""
-    if isinstance(expr, (pyvex.expr.Qop, pyvex.expr.Triop, pyvex.expr.Binop, pyvex.expr.Unop)):
+    if isinstance(
+        expr, (pyvex.expr.Qop, pyvex.expr.Triop, pyvex.expr.Binop, pyvex.expr.Unop)
+    ):
         for arg in expr.args:
             _taint_irexpr(arg, tainted_tmps, tainted_regs)
     else:
         _taint_irexpr(expr, tainted_tmps, tainted_regs)
+
 
 def get_forward_ict_mem_addr(state, result):
     """Given a state that executed an indirect call or jump (forward indirect control
@@ -66,7 +73,9 @@ def get_forward_ict_mem_addr(state, result):
     irsb = state.block(state.addr).vex
     dst_expr = irsb.next
     if not isinstance(dst_expr, pyvex.expr.RdTmp):
-        raise TaintException("State is not on an IRSB that executes an indirect control transfer")
+        raise TaintException(
+            "State is not on an IRSB that executes an indirect control transfer"
+        )
     dst_tmp = dst_expr.tmp
 
     ld_expr = None
@@ -105,7 +114,9 @@ def get_forward_ict_mem_addr(state, result):
 
         ld_val = list(ld_addrs)[0]
         if len(ld_addrs) > 1:
-            log.warning("Multiple loads associated with target, picked: %s" % str(ld_val))
+            log.warning(
+                "Multiple loads associated with target, picked: %s" % str(ld_val)
+            )
 
     if isinstance(ld_val, pyvex.expr.Const):
         return ld_val.con
@@ -113,6 +124,7 @@ def get_forward_ict_mem_addr(state, result):
         return result.solver.eval(result.scratch.tmp_expr(ld_val.tmp))
     else:
         return result.solver.eval(result.scratch.tmp_expr(ld_val))
+
 
 def get_mem_accesses(state, result, loads=True, stores=True, include_regs=False):
     """Given a state and one of its successors, return every memory address
@@ -159,7 +171,7 @@ def get_mem_accesses(state, result, loads=True, stores=True, include_regs=False)
         elif stores and include_regs and isinstance(stmt, pyvex.stmt.Put):
             accessed_mems.append((None, stmt.offset))
 
-    log.debug("resolving accesses: {%s}" % ','.join(['t%d' % tmp for tmp in tmps2eval]))
+    log.debug("resolving accesses: {%s}" % ",".join(["t%d" % tmp for tmp in tmps2eval]))
 
     for tmp in tmps2eval:
         try:
@@ -171,9 +183,11 @@ def get_mem_accesses(state, result, loads=True, stores=True, include_regs=False)
 
     return accessed_mems
 
+
 def is_cond_branch(irsb):
     """Returns true if IRSB contains a conditional branch."""
     return True in [isinstance(stmt, pyvex.stmt.Exit) for stmt in irsb.statements]
+
 
 def get_cond_exit_mem_addr(state, result):
     """Given a state on an IRSB with a conditional exit, return a list of memory address that
@@ -211,17 +225,19 @@ def get_cond_exit_mem_addr(state, result):
         if isinstance(wrtmp.data, pyvex.expr.Load):
             load_tmps.add(tmp)
 
-    log.debug("assigned value from mem: {%s}" % ','.join(['t%d' % tmp for tmp in load_tmps]))
+    log.debug(
+        "assigned value from mem: {%s}" % ",".join(["t%d" % tmp for tmp in load_tmps])
+    )
 
     # resolve load addresses (not what was read from those addresses)
     load_mems = set()
     for tmp in load_tmps:
-        ld_stmt = get_tmp_assignment(irsb, tmp)              # e.g., t2 = LDle:I64(t8)
-        ld_expr = ld_stmt.data                               # e.g., LDle:I64(t8)
+        ld_stmt = get_tmp_assignment(irsb, tmp)  # e.g., t2 = LDle:I64(t8)
+        ld_expr = ld_stmt.data  # e.g., LDle:I64(t8)
         if isinstance(ld_expr.addr, pyvex.expr.Const):
-            load_mems.add(ld_expr.addr.con.value)            # reads fixed memory address
+            load_mems.add(ld_expr.addr.con.value)  # reads fixed memory address
         else:
-            ld_tmp = ld_expr.addr.tmp                        # e.g., t8
+            ld_tmp = ld_expr.addr.tmp  # e.g., t8
             try:
                 result_expr = result.scratch.tmp_expr(ld_tmp)
             except SimValueError:
@@ -230,9 +246,10 @@ def get_cond_exit_mem_addr(state, result):
 
             load_mems.add(result.solver.eval(result_expr))
 
-    log.debug("load addrs: {%s}" % ','.join([hex(addr) for addr in load_mems]))
+    log.debug("load addrs: {%s}" % ",".join([hex(addr) for addr in load_mems]))
 
     return list(load_mems)
+
 
 def infer_function_prototype(state, func_path):
     """Infers the prototype of a function.
@@ -247,10 +264,16 @@ def infer_function_prototype(state, func_path):
     A prototype list, see analysis.py:symbolize_api for format details.
     """
     reg_reads = set()
-    special_regs = [state.arch.ip_offset, state.arch.sp_offset,
-                    state.arch.bp_offset, state.arch.lr_offset]
+    special_regs = [
+        state.arch.ip_offset,
+        state.arch.sp_offset,
+        state.arch.bp_offset,
+        state.arch.lr_offset,
+    ]
     clobbered = set([reg for reg in special_regs if isinstance(reg, int)])
-    stack_boundary = state.solver.eval(state.registers.load(state.arch.sp_offset))
+    stack_boundary = state.solver.eval(
+        state.registers.load(state.arch.sp_offset, size=state.arch.bits // 8)
+    )
 
     log.debug("Starting function prototype inference")
 
@@ -277,7 +300,10 @@ def infer_function_prototype(state, func_path):
                 if isinstance(stmt.data, pyvex.expr.Get):
                     offset = stmt.data.offset
                     if not offset in clobbered and offset in state.arch.register_names:
-                        log.debug("%s is a parameter" % state.arch.register_names[stmt.data.offset])
+                        log.debug(
+                            "%s is a parameter"
+                            % state.arch.register_names[stmt.data.offset]
+                        )
                         reg_reads.add(stmt.data.offset)
 
             # TODO - Parameters passed via stack
@@ -289,38 +315,47 @@ def infer_function_prototype(state, func_path):
     # infer type of each argument (also inspired by Goër, et al.)
     args = list()
     for offset in reg_reads:
-        starting_val = state.solver.eval(state.registers.load(offset))
+        starting_val = state.solver.eval(
+            state.registers.load(offset, size=state.arch.bits // 8)
+        )
         section = state.project.loader.find_section_containing(starting_val)
         val_size = None
         if starting_val in func_path:
             # value matches the address of an executed basic block,
             # very likely a code pointer
-            val_type = 'Ptr_Code'
+            val_type = "Ptr_Code"
         elif not section is None:
             if section.is_executable:
-                val_type = 'Ptr_Code'
+                val_type = "Ptr_Code"
             else:
-                val_type = 'Ptr_Data'
+                val_type = "Ptr_Data"
         elif starting_val > state.project.loader.max_addr:
             # likely pointing somewhere on the original stack
-            val_type = 'Ptr_Data'
+            val_type = "Ptr_Data"
         else:
-            val_type = 'Int'
+            val_type = "Int"
             val_size = state.arch.bits
 
-        args.append({'value_type': val_type, 'value_data': None, 'value_size': val_size,
-                     'offset_type': 'Register', 'offset': offset})
+        args.append(
+            {
+                "value_type": val_type,
+                "value_data": None,
+                "value_size": val_size,
+                "offset_type": "Register",
+                "offset": offset,
+            }
+        )
 
     # some debug info
     pp_args = list()
     for arg_dict in args:
-        offset = arg_dict['offset']
-        val_type = arg_dict['value_type']
+        offset = arg_dict["offset"]
+        val_type = arg_dict["value_type"]
         if offset in state.arch.register_names:
             offset_str = state.arch.register_names[offset]
         else:
             offset_str = hex(offset)
-        pp_args.append('%s (%s)' % (val_type, offset_str))
-    log.debug("Prototype (arbitrary order): func(%s)" % (', '.join(pp_args)))
+        pp_args.append("%s (%s)" % (val_type, offset_str))
+    log.debug("Prototype (arbitrary order): func(%s)" % (", ".join(pp_args)))
 
     return args

@@ -47,11 +47,11 @@ def analyze_state(simgr: SimulationManager, trace: List[int], state: SimState) -
     # partial_cdg = proj.analyses.DDG(partial_cfg)
 
     # Determine root cause
-    log.info('Root cause:')
+    log.info("Root cause:")
 
     # Suggest fix
-    log.info('Suggested fixes:')
-    log.info('Place guardian if (ptr) before dereferencing pointer.')
+    log.info("Suggested fixes:")
+    log.info("Place guardian if (ptr) before dereferencing pointer.")
 
 
 def check_for_vulns(simgr: SimulationManager, proj: Project) -> bool:
@@ -60,7 +60,7 @@ def check_for_vulns(simgr: SimulationManager, proj: Project) -> bool:
 
     state = simgr.active[0]
 
-    if proj.loader.describe_addr(state.addr).startswith('__libc_start_main.after_init'):
+    if proj.loader.describe_addr(state.addr).startswith("__libc_start_main.after_init"):
         return True
 
     mem_accesses = taint.get_mem_accesses(state)
@@ -68,15 +68,18 @@ def check_for_vulns(simgr: SimulationManager, proj: Project) -> bool:
     for temp, addr in mem_accesses:
         try:
             if state.solver.eval_one(addr) == 0:
-                log.info('Null pointer dreference at 0x%X in temp %d' % (state.addr, temp))  # Uses wrong address?
-                simgr.stashes['nptr'].append(state.copy())
+                log.info(
+                    "Null pointer dreference at 0x%X in temp %d" % (state.addr, temp)
+                )  # Uses wrong address?
+                simgr.stashes["nptr"].append(state.copy())
                 return False
         except angr.errors.SimUnsatError:
-            log.warning('State is unsat')
+            log.warning("State is unsat")
         except angr.errors.SimValueError:
             pass
 
     return True
 
-stash_name = 'nptr'
-pretty_name = 'Null Pointer Deref'
+
+stash_name = "nptr"
+pretty_name = "Null Pointer Deref"

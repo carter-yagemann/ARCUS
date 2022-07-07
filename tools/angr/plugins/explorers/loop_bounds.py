@@ -34,6 +34,7 @@ from redis import Redis
 
 log = logging.getLogger(__name__)
 
+
 class CycleDB(object):
     """Allows sharing of data across sessions to, for example, avoid
     restressing the same loops."""
@@ -49,6 +50,7 @@ class CycleDB(object):
         """Returns value for key, or None of key doesn't exist."""
         return None
 
+
 class RedisDB(CycleDB):
     """Share data using a Redis database."""
 
@@ -57,8 +59,7 @@ class RedisDB(CycleDB):
         assert isinstance(connect_str, str)
         self.redis = None
 
-        match = re.match("redis://([^:/]+):?([0-9]+)?/?([0-9]+)?",
-                         connect_str)
+        match = re.match("redis://([^:/]+):?([0-9]+)?/?([0-9]+)?", connect_str)
 
         if match is None:
             log.error("Invalid Redis connection string: %s" % connect_str)
@@ -98,6 +99,7 @@ class RedisDB(CycleDB):
         except Exception as ex:
             log.error("Failed to query Redis for key: %s" % str(ex))
             return None
+
 
 class LoopBounds(ExplorationTechnique):
     """Searches for and stresses loops to find more bugs.
@@ -169,12 +171,14 @@ class LoopBounds(ExplorationTechnique):
         """Select candidate loops to stress"""
         self.call_pushes_ret = self.project.arch.call_pushes_ret
 
-        if not 'missed' in simgr.stashes:
-            simgr.populate('missed', [])
-        simgr.drop(stash='active')
+        if not "missed" in simgr.stashes:
+            simgr.populate("missed", [])
+        simgr.drop(stash="active")
 
         loader = self.project.loader
-        is_extern = lambda addr: loader.find_object_containing(addr) == loader.extern_object
+        is_extern = (
+            lambda addr: loader.find_object_containing(addr) == loader.extern_object
+        )
         rotate = lambda l, n: l[-n:] + l[:-n]
 
         # find loops in the trace, excluding SimProcedures
@@ -243,13 +247,19 @@ class LoopBounds(ExplorationTechnique):
                 num_iter = 0
                 candidates = None
                 block = match[1].block(addr)
-                wrtmps = set([stmt.addr.tmp for stmt in block.vex.statements if self._is_tmp_store(stmt)])
+                wrtmps = set(
+                    [
+                        stmt.addr.tmp
+                        for stmt in block.vex.statements
+                        if self._is_tmp_store(stmt)
+                    ]
+                )
 
-                for idx, state in enumerate(self.orig_preds[match[0]:]):
+                for idx, state in enumerate(self.orig_preds[match[0] :]):
                     if num_iter > 3:
-                        break     # seen enough iterations
+                        break  # seen enough iterations
                     if not state.addr in cycle:
-                        break     # exited loop
+                        break  # exited loop
                     if state.addr != addr:
                         continue  # still in loop, but different basic block
 
@@ -289,7 +299,9 @@ class LoopBounds(ExplorationTechnique):
                         # a full SAT solve, so we take the conservative approach of not pruning.
                         return True
 
-                    if solver.is_true(asts[0] != asts[1] and asts[1] != asts[2] and asts[2] != asts[0]):
+                    if solver.is_true(
+                        asts[0] != asts[1] and asts[1] != asts[2] and asts[2] != asts[0]
+                    ):
                         # It is obviously true that this store address changes every time.
                         return True
 
@@ -308,9 +320,9 @@ class LoopBounds(ExplorationTechnique):
     def _is_slow_cycle(self, cycle):
         """Checks if cycle invokes any known slow sim procedures"""
         slow_simprocs = [
-            'realloc',
-            'malloc',
-            'calloc',
+            "realloc",
+            "malloc",
+            "calloc",
         ]
 
         for addr in cycle:
@@ -324,7 +336,9 @@ class LoopBounds(ExplorationTechnique):
     def _prioritize_cycle(self, cycle):
         """Higher score equals lower priority"""
         loader = self.project.loader
-        is_extern = lambda addr: loader.find_object_containing(addr) == loader.extern_object
+        is_extern = (
+            lambda addr: loader.find_object_containing(addr) == loader.extern_object
+        )
         score = 0
 
         if True in [is_extern(addr) for addr in cycle]:
@@ -351,7 +365,7 @@ class LoopBounds(ExplorationTechnique):
         start_obj_name = os.path.basename(start_obj.binary)
         if start_obj.is_main_bin:
             # main objects have their base VA appended onto the front of their name
-            start_obj_name = start_obj_name.split('-', 1)[-1]
+            start_obj_name = start_obj_name.split("-", 1)[-1]
 
         # normalize addresses to account for ASLR, simprocs, etc.
         norm_cycle = list()
@@ -367,8 +381,8 @@ class LoopBounds(ExplorationTechnique):
         # calculate an AFL-like code coverage hash
         hash = 0
         for idx, addr in enumerate(norm_cycle):
-            hash ^= (addr << idx)
-        return '%s-%x' % (start_obj_name, hash)
+            hash ^= addr << idx
+        return "%s-%x" % (start_obj_name, hash)
 
     def _filter_db(self, cycle):
         """Should this cycle be skipped because another session already explored it?"""
@@ -388,16 +402,16 @@ class LoopBounds(ExplorationTechnique):
 
         if not prune:
             # add this hash to DB so future sessions won't explore it again
-            self.db.set(self._hash_cycle(cycle), '')
+            self.db.set(self._hash_cycle(cycle), "")
 
         return prune
 
-    def step(self, simgr, stash='active', **kwargs):
-        simgr.drop(stash='missed')
+    def step(self, simgr, stash="active", **kwargs):
+        simgr.drop(stash="missed")
 
         # this can happen if a detector plugin removes our active state because
         # further execution is no longer possible (e.g., symbolic IP)
-        if len(simgr.stashes['active']) < 1:
+        if len(simgr.stashes["active"]) < 1:
             log.warn("No more active states, rewinding")
             self._rewind(simgr, dump_matches=True)
 
@@ -405,11 +419,11 @@ class LoopBounds(ExplorationTechnique):
 
     def current_frame(self, state):
         """Return the starting address of the current stack frame, if known, otherwise None."""
-        if not 'frame_addrs' in state.deep:
+        if not "frame_addrs" in state.deep:
             return None
-        if len(state.deep['frame_addrs']) < 1:
+        if len(state.deep["frame_addrs"]) < 1:
             return None
-        return state.deep['frame_addrs'][-1]
+        return state.deep["frame_addrs"][-1]
 
     def is_prior_frame_symbolic(self, state, next_state):
         """Returns true if the last word in the prior stack frame is symbolic.
@@ -423,9 +437,13 @@ class LoopBounds(ExplorationTechnique):
         # if we know the current stack frame's boundary, see if we're writting outside it
         # (i.e., stack smash)
         if not curr_frame is None:
-            write_asts = taint.get_mem_accesses(state, next_state, loads=False, stores=True)
+            write_asts = taint.get_mem_accesses(
+                state, next_state, loads=False, stores=True
+            )
             for tmp, ast in write_asts:
-                ret_corruption = claripy.And(ast >= curr_frame, ast < curr_frame - (word_size * 128))
+                ret_corruption = claripy.And(
+                    ast >= curr_frame, ast < curr_frame - (word_size * 128)
+                )
                 if next_state.solver.eval(ret_corruption):
                     return True
             return False
@@ -434,9 +452,9 @@ class LoopBounds(ExplorationTechnique):
         # the list. A hacky workaround so we don't keep iterating until the *entire* stack is
         # corrupted is to check the next word after the base register, if the arch has one.
         arch_name = self.project.arch.name
-        if arch_name == 'AMD64':
+        if arch_name == "AMD64":
             base = state.memory.load(state.regs.rbp + word_size, size=abs(word_size))
-        elif arch_name == 'X86':
+        elif arch_name == "X86":
             base = state.memory.load(state.regs.ebp + word_size, size=abs(word_size))
         else:
             base = None
@@ -486,8 +504,9 @@ class LoopBounds(ExplorationTechnique):
             # this predecessor was inside the target cycle, record what it wrote to memory
             succ = preds[preds_len - idx]
             assert succ.history.bbl_addrs[-1] == pred.addr
-            write_asts = taint.get_mem_accesses(pred, succ, loads=False, stores=True,
-                                                include_regs=True)
+            write_asts = taint.get_mem_accesses(
+                pred, succ, loads=False, stores=True, include_regs=True
+            )
             # writes to symbolic addresses
             write_tmps = set([pair[0] for pair in write_asts if not pair[0] is None])
             # writes to constant addresses (including registers)
@@ -500,7 +519,10 @@ class LoopBounds(ExplorationTechnique):
             for stmt in irsb.statements:
                 if isinstance(stmt, pyvex.stmt.Store):
                     val_size = stmt.data.result_size(irsb.tyenv)
-                    if isinstance(stmt.addr, pyvex.expr.Const) and stmt.addr.con.value in write_cons:
+                    if (
+                        isinstance(stmt.addr, pyvex.expr.Const)
+                        and stmt.addr.con.value in write_cons
+                    ):
                         # Store at constant address
                         write_sizes_con[stmt.addr.con.value] = val_size
                     elif stmt.addr.tmp in write_tmps:
@@ -514,8 +536,12 @@ class LoopBounds(ExplorationTechnique):
                 write_addr = succ.solver.eval(ast)
 
                 # filter out special registers
-                if write_addr in [state.arch.ip_offset, state.arch.sp_offset,
-                                  state.arch.bp_offset, state.arch.lr_offset]:
+                if write_addr in [
+                    state.arch.ip_offset,
+                    state.arch.sp_offset,
+                    state.arch.bp_offset,
+                    state.arch.lr_offset,
+                ]:
                     continue
 
                 # we stash the value size as the last element of the array
@@ -533,8 +559,9 @@ class LoopBounds(ExplorationTechnique):
                 if tmp is None and write_addr in succ.arch.register_names:
                     write_val = succ.registers.load(write_addr, size=val_size // 8)
                 else:
-                    write_val = succ.memory.load(write_addr, size=val_size // 8,
-                                                 endness=succ.arch.memory_endness)
+                    write_val = succ.memory.load(
+                        write_addr, size=val_size // 8, endness=succ.arch.memory_endness
+                    )
 
                 # we're iterating *backwards* through the trace, so we need to
                 # *prepend* each write_val to its list
@@ -568,10 +595,14 @@ class LoopBounds(ExplorationTechnique):
                     reg_name = state.arch.register_names[write_addr]
                     log.info("Symbolizing %d bits in %s" % (val_bits, reg_name))
                 else:
-                    log.info("Symbolizing %d bits at address %#x" % (val_bits, write_addr))
-                new_sym = state.solver.BVS('lese', val_bits)
+                    log.info(
+                        "Symbolizing %d bits at address %#x" % (val_bits, write_addr)
+                    )
+                new_sym = state.solver.BVS("lese", val_bits)
                 con = state.solver.Or(*[new_sym == val for val in write_vals])
-                state.memory.store(write_addr, new_sym, endness=state.arch.memory_endness)
+                state.memory.store(
+                    write_addr, new_sym, endness=state.arch.memory_endness
+                )
                 state.add_constraints(con)
 
     def step_state(self, simgr, state, **kwargs):
@@ -582,15 +613,31 @@ class LoopBounds(ExplorationTechnique):
         loader = self.project.loader
         ctx_id = len(self.matches) // 2 + 1
         if loader.find_object_containing(state.addr):
-            log.info("Loop Explorer: (%d.%d) (%d) %s", len(self.cycles), ctx_id, state.globals['wander_budget'], loader.describe_addr(state.addr))
+            log.info(
+                "Loop Explorer: (%d.%d) (%d) %s",
+                len(self.cycles),
+                ctx_id,
+                state.globals["wander_budget"],
+                loader.describe_addr(state.addr),
+            )
         else:
-            log.info("Loop Explorer: (%d.%d) (%d) %#x", len(self.cycles), ctx_id, state.globals['wander_budget'], state.addr)
+            log.info(
+                "Loop Explorer: (%d.%d) (%d) %#x",
+                len(self.cycles),
+                ctx_id,
+                state.globals["wander_budget"],
+                state.addr,
+            )
 
-        succs = {'active': [], 'missed': []}
+        succs = {"active": [], "missed": []}
 
         # get all satisfiable candidates, otherwise we cannot continue and should rewind
         try:
-            candidates = [succ for succ in state.step().all_successors if succ.solver.satisfiable()]
+            candidates = [
+                succ
+                for succ in state.step().all_successors
+                if succ.solver.satisfiable()
+            ]
         except Exception as ex:
             log.debug("Cannot step: %s" % str(ex))
             candidates = []
@@ -609,35 +656,41 @@ class LoopBounds(ExplorationTechnique):
                 # try to stay in the loop by picking a successor that follows the cycle
                 for succ in candidates:
                     if succ.addr == next_addr:
-                        succs['active'] = [succ]
+                        succs["active"] = [succ]
                     else:
-                        succs['missed'].append(succ)
+                        succs["missed"].append(succ)
 
                 exited_cycle = False
 
-                if len(succs['active']) == 0 and len(succs['missed']) > 0:
+                if len(succs["active"]) == 0 and len(succs["missed"]) > 0:
                     # we're being forced to exit the loop...
                     log.debug("Cannot follow cycle anymore")
-                    succs['active'].append(succs['missed'][0])
-                    succs['missed'] = succs['missed'][1:]
+                    succs["active"].append(succs["missed"][0])
+                    succs["missed"] = succs["missed"][1:]
                     exited_cycle = True
 
-                elif self.call_pushes_ret and len(succs['active']) > 0:
+                elif self.call_pushes_ret and len(succs["active"]) > 0:
                     # there's a successor that follows the cycle and this is a return-on-stack
                     # kind of machine arch, check if its stack is corrupt
-                    oob_frame_write = self.is_prior_frame_symbolic(state, succs['active'][0])
+                    oob_frame_write = self.is_prior_frame_symbolic(
+                        state, succs["active"][0]
+                    )
                     if oob_frame_write:
                         # we've likely corrupted the prior stack frame, set exited_cycle so
                         # in future steps we know to try to exit the loop
-                        log.info("May have corrupted prior frame, trying to leave cycle")
+                        log.info(
+                            "May have corrupted prior frame, trying to leave cycle"
+                        )
                         exited_cycle = True
 
                 if exited_cycle:
                     # Note what frame we're currently in because we want to wander
                     # at least until the current function is finished. Setting this also
                     # signals to future steps that if we're still in the loop, we want out.
-                    self.ovf_frame = (self.current_frame(state),
-                                      len(state.deep['frame_addrs']) - 1)
+                    self.ovf_frame = (
+                        self.current_frame(state),
+                        len(state.deep["frame_addrs"]) - 1,
+                    )
 
             if not self.ovf_frame is None:
                 # we want to be outside the loop, but we're still in it...
@@ -648,57 +701,62 @@ class LoopBounds(ExplorationTechnique):
                 if len(possible_exits) > 0:
                     for succ in candidates:
                         if succ.addr in possible_exits:
-                            log.debug("Found known exit: %#x => %#x" % (state.addr, succ.addr))
-                            succs['active'] = [succ]
+                            log.debug(
+                                "Found known exit: %#x => %#x" % (state.addr, succ.addr)
+                            )
+                            succs["active"] = [succ]
                             found_exit = True
                             break
 
-                if not found_exit and len(succs['missed']) > 0:
+                if not found_exit and len(succs["missed"]) > 0:
                     # we couldn't find an exit that we know about, try anything that
                     # doesn't follow the cycle
-                    succs['active'] = [succs['missed'][0]]
-                    succs['missed'] = succs['missed'][1:]
+                    succs["active"] = [succs["missed"][0]]
+                    succs["missed"] = succs["missed"][1:]
 
         elif len(candidates) > 0:
             # not currently inside the target loop, we're just wandering at this point
             # to see if a bug pops up
-            succs['active'] = [candidates[0]]
-            succs['missed'] = candidates[1:]
+            succs["active"] = [candidates[0]]
+            succs["missed"] = candidates[1:]
 
             if not self.sym_cnt_heuristic:
                 # check if the loop we exited may have done any "counting" and if so
                 # symbolize such values to give us more flexibility moving forward
-                self.apply_sym_count_heuristic(succs['active'][0])
+                self.apply_sym_count_heuristic(succs["active"][0])
                 # we only need to apply this once per run
                 self.sym_cnt_heuristic = True
 
             # check if we're expecting a corrupted frame
-            curr_frame_idx = len(state.deep['frame_addrs']) - 1
+            curr_frame_idx = len(state.deep["frame_addrs"]) - 1
             if not self.ovf_frame is None:
                 ovf_frame_addr, ovf_frame_idx = self.ovf_frame
             else:
                 ovf_frame_addr, ovf_frame_idx = (None, None)
 
-            if (ovf_frame_addr is None or curr_frame_idx < ovf_frame_idx or
-                    state.deep['frame_addrs'][ovf_frame_idx] != ovf_frame_addr):
+            if (
+                ovf_frame_addr is None
+                or curr_frame_idx < ovf_frame_idx
+                or state.deep["frame_addrs"][ovf_frame_idx] != ovf_frame_addr
+            ):
                 # we're wandering freely at this point and not expecting
                 # a corrupted return pointer
                 self.ovf_frame = None
-                succs['active'][0].globals['wander_budget'] -= 1
+                succs["active"][0].globals["wander_budget"] -= 1
 
-            if succs['active'][0].globals['wander_budget'] < 1:
+            if succs["active"][0].globals["wander_budget"] < 1:
                 # we've hit our wander limit, it's time to give up and rewind
                 log.warning("Wander budget exhausted, ending run")
-                succs['missed'].append(succs['active'][0])
-                succs['active'] = list()
+                succs["missed"].append(succs["active"][0])
+                succs["active"] = list()
 
         # if we absolutely could not find a successor state, we're done with this run
         # and it's time to rewind
-        if len(succs['active']) == 0:
+        if len(succs["active"]) == 0:
             log.debug("Rewinding")
             self._rewind(simgr)
-            if len(simgr.stashes['active']) > 0:
-                succs['active'] = [simgr.stashes['active'][0]]
+            if len(simgr.stashes["active"]) > 0:
+                succs["active"] = [simgr.stashes["active"][0]]
 
         return succs
 
@@ -715,12 +773,14 @@ class LoopBounds(ExplorationTechnique):
                 in_cycle = False
                 exits.append([trace[idx - 1], addr])
 
-        log.debug("Found exits: %s" % ', '.join(["[%#x,%#x]" % (a, b) for a, b in exits]))
+        log.debug(
+            "Found exits: %s" % ", ".join(["[%#x,%#x]" % (a, b) for a, b in exits])
+        )
         return exits
 
     def _rewind(self, simgr, setup=False, dump_matches=False):
         """Queues up the next candidate by rewinding and then setting it as active"""
-        simgr.drop(stash='active')
+        simgr.drop(stash="active")
 
         # sometimes we may want to dump our remaining matches and move on to the next
         # cycle (for example, if we've already found the bugs we were expecting)
@@ -737,8 +797,12 @@ class LoopBounds(ExplorationTechnique):
                 log.debug("No more cycles to explore")
                 return
             else:
-                self.matches = explore.find_all_preds(self.orig_preds.copy(), self.cycles[0][0])
-                self.exits = self._find_exits([state.addr for state in self.orig_preds], self.cycles[0])
+                self.matches = explore.find_all_preds(
+                    self.orig_preds.copy(), self.cycles[0][0]
+                )
+                self.exits = self._find_exits(
+                    [state.addr for state in self.orig_preds], self.cycles[0]
+                )
 
         if len(self.matches) < 1:
             log.info("Nothing to explore")
@@ -748,18 +812,19 @@ class LoopBounds(ExplorationTechnique):
         active, preds = self.matches.pop(0)
         # once we exit the cycle, we don't want to keep wandering forever waiting for
         # a bug to appear, so we set a budget for how long we'll wander before rewinding
-        active.globals['wander_budget'] = 150
+        active.globals["wander_budget"] = 150
         # if we believe a return pointer has been overwritten, we don't want to start
         # decrementing the wander budget until *after* the current frame has returned
         self.ovf_frame = None
         # we have not applied the symbolic count heuristic (i.e., LESE) to this run yet
         self.sym_cnt_heuristic = False
         # setup stash and predecessors
-        simgr.stashes['active'] = [active]
+        simgr.stashes["active"] = [active]
         self.predecessors = preds
 
     def complete(self, simgr):
         """Returns True when there's nothing left to explore"""
         return len(self.matches) < 1 and len(self.cycles) < 1
+
 
 explorer = LoopBounds

@@ -18,28 +18,35 @@
 import importlib
 import pkgutil
 
+
 class InvalidPluginException(Exception):
     pass
 
+
 loaded = {
     name: importlib.import_module(name)
-    for finder, name, ispkg
-    in pkgutil.iter_modules(__path__, __name__ + '.')
+    for finder, name, ispkg in pkgutil.iter_modules(__path__, __name__ + ".")
 }
 
 # validate plugins
 for name in loaded:
     module = loaded[name]
-    attr_checks = [('stash_name', str), ('pretty_name', str)]
-    func_checks = ['analyze_state', 'check_for_vulns']
+    attr_checks = [("stash_name", str), ("pretty_name", str)]
+    func_checks = ["analyze_state", "check_for_vulns"]
 
     for attr, attr_type in attr_checks:
         if not hasattr(module, attr):
-            raise InvalidPluginException("%s missing required attribute: %s" % (name, attr))
+            raise InvalidPluginException(
+                "%s missing required attribute: %s" % (name, attr)
+            )
         if not isinstance(getattr(module, attr), attr_type):
-            raise InvalidPluginException("Attribute %s in %s must be %s, found %s" %
-                    (attr, name, str(attr_type), str(type(getattr(module, attr)))))
+            raise InvalidPluginException(
+                "Attribute %s in %s must be %s, found %s"
+                % (attr, name, str(attr_type), str(type(getattr(module, attr))))
+            )
 
     for func_name in func_checks:
         if not callable(getattr(module, func_name, None)):
-            raise InvalidPluginException("%s missing required function: %s" % (name, func_name))
+            raise InvalidPluginException(
+                "%s missing required function: %s" % (name, func_name)
+            )

@@ -24,6 +24,7 @@ from cle.address_translator import AT
 
 log = logging.getLogger(name=__name__)
 
+
 class BugReport(object):
     """Standardizes bug reports for further analysis, comparison, de-duplication, etc.
 
@@ -35,8 +36,15 @@ class BugReport(object):
     into JSON for storage.
     """
 
-    required_fields = ['hash', 'stack', 'registers', 'type', 'plugin',
-                       'arch', 'details']
+    required_fields = [
+        "hash",
+        "stack",
+        "registers",
+        "type",
+        "plugin",
+        "arch",
+        "details",
+    ]
 
     def __init__(self, state=None, init_dict=None):
         """Initialization
@@ -59,24 +67,24 @@ class BugReport(object):
     def set_type(self, value):
         if not isinstance(value, str):
             raise ValueError("Bug type must be a string")
-        self.report['type'] = value
+        self.report["type"] = value
 
     def set_plugin(self, value):
         if not isinstance(value, str):
             raise ValueError("Plugin must be a string")
-        self.report['plugin'] = value
+        self.report["plugin"] = value
 
     def set_hash(self, value):
         if not isinstance(value, str):
             raise ValueError("Hash must be a string")
-        self.report['hash'] = value
+        self.report["hash"] = value
 
     def get_hash(self):
-        return self.report['hash']
+        return self.report["hash"]
 
     def add_detail(self, key, value):
         """Add detail to report to better describe the bug"""
-        self.report['details'][key] = value
+        self.report["details"][key] = value
 
     def to_dict(self):
         """Return a dictionary representing this report"""
@@ -93,17 +101,19 @@ class BugReport(object):
         self.loader = state.project.loader
 
         # basic info about the bug report
-        self.report = {'hash': self.generic_hash(state, self.loader),
-                       'stack': list(),
-                       'registers': {
-                           'ip': [None, 0],
-                           'sp': [None, 0],
-                           'bp': [None, 0],
-                       },
-                       'type': 'Unknown',
-                       'plugin': None,
-                       'arch': state.project.arch.name,
-                       'details': dict()}
+        self.report = {
+            "hash": self.generic_hash(state, self.loader),
+            "stack": list(),
+            "registers": {
+                "ip": [None, 0],
+                "sp": [None, 0],
+                "bp": [None, 0],
+            },
+            "type": "Unknown",
+            "plugin": None,
+            "arch": state.project.arch.name,
+            "details": dict(),
+        }
 
         # assert that we didn't forget any required fields
         for field in self.required_fields:
@@ -137,8 +147,8 @@ class BugReport(object):
         # like how AFL hashes code paths
         hash = 0
         for idx, addr in enumerate(prev_addrs):
-            hash ^= (addr << idx)
-        return '%x' % hash
+            hash ^= addr << idx
+        return "%x" % hash
 
     def eval_bv(self, bv, solver):
         """Evaluates a bitvector, returning a tuple.
@@ -173,14 +183,22 @@ class BugReport(object):
         """
         state = state.copy()  # avoid messing up original stack
         arch = state.project.arch
-        reg_load = state.registers.load
+        reg_load = lambda offset: state.registers.load(
+            offset, size=state.arch.bits // 8
+        )
 
-        self.report['registers']['ip'] = self.eval_bv(reg_load(arch.ip_offset), state.solver)
-        self.report['registers']['sp'] = self.eval_bv(reg_load(arch.sp_offset), state.solver)
-        self.report['registers']['bp'] = self.eval_bv(reg_load(arch.bp_offset), state.solver)
+        self.report["registers"]["ip"] = self.eval_bv(
+            reg_load(arch.ip_offset), state.solver
+        )
+        self.report["registers"]["sp"] = self.eval_bv(
+            reg_load(arch.sp_offset), state.solver
+        )
+        self.report["registers"]["bp"] = self.eval_bv(
+            reg_load(arch.bp_offset), state.solver
+        )
 
         for _ in range(max_words):
-            self.report['stack'].append(self.eval_bv(state.stack_pop(), state.solver))
+            self.report["stack"].append(self.eval_bv(state.stack_pop(), state.solver))
 
     def log_state(self, max_words=10):
         """Prints the state's stack in a human readable format.
@@ -190,31 +208,31 @@ class BugReport(object):
         """
         log.info("  Hash: %s" % self.get_hash())
         # instruction pointer
-        is_sym, ip_bv, desc = self.report['registers']['ip']
+        is_sym, ip_bv, desc = self.report["registers"]["ip"]
         if is_sym:  # symbolic
             log.info("  Addr: (Symbolic) %#x" % ip_bv)
         elif desc:  # concrete, mapped
             log.info("  Addr: %#x => %s" % (ip_bv, desc))
-        else:       # concrete, unmapped
+        else:  # concrete, unmapped
             log.info("  Addr: %#x" % ip_bv)
 
         # base pointer
-        is_sym, bp_bv, desc = self.report['registers']['bp']
+        is_sym, bp_bv, desc = self.report["registers"]["bp"]
         if is_sym:
             log.info("  RBP: (Symbolic) %#x" % bp_bv)
         else:
             log.info("  RBP: %#x" % bp_bv)
 
         # stack pointer
-        is_sym, sp_bv, desc = self.report['registers']['sp']
+        is_sym, sp_bv, desc = self.report["registers"]["sp"]
         if is_sym:
             log.info("  RBP: (Symbolic) %#x" % sp_bv)
         else:
             log.info("  RBP: %#x" % sp_bv)
 
         # stack words
-        total_words = len(self.report['stack'])
-        for is_sym, word, desc in self.report['stack'][:min(total_words, max_words)]:
+        total_words = len(self.report["stack"])
+        for is_sym, word, desc in self.report["stack"][: min(total_words, max_words)]:
             if is_sym and not word is None:
                 log.info("    (Symbolic) %#x" % word)
             elif is_sym:

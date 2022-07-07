@@ -21,28 +21,28 @@ import claripy
 
 log = logging.getLogger(name=__name__)
 
-class lua_luaS_new(angr.SimProcedure):
 
+class lua_luaS_new(angr.SimProcedure):
     def run(self):
         # Underconstrain string creation
-        log.info('Returning unconstrained string pointer')
-        ret_val = claripy.BVS('lua_str', self.state.arch.bits)
+        log.info("Returning unconstrained string pointer")
+        ret_val = claripy.BVS("lua_str", self.state.arch.bits)
         return ret_val
 
 
 class lua_sym_ret(angr.SimProcedure):
-
     def run(self):
         # Underconstrain string creation
-        log.info('Returning unconstrained value')
-        ret_val = claripy.BVS('lua_str', self.state.arch.bits)
+        log.info("Returning unconstrained value")
+        ret_val = claripy.BVS("lua_str", self.state.arch.bits)
         return ret_val
 
+
 lua_hooks = {
-    'luaS_new': lua_luaS_new,
-    'luaS_newlstr': lua_sym_ret,
-    'mainposition.isra.3': lua_sym_ret
+    "luaS_new": lua_luaS_new,
+    "luaS_newlstr": lua_sym_ret,
+    "mainposition.isra.3": lua_sym_ret,
 }
 
-hook_condition = ('lua', lua_hooks)
+hook_condition = ("lua", lua_hooks)
 is_main_object = True

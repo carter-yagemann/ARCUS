@@ -20,21 +20,22 @@ import angr
 
 log = logging.getLogger(name=__name__)
 
-class printablename(angr.SimProcedure):
 
+class printablename(angr.SimProcedure):
     def run(self, name, withdots):
-        hostname_ptr = self.project.loader.find_symbol('hostname.5591').rebased_addr
+        hostname_ptr = self.project.loader.find_symbol("hostname.5591").rebased_addr
         log.debug("hostname: %#x" % hostname_ptr)
 
-        ret = self.state.solver.BVS('printablename_ret', 64)
+        ret = self.state.solver.BVS("printablename_ret", 64)
         con = self.state.solver.Or(ret == hostname_ptr, ret == (hostname_ptr + 1))
         self.state.add_constraints(con)
 
         return ret
 
+
 dnstracer_hooks = {
-    'printablename': printablename,
+    "printablename": printablename,
 }
 
-hook_condition = ('dnstracer', dnstracer_hooks)
+hook_condition = ("dnstracer", dnstracer_hooks)
 is_main_object = True

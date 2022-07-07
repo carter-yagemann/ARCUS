@@ -20,20 +20,23 @@ import angr
 
 log = logging.getLogger(name=__name__)
 
-class certValidate_psBase64decode(angr.SimProcedure):
 
+class certValidate_psBase64decode(angr.SimProcedure):
     def run(self, in_ptr, len, out, outlen):
         outlen_val = self.state.solver.eval(self.state.mem[outlen].uint16_t.resolved)
         log.debug("outlen = %d" % outlen_val)
-        buf = self.state.solver.BVS('psBase64decode', outlen_val * 8)
+        buf = self.state.solver.BVS("psBase64decode", outlen_val * 8)
         self.state.memory.store(out, buf)
-        self.state.memory.store(outlen, self.state.solver.BVS('psBase64decode_outlen', 16))
-        ret = self.state.solver.BVS('psBase64decode_ret', 32)
+        self.state.memory.store(
+            outlen, self.state.solver.BVS("psBase64decode_outlen", 16)
+        )
+        ret = self.state.solver.BVS("psBase64decode_ret", 32)
         return ret
 
+
 certValidate_hooks = {
-    'psBase64decode': certValidate_psBase64decode,
+    "psBase64decode": certValidate_psBase64decode,
 }
 
-hook_condition = ('certValidate', certValidate_hooks)
+hook_condition = ("certValidate", certValidate_hooks)
 is_main_object = True

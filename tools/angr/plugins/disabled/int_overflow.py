@@ -26,26 +26,30 @@ import pyvex
 import dwarf
 
 log = logging.getLogger(__name__)
-watching = 'int_ovf_watching'
-detection = 'int_ovf_detection'
+watching = "int_ovf_watching"
+detection = "int_ovf_detection"
 # Universally unique tags
 tag = 0
 tag2addr = dict()
+
 
 def watching_add(state, key, val):
     if not watching in state.deep:
         state.deep[watching] = dict()
     state.deep[watching][key] = val
 
+
 def watching_remove(state, key):
     if watching in state.deep:
         del state.deep[watching][key]
+
 
 def pp_stmt(stmt, temps, tmp_idxs):
     msg = str(stmt)
     for idx in tmp_idxs:
         msg = msg.replace("t%d" % idx, str(temps[idx]))
     return msg
+
 
 def smallest_type(val):
     """Returns the smallest bitvector type that could store this value.
@@ -57,6 +61,7 @@ def smallest_type(val):
             return size
     return 8
 
+
 def get_capstone_from_vex(vex, stmt_idx):
     """Given the index for a vex statement, return the corresponding capstone index."""
     slice = vex.statements[:stmt_idx]
@@ -66,6 +71,7 @@ def get_capstone_from_vex(vex, stmt_idx):
             insns += 1
     return insns - 1
 
+
 def analyze_state(simgr, trace, state, report):
     ldr = state.project.loader
 
@@ -73,10 +79,10 @@ def analyze_state(simgr, trace, state, report):
     caller_addr = None
     for addr in state.history.bbl_addrs.hardcopy[::-1]:
         obj = ldr.find_object_containing(addr)
-        if addr in getattr(obj, 'reverse_plt', ()):
+        if addr in getattr(obj, "reverse_plt", ()):
             # we don't want the PLT stub
             continue
-        if state.block(addr).vex.jumpkind.startswith('Ijk_Call'):
+        if state.block(addr).vex.jumpkind.startswith("Ijk_Call"):
             caller_addr = addr
             break
 
@@ -88,13 +94,25 @@ def analyze_state(simgr, trace, state, report):
     blame_addr, blame_idx = state.globals[detection]
     stmt = state.block(blame_addr).vex.statements[blame_idx]
 
-    log.info("Blaming '%s' in block %s for passing over/underflowed "
-             "argument to %s, called by %s" % (str(stmt), ldr.describe_addr(blame_addr),
-             ldr.describe_addr(state.addr), ldr.describe_addr(caller_addr)))
-    report.add_detail('blame', {'address': blame_addr,
-                                'description': ldr.describe_addr(blame_addr),
-                                'callsite': ldr.describe_addr(caller_addr),
-                                'VEX_IR': str(stmt)})
+    log.info(
+        "Blaming '%s' in block %s for passing over/underflowed "
+        "argument to %s, called by %s"
+        % (
+            str(stmt),
+            ldr.describe_addr(blame_addr),
+            ldr.describe_addr(state.addr),
+            ldr.describe_addr(caller_addr),
+        )
+    )
+    report.add_detail(
+        "blame",
+        {
+            "address": blame_addr,
+            "description": ldr.describe_addr(blame_addr),
+            "callsite": ldr.describe_addr(caller_addr),
+            "VEX_IR": str(stmt),
+        },
+    )
 
     # unique hash for this bug based on the overflow site and recipient
     blame_obj = ldr.find_object_containing(blame_addr)
@@ -109,13 +127,15 @@ def analyze_state(simgr, trace, state, report):
     else:
         caller_rva = caller_addr
 
-    report.set_hash('%x' % (blame_rva ^ (caller_rva << 1)))
+    report.set_hash("%x" % (blame_rva ^ (caller_rva << 1)))
 
     # report details for DARPA-AIE-AIMEE-HECTOR project
     aimee_details = list()
 
-    for addr, label in [(blame_addr, "overflowed_variable"),
-            (caller_addr, "overflowed_call")]:
+    for addr, label in [
+        (blame_addr, "overflowed_variable"),
+        (caller_addr, "overflowed_call"),
+    ]:
         ovf_obj = ldr.find_object_containing(addr)
         if not ovf_obj is None:
             ovf_name = os.path.basename(ovf_obj.binary)
@@ -123,13 +143,20 @@ def analyze_state(simgr, trace, state, report):
                 dwarfinfo = dwarf.DwarfDebugInfo(ovf_obj.binary)
                 ovf_rva = AT.from_va(addr, ovf_obj).to_rva()
                 ovf_filename, ovf_line = dwarfinfo.get_src_line(ovf_rva)
-                aimee_details.append({'object': ovf_name, 'file': ovf_filename,
-                    'line': ovf_line, 'label': label})
+                aimee_details.append(
+                    {
+                        "object": ovf_name,
+                        "file": ovf_filename,
+                        "line": ovf_line,
+                        "label": label,
+                    }
+                )
             except DwarfException:
                 continue
 
     if len(aimee_details) > 0:
-        report.add_detail('aimee', aimee_details)
+        report.add_detail("aimee", aimee_details)
+
 
 def _taint_irexpr(expr, tainted_tmps, tainted_regs=None):
     """Given an non-OP IRExpr, add any tmps or regs to the provided sets.
@@ -142,18 +169,24 @@ def _taint_irexpr(expr, tainted_tmps, tainted_regs=None):
         tainted_tmps.add(expr.tmp)
     # unlike taint.py's taint_irexpr, we don't taint beyond load expressions
 
+
 def taint_irexpr(expr, tainted_tmps, tainted_regs=None):
     """Given an IRExpr, add any tmps or regs to the provided sets."""
-    if isinstance(expr, (pyvex.expr.Qop, pyvex.expr.Triop, pyvex.expr.Binop, pyvex.expr.Unop)):
+    if isinstance(
+        expr, (pyvex.expr.Qop, pyvex.expr.Triop, pyvex.expr.Binop, pyvex.expr.Unop)
+    ):
         for arg in expr.args:
             _taint_irexpr(arg, tainted_tmps, tainted_regs)
     else:
         _taint_irexpr(expr, tainted_tmps, tainted_regs)
 
+
 def get_regs(irsb, idx):
     """Returns all registers associated with the WrTmp statement at idx in irsb."""
     wrtmp = irsb.statements[idx]
-    stmts = irsb.statements[:idx + 1]  # all dependencies should come before WrTmp statement
+    stmts = irsb.statements[
+        : idx + 1
+    ]  # all dependencies should come before WrTmp statement
 
     tainted_tmps = {wrtmp.tmp}
     tainted_regs = list()
@@ -167,10 +200,11 @@ def get_regs(irsb, idx):
 
     return set(tainted_regs)
 
+
 def get_tmps(irsb, idx):
     """Returns all tmps associated with the Put statement at idx in irsb."""
     put = irsb.statements[idx]
-    stmts = irsb.statements[:idx + 1]  # all dependencies should come before statement
+    stmts = irsb.statements[: idx + 1]  # all dependencies should come before statement
 
     tainted_tmps = set()
     taint_irexpr(put.data, tainted_tmps)
@@ -181,6 +215,7 @@ def get_tmps(irsb, idx):
 
     return tainted_tmps
 
+
 def check_tmp(state, stmt, output, input, check_over=False, check_under=False):
     tmps = state.scratch.temps
     if len(tmps) < output or len(tmps) < input:
@@ -189,7 +224,9 @@ def check_tmp(state, stmt, output, input, check_over=False, check_under=False):
         return False
 
     try:
-        if check_over and state.solver.satisfiable(extra_constraints=[tmps[output] < tmps[input]]):
+        if check_over and state.solver.satisfiable(
+            extra_constraints=[tmps[output] < tmps[input]]
+        ):
             log.debug("Overflow: %s" % pp_stmt(stmt, tmps, [input, output]))
             return True
     except claripy.errors.ClaripyOperationError:
@@ -197,20 +234,25 @@ def check_tmp(state, stmt, output, input, check_over=False, check_under=False):
 
     try:
         # TODO - Heuristic: we're guessing the size of the bitvectors
-        if check_over and smallest_type(state.solver.max(tmps[output])) > smallest_type(state.solver.max(tmps[input])):
+        if check_over and smallest_type(state.solver.max(tmps[output])) > smallest_type(
+            state.solver.max(tmps[input])
+        ):
             log.debug("Overflow: %s" % pp_stmt(stmt, tmps, [input, output]))
             return True
     except claripy.errors.ClaripyOperationError:
         log.warning("Claripy solver error while checking for underflow")
 
     try:
-        if not check_over and state.solver.satisfiable(extra_constraints=[tmps[output] > tmps[input]]):
+        if not check_over and state.solver.satisfiable(
+            extra_constraints=[tmps[output] > tmps[input]]
+        ):
             log.debug("Underflow: %s" % pp_stmt(stmt, tmps, [input, output]))
             return True
     except claripy.errors.ClaripyOperationError:
         log.warning("Claripy solver error while checking for underflow")
 
     return False
+
 
 def _get_tmp_arg(state, tmps, arg):
     if isinstance(arg, pyvex.expr.Const):
@@ -222,6 +264,7 @@ def _get_tmp_arg(state, tmps, arg):
             return state.solver.eval(tmps[arg.tmp])
         except:
             return None
+
 
 def check_tmp_mul(state, stmt, output, args):
     tmps = state.scratch.temps
@@ -238,6 +281,7 @@ def check_tmp_mul(state, stmt, output, args):
         return True
 
     return False
+
 
 def check_hooked(simgr, proj, curr_state):
     global tag2addr
@@ -264,7 +308,7 @@ def check_hooked(simgr, proj, curr_state):
                 blame_addr, blame_idx = tag2addr[blame_tag]
                 log.warn("Under/Overflowed argument passed to function")
                 curr_state.globals[detection] = (blame_addr, blame_idx)
-                simgr.stashes['int'].append(curr_state.copy())
+                simgr.stashes["int"].append(curr_state.copy())
                 return True
 
     except angr.errors.SimUnsatError:
@@ -272,12 +316,14 @@ def check_hooked(simgr, proj, curr_state):
 
     return True
 
+
 def _tag_tmp(blown_tmps, tmp, addr, stmt_idx):
     global tag, tag2addr
     log.debug("Creating tag: %d" % tag)
     blown_tmps[tmp] = tag
     tag2addr[tag] = (addr, stmt_idx)
     tag += 1
+
 
 def _get_tag(blown_tmps, tmps):
     tags = set()
@@ -289,6 +335,7 @@ def _get_tag(blown_tmps, tmps):
         log.warning("Operation depends on multiple overflowed tmps, picking oldest tag")
     return min(tags)
 
+
 def pp_reg_offset(state, offset):
     reg_names = state.arch.register_names
     if offset in reg_names:
@@ -296,19 +343,20 @@ def pp_reg_offset(state, offset):
     else:
         return "%d (N/A)" % offset
 
+
 def check_for_vulns(simgr, proj):
-    if len(simgr.stashes['active']) < 1:
+    if len(simgr.stashes["active"]) < 1:
         return False
 
     # get current and previous states
-    curr_state = simgr.stashes['active'][0]
+    curr_state = simgr.stashes["active"][0]
 
     if curr_state.solver.symbolic(curr_state._ip):
         # This plugin cannot handle states with symbolic program counters
         return True
 
     sym_obj = proj.loader.find_symbol(curr_state.addr, fuzzy=True)
-    if not sym_obj is None and sym_obj.name == '__libc_start_main.after_main':
+    if not sym_obj is None and sym_obj.name == "__libc_start_main.after_main":
         return True
 
     if len(simgr._techniques[0].predecessors) > 0:
@@ -330,13 +378,15 @@ def check_for_vulns(simgr, proj):
     vex = block.vex
     cap = block.capstone
 
-    rbp_off = prev_state.arch.registers['rbp'][0]
-    rsp_off = prev_state.arch.registers['rsp'][0]
+    rbp_off = prev_state.arch.registers["rbp"][0]
+    rsp_off = prev_state.arch.registers["rsp"][0]
 
     tmps = curr_state.scratch.temps
     blown_tmps = dict()  # tmps that are over or underflowed, value is a tag
     for idx, stmt in enumerate(vex.statements):
-        if isinstance(stmt, pyvex.stmt.WrTmp) and isinstance(stmt.data, pyvex.expr.Binop):
+        if isinstance(stmt, pyvex.stmt.WrTmp) and isinstance(
+            stmt.data, pyvex.expr.Binop
+        ):
             # check if binop is arithmetic that can over/underflow and if so, detect any blown tmps
             if not isinstance(stmt.data.args[0], pyvex.expr.RdTmp):
                 continue  # not a tmp
@@ -345,20 +395,30 @@ def check_for_vulns(simgr, proj):
                 continue  # rsp and rbp manipulations are always lifted into overflowing statements
 
             mnemonic = cap.insns[get_capstone_from_vex(vex, idx)].mnemonic
-            if mnemonic.startswith('add') and (stmt.data.op.startswith('Iop_Add') or stmt.data.op.startswith('Iop_Shl')):
-                if check_tmp(curr_state, stmt, stmt.tmp, stmt.data.args[0].tmp, check_over=True):
+            if mnemonic.startswith("add") and (
+                stmt.data.op.startswith("Iop_Add") or stmt.data.op.startswith("Iop_Shl")
+            ):
+                if check_tmp(
+                    curr_state, stmt, stmt.tmp, stmt.data.args[0].tmp, check_over=True
+                ):
                     _tag_tmp(blown_tmps, stmt.tmp, prev_state.addr, idx)
                     log.debug("t%d is overflowed" % stmt.tmp)
-            elif mnemonic.startswith('sub') and (stmt.data.op.startswith('Iop_Sub') or stmt.data.op.startswith('Iop_Shr')):
-                if check_tmp(curr_state, stmt, stmt.tmp, stmt.data.args[0].tmp, check_under=True):
+            elif mnemonic.startswith("sub") and (
+                stmt.data.op.startswith("Iop_Sub") or stmt.data.op.startswith("Iop_Shr")
+            ):
+                if check_tmp(
+                    curr_state, stmt, stmt.tmp, stmt.data.args[0].tmp, check_under=True
+                ):
                     _tag_tmp(blown_tmps, stmt.tmp, prev_state.addr, idx)
                     log.debug("t%d is underflowed" % stmt.tmp)
-            elif mnemonic.startswith('imul') and stmt.data.op.startswith('Iop_Mul'):
+            elif mnemonic.startswith("imul") and stmt.data.op.startswith("Iop_Mul"):
                 if check_tmp_mul(curr_state, stmt, stmt.tmp, stmt.data.args):
                     _tag_tmp(blown_tmps, stmt.tmp, prev_state.addr, idx)
                     log.debug("t%d is overflowed (Multiplication)" % stmt.tmp)
 
-        elif isinstance(stmt, pyvex.stmt.WrTmp) and isinstance(stmt.data, pyvex.expr.Load):
+        elif isinstance(stmt, pyvex.stmt.WrTmp) and isinstance(
+            stmt.data, pyvex.expr.Load
+        ):
             # if a tmp is given a value loaded from an address that is storing a blown tmp,
             # this tmp is also blown
             if isinstance(stmt.data.addr, pyvex.expr.RdTmp):
@@ -374,11 +434,18 @@ def check_for_vulns(simgr, proj):
                 log.debug("t%d loaded watched address %#x" % (stmt.tmp, mem_addr))
                 blown_tmps[stmt.tmp] = curr_state.deep[watching][mem_addr]
 
-        elif isinstance(stmt, pyvex.stmt.WrTmp) and isinstance(stmt.data, pyvex.expr.Get):
+        elif isinstance(stmt, pyvex.stmt.WrTmp) and isinstance(
+            stmt.data, pyvex.expr.Get
+        ):
             # if a tmp is given a value loaded from a blown register, the tmp is blown
-            if watching in curr_state.deep and stmt.data.offset in curr_state.deep[watching]:
-                log.debug("t%d loaded watched register: %s" % (stmt.tmp,
-                        pp_reg_offset(curr_state, stmt.data.offset)))
+            if (
+                watching in curr_state.deep
+                and stmt.data.offset in curr_state.deep[watching]
+            ):
+                log.debug(
+                    "t%d loaded watched register: %s"
+                    % (stmt.tmp, pp_reg_offset(curr_state, stmt.data.offset))
+                )
                 blown_tmps[stmt.tmp] = curr_state.deep[watching][stmt.data.offset]
 
         elif isinstance(stmt, pyvex.stmt.Put):
@@ -386,12 +453,17 @@ def check_for_vulns(simgr, proj):
             # it's now clean
             dep_tmps = get_tmps(vex, idx)
             if len(blown_tmps) > 0:
-                log.debug("Put depends on: %s, Blown tmps: %s" % (str(dep_tmps), str(blown_tmps)))
+                log.debug(
+                    "Put depends on: %s, Blown tmps: %s"
+                    % (str(dep_tmps), str(blown_tmps))
+                )
             if len(dep_tmps & set(blown_tmps.keys())) > 0:
                 log.debug("Watching: %s" % pp_reg_offset(curr_state, stmt.offset))
                 watch_tag = _get_tag(blown_tmps, dep_tmps)
                 watching_add(curr_state, stmt.offset, watch_tag)
-            elif watching in curr_state.deep and stmt.offset in curr_state.deep[watching]:
+            elif (
+                watching in curr_state.deep and stmt.offset in curr_state.deep[watching]
+            ):
                 log.debug("Clearing: %s" % pp_reg_offset(curr_state, stmt.offset))
                 watching_remove(curr_state, stmt.offset)
 
@@ -429,5 +501,6 @@ def check_for_vulns(simgr, proj):
 
     return True
 
-stash_name = 'int'
-pretty_name = 'Integer Over/Underflow'
+
+stash_name = "int"
+pretty_name = "Integer Over/Underflow"

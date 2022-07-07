@@ -21,10 +21,10 @@ import claripy
 
 log = logging.getLogger(name=__name__)
 
-class at_bitmap_init(angr.SimProcedure):
 
+class at_bitmap_init(angr.SimProcedure):
     def run(self, area, width, height, planes):
-        malloc = angr.SIM_PROCEDURES['libc']['malloc']
+        malloc = angr.SIM_PROCEDURES["libc"]["malloc"]
 
         bitmap = self.inline_call(malloc, 0x10).ret_expr
 
@@ -33,45 +33,54 @@ class at_bitmap_init(angr.SimProcedure):
         area_val = self.state.solver.eval(area)
 
         if area_val != 0:
-            self.state.memory.store(bitmap + 0x4, area, endness='Iend_LE')
+            self.state.memory.store(bitmap + 0x4, area, endness="Iend_LE")
         else:
             if (width_val * height_val) == 0:
-                self.state.memory.store(bitmap + 0x4, self.state.solver.BVV(0, 64), endness='Iend_LE')
+                self.state.memory.store(
+                    bitmap + 0x4, self.state.solver.BVV(0, 64), endness="Iend_LE"
+                )
             else:
                 planes_val = self.state.solver.eval(planes)
-                bitmap_ptr = self.inline_call(malloc, width_val * height_val * planes_val).ret_expr
-                self.state.memory.store(bitmap + 0x4, bitmap_ptr, endness='Iend_LE')
+                bitmap_ptr = self.inline_call(
+                    malloc, width_val * height_val * planes_val
+                ).ret_expr
+                self.state.memory.store(bitmap + 0x4, bitmap_ptr, endness="Iend_LE")
 
-        self.state.memory.store(bitmap + 0x2, self.state.solver.BVV(width_val, 16), endness='Iend_LE')
-        self.state.memory.store(bitmap + 0x0, self.state.solver.BVV(height_val, 16), endness='Iend_LE')
-        self.state.memory.store(bitmap + 0xc, planes, endness='Iend_LE')
+        self.state.memory.store(
+            bitmap + 0x2, self.state.solver.BVV(width_val, 16), endness="Iend_LE"
+        )
+        self.state.memory.store(
+            bitmap + 0x0, self.state.solver.BVV(height_val, 16), endness="Iend_LE"
+        )
+        self.state.memory.store(bitmap + 0xC, planes, endness="Iend_LE")
 
         return bitmap
 
 
 class magnitude(angr.SimProcedure):
     def run(self):
-        cc = self.state.project.factory.cc_from_arg_kinds([True, True, True],
-                                                          ret_fp=True)
+        cc = self.state.project.factory.cc_from_arg_kinds(
+            [True, True, True], ret_fp=True
+        )
         # x = cc.arg(self.state, 0).to_claripy().val_to_fp(claripy.FSORT_FLOAT)
         # y = cc.arg(self.state, 1).to_claripy().val_to_fp(claripy.FSORT_FLOAT)
         # z = cc.arg(self.state, 2).to_claripy().val_to_fp(claripy.FSORT_FLOAT)
         # squared = (x * x) + (y * y) + (z * z)
         # half = claripy.FPV(0.5, claripy.FSORT_FLOAT)
-        sym_ret = claripy.FPS('mag', claripy.FSORT_FLOAT)
+        sym_ret = claripy.FPS("mag", claripy.FSORT_FLOAT)
         cc.return_val.set_value(self.state, sym_ret)
 
 
 class fit_with_least_squares(angr.SimProcedure):
     def run(self):
-        return claripy.BVS('fit_ret', 64)
+        return claripy.BVS("fit_ret", 64)
 
 
 libautotrace_hooks = {
     # 'at_bitmap_init': at_bitmap_init,
-    'magnitude': magnitude,
-    'fit_with_least_squares': fit_with_least_squares,
+    "magnitude": magnitude,
+    "fit_with_least_squares": fit_with_least_squares,
 }
 
-hook_condition = ('libautotrace\.so.*', libautotrace_hooks)
+hook_condition = ("libautotrace\.so.*", libautotrace_hooks)
 is_main_object = False

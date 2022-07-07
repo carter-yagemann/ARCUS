@@ -23,6 +23,7 @@ from angr.exploration_techniques import ExplorationTechnique
 
 log = logging.getLogger(__name__)
 
+
 class BFSExplorer(ExplorationTechnique):
     """Searches for bugs using a breath-first search (BFS) approach.
 
@@ -42,20 +43,20 @@ class BFSExplorer(ExplorationTechnique):
         """Sets up the exploration"""
         log.info("Setting up explorer...")
 
-        if not 'missed' in simgr.stashes:
-            simgr.populate('missed', [])
-        simgr.drop(stash='active')
+        if not "missed" in simgr.stashes:
+            simgr.populate("missed", [])
+        simgr.drop(stash="active")
 
         for idx, state in enumerate(self.predecessors):
-            self.queue.append((state, self.predecessors[:idx - 1].copy()))
+            self.queue.append((state, self.predecessors[: idx - 1].copy()))
         self._rewind(simgr, setup=True)
 
-    def step(self, simgr, stash='active', **kwargs):
-        simgr.drop(stash='missed')
+    def step(self, simgr, stash="active", **kwargs):
+        simgr.drop(stash="missed")
 
         # this can happen if a detector plugin removes our active state because
         # further execution is no longer possible (e.g., symbolic IP)
-        if len(simgr.stashes['active']) < 1:
+        if len(simgr.stashes["active"]) < 1:
             log.debug("No more active states, rewinding")
             self._rewind(simgr)
 
@@ -64,7 +65,7 @@ class BFSExplorer(ExplorationTechnique):
     def step_state(self, simgr, state, **kwargs):
         # maintain the predecessors list
         self.predecessors.append(state)
-        succs = {'active': [], 'missed': []}
+        succs = {"active": [], "missed": []}
 
         # describe where the state currently is in the program
         loader = self.project.loader
@@ -83,39 +84,40 @@ class BFSExplorer(ExplorationTechnique):
             # state cannot be stepped, we're done with this run
             log.debug("Cannot step (%s), rewinding" % str(ex))
             self._rewind(simgr)
-            if len(simgr.stashes['active']) > 0:
-                succs['active'] = [simgr.stashes['active'][0]]
+            if len(simgr.stashes["active"]) > 0:
+                succs["active"] = [simgr.stashes["active"][0]]
             return succs
 
         # update stats in candidates
         for can in candidates:
             can_desc = loader.describe_addr(can.addr)
-            if not 'register_tm_clones' in can_desc:
-                succs['active'].append(can)
+            if not "register_tm_clones" in can_desc:
+                succs["active"].append(can)
 
         # the active stash can only have 1 state at a time, if we have more,
         # we'll queue the rest up for later
-        if len(succs['active']) > 1:
-            for succ in succs['active'][1:]:
+        if len(succs["active"]) > 1:
+            for succ in succs["active"][1:]:
                 self.queue.insert(0, (succ, self.predecessors.copy()))
-            succs['active'] = [succs['active'][0]]
+            succs["active"] = [succs["active"][0]]
 
         return succs
 
     def complete(self, simgr):
         """Returns True when there's nothing left to explore"""
-        return len(simgr.stashes['active']) < 1 and len(self.queue) < 1
+        return len(simgr.stashes["active"]) < 1 and len(self.queue) < 1
 
     def _rewind(self, simgr, setup=False):
         """Queues up the next candidate by rewinding and then setting it as active"""
-        simgr.drop(stash='active')
+        simgr.drop(stash="active")
         try:
             state, preds = self.queue.pop()
         except IndexError:
             log.info("No pending states left")
             return
 
-        simgr.stashes['active'] = [state.copy()]
+        simgr.stashes["active"] = [state.copy()]
         self.predecessors = preds
+
 
 explorer = BFSExplorer
