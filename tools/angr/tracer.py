@@ -20,7 +20,7 @@ from hashlib import sha256
 import json
 from optparse import OptionParser, OptionGroup
 import os
-from shutil import copyfile, rmtree
+from shutil import copyfile, rmtree, move
 import signal
 import subprocess
 import sys
@@ -33,7 +33,7 @@ from elftools.common.exceptions import ELFError
 
 import perf
 
-PROGRAM_VERSION = "3.0.0"
+PROGRAM_VERSION = "3.1.0"
 PROGRAM_USAGE = (
     "Usage: %prog [options] <output_directory> <tracee_path> [tracee_args]..."
 )
@@ -636,7 +636,9 @@ def disable_perf(dir, options):
     except Exception as ex:
         sys.stderr.write("Failed to decode perf.data: %s\n" % str(ex))
 
-    if not options.keep_perf:
+    if options.keep_perf:
+        move('perf.data', os.path.join(dir, 'perf.data'))
+    else:
         os.remove('perf.data')
 
 
