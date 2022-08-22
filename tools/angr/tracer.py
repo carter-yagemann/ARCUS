@@ -120,6 +120,9 @@ def parse_args():
     group_debug.add_option(
         "--no-state", action="store_true", default=False, help="Skip saving a state"
     )
+    group_debug.add_option(
+        "--keep-perf", action="store_true", default=False, help="Keep perf.data when using perf tracing"
+    )
     parser.add_option_group(group_debug)
 
     parser.disable_interspersed_args()
@@ -616,7 +619,7 @@ def enable_perf(pid):
             time.sleep(1)
 
 
-def disable_perf(dir):
+def disable_perf(dir, options):
     """Disables Perf and decodes its trace into dir/trace.perf.gz"""
     global perf_proc
 
@@ -633,7 +636,8 @@ def disable_perf(dir):
     except Exception as ex:
         sys.stderr.write("Failed to decode perf.data: %s\n" % str(ex))
 
-    os.remove("perf.data")
+    if not options.keep_perf:
+        os.remove('perf.data')
 
 
 def dump_state(dir, args, sym_argv=False, sym_env=False):
@@ -1083,7 +1087,7 @@ def main():
         if TRACE_INTERFACE == "GRIFFIN":
             disable_griffin(output_dir)
         elif TRACE_INTERFACE == "PERF":
-            disable_perf(output_dir)
+            disable_perf(output_dir, options)
 
     dump_settings(output_dir, args, options.__dict__)
 
