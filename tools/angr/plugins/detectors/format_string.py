@@ -197,10 +197,16 @@ def find_bad_addr(states, state_idx, arg_idx):
     A memory address or None if there was a problem.
     """
     bug_state = states[state_idx]
+
+    simproc = bug_state.project.hooked_by(bug_state.addr)
+    if simproc is None:
+        log.warning("Cannot find simulation procedure for %s" % (
+                bug_state.project.loader.describe_addr(bug_state.addr)))
+        return None
+
     # get location of argument
-    loc = bug_state.project.factory.cc().arg_locs(is_fp=[False] * (arg_idx + 1))[
-        arg_idx
-    ]
+    loc = bug_state.project.factory.cc().arg_locs(simproc.prototype)[arg_idx]
+
     if isinstance(loc, angr.calling_conventions.SimRegArg):
         reg_offset = bug_state.arch.registers[loc.reg_name][0]
 
