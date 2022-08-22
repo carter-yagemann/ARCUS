@@ -20,7 +20,7 @@ from hashlib import sha256
 import json
 from optparse import OptionParser, OptionGroup
 import os
-from shutil import copyfile, rmtree
+from shutil import copyfile, rmtree, move
 import signal
 import subprocess
 import sys
@@ -33,7 +33,7 @@ from elftools.common.exceptions import ELFError
 
 import perf
 
-PROGRAM_VERSION = "3.0.0"
+PROGRAM_VERSION = "3.1.0"
 PROGRAM_USAGE = (
     "Usage: %prog [options] <output_directory> <tracee_path> [tracee_args]..."
 )
@@ -119,6 +119,9 @@ def parse_args():
     )
     group_debug.add_option(
         "--no-state", action="store_true", default=False, help="Skip saving a state"
+    )
+    group_debug.add_option(
+        "--keep-perf", action="store_true", default=False, help="Keep perf.data when using perf tracing"
     )
     parser.add_option_group(group_debug)
 
@@ -616,7 +619,7 @@ def enable_perf(pid):
             time.sleep(1)
 
 
-def disable_perf(dir):
+def disable_perf(dir, options):
     """Disables Perf and decodes its trace into dir/trace.perf.gz"""
     global perf_proc
 
@@ -633,7 +636,10 @@ def disable_perf(dir):
     except Exception as ex:
         sys.stderr.write("Failed to decode perf.data: %s\n" % str(ex))
 
-    os.remove("perf.data")
+    if options.keep_perf:
+        move('perf.data', os.path.join(dir, 'perf.data'))
+    else:
+        os.remove('perf.data')
 
 
 def dump_state(dir, args, sym_argv=False, sym_env=False):
@@ -1083,7 +1089,7 @@ def main():
         if TRACE_INTERFACE == "GRIFFIN":
             disable_griffin(output_dir)
         elif TRACE_INTERFACE == "PERF":
-            disable_perf(output_dir)
+            disable_perf(output_dir, options)
 
     dump_settings(output_dir, args, options.__dict__)
 
