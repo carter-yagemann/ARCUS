@@ -61,9 +61,9 @@ Most modern Intel Core and Atom processors should work. Some Xeon processors wil
 
 **Install Steps:**
 
-1. Install a trace interface: [Griffin](docs/griffin-setup.md) or [Perf](docs/perf.md).
+1. Install a trace interface: [Perf](docs/perf.md) (Legacy: [Griffin](docs/griffin-setup.md)).
 
-See this [document](docs/tracer-tradeoffs.md) for trade-offs between the supported interfaces.
+See this [document](docs/tracer-tradeoffs.md) for trade-offs between interfaces.
 This is only required if you want to record your own traces. You can analyze the
 pre-recorded traces in `tools/angr/test/test-data/traces` and the datasets below
 without performing this step.
@@ -71,8 +71,6 @@ without performing this step.
 2. [Install](docs/arcus-setup.md) project specific tools and packages.
 
 # Usage
-
-* [Tracing with Griffin](docs/griffin-tracing.md).
 
 * [Tracing with Perf](docs/perf.md).
 
@@ -101,8 +99,9 @@ to keep plugins up-to-date as new angr versions release, but this is not always 
 
 ## Unit Tests
 
-If you make contributions to the repository, please try to keep `tools/angr/test/test.py` up-to-date. For non-unit tests,
-create a new script in `tools/angr/test`. We currently do not have a unified framework for non-unit tests.
+If you make contributions to the repository, please try to keep `tools/angr/test/test.py` 
+up-to-date. For non-unit tests, create a new script in `tools/angr/test`. We currently do not 
+have a unified framework for non-unit tests.
 
 ## Publications
 
@@ -118,5 +117,6 @@ August 11--13, 2021.
 
 ## Related Work
 
-* Barnum [Tracer](https://github.com/carter-yagemann/barnum-tracer) & [Learner](https://github.com/carter-yagemann/barnum-learner):
+* Barnum [Tracer](https://github.com/carter-yagemann/barnum-tracer) & 
+[Learner](https://github.com/carter-yagemann/barnum-learner):
 An end-to-end system for program control-flow anomaly detection.
