@@ -56,7 +56,8 @@ loading to create the true starting state for analysis.
 * `regs.json` - Contains the starting values for CPU registers.
 * `state.json` - Contains the starting values (concrete or symbolic, depending on the options given to `tracer.py`)
 of command line arguments and environment variables.
-* `trace.griffin.gz` - The Intel PT trace, in GRIFFIN format, gzip compressed.
+* `trace.perf.gz` or `trace.griffin.gz` - The Intel PT trace, gzip compressed. Exact contents depends on which
+tracing interface was used.
 
 ## File Symbolization
 
