@@ -2,7 +2,7 @@
 
 ## Analyzing Traces
 
-See `tools/angr/analysis.py --help` for usage. To continue the example from the Griffin tracing [documentation](griffin-tracing.md):
+See `tools/angr/analysis.py --help` for usage. To continue the example from the tracing [documentation](perf.md):
 
     sudo chown -R $(whoami) trace-output
     ./tools/angr/analysis.py trace-output
