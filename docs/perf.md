@@ -28,7 +28,7 @@ You're ready to trace 🎉
 
 # Perf Tracing
 
-Once compiled and booted, you can take a trace using `tracer.py`:
+Traces are recorded using Tracer (`tracer.py`):
 
     sudo ./tools/angr/tracer.py trace-output /bin/ls -lht
 
