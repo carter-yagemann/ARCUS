@@ -33,7 +33,7 @@ from elftools.common.exceptions import ELFError
 
 import perf
 
-PROGRAM_VERSION = "3.1.0"
+PROGRAM_VERSION = "3.1.1"
 PROGRAM_USAGE = (
     "Usage: %prog [options] <output_directory> <tracee_path> [tracee_args]..."
 )
@@ -558,12 +558,12 @@ def attach(tracee, tracee_args, output_dir, options):
 
 def determine_trace_interface():
     """Determine which tracer to use"""
-    if os.path.exists("/sys/kernel/debug/pt_monitor"):
-        sys.stderr.write("Using GRIFFIN tracing interface\n")
-        return "GRIFFIN"
-    elif len(resolve_path("perf")) > 0:
+    if len(resolve_path("perf")) > 0:
         sys.stderr.write("Using Perf tracing interface\n")
         return "PERF"
+    elif os.path.exists("/sys/kernel/debug/pt_monitor"):
+        sys.stderr.write("Using GRIFFIN tracing interface\n")
+        return "GRIFFIN"
     else:
         sys.stderr.write("No trace interface found\n")
         return None
