@@ -446,13 +446,8 @@ def parse_entry_state_json(
     # restore CLE's relocations
     for gotaddr in orig_relocs:
         gotvalue = orig_relocs[gotaddr]
-        if project.arch.bits == 64:
-            state.mem[gotaddr].uint64_t = gotvalue
-        elif project.arch.bits == 32:
-            state.mem[gotaddr].uint32_t = gotvalue
-        else:
-            log.error("Unsupported architecture: %d" % project.arch.bits)
-            sys.exit(1)
+        state.memory.store(addr=gotaddr, data=gotvalue,
+                size=state.arch.bits // 8, endness=state.arch.memory_endness)
 
     # create simulated filesystem
     if not fs_files is None:
