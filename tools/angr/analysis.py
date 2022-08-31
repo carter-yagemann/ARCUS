@@ -412,15 +412,25 @@ def parse_entry_state_json(
         except:
             log.warn("State does not have register %s" % reg)
 
-    # we're about to restore memory, but don't want to overwrite relocations because CLE already resolved them
-    # to add things like hooks for simulation procedures
+    # we're about to restore memory, but don't want to overwrite relocations
+    # because CLE already resolved them to add things like hooks for simulation procedures
     orig_relocs = dict()
     for obj in project.loader.all_objects:
         for reloc in obj.relocs:
             if reloc.symbol is None or reloc.resolvedby is None:
                 continue
+
             gotaddr = reloc.rebased_addr
             gotvalue = project.loader.memory.unpack_word(gotaddr)
+
+            # angr introduced its own simulated IFuncResolver and the devs implemented it in a
+            # terrible way that makes it impossible to rehook the function via hook_symbol(). To
+            # work around this, we intentionally detect and do not restore IFuncResolver hooks.
+            if gotvalue in project._sim_procedures:
+                simproc = project._sim_procedures[gotvalue]
+                if isinstance(simproc, angr.procedures.linux_loader.sim_loader.IFuncResolver):
+                    continue
+
             orig_relocs[gotaddr] = gotvalue
 
     # restore memory
@@ -446,13 +456,8 @@ def parse_entry_state_json(
     # restore CLE's relocations
     for gotaddr in orig_relocs:
         gotvalue = orig_relocs[gotaddr]
-        if project.arch.bits == 64:
-            state.mem[gotaddr].uint64_t = gotvalue
-        elif project.arch.bits == 32:
-            state.mem[gotaddr].uint32_t = gotvalue
-        else:
-            log.error("Unsupported architecture: %d" % project.arch.bits)
-            sys.exit(1)
+        state.memory.store(addr=gotaddr, data=gotvalue,
+                size=state.arch.bits // 8, endness=state.arch.memory_endness)
 
     # create simulated filesystem
     if not fs_files is None:
