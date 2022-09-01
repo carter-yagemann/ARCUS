@@ -18,4 +18,4 @@ Simulator accepts similar arguments to Tracer:
 
     ./tools/angr/simulator.py trace-output /usr/bin/pwd
 
-See `--usage` for more details.
+See `--help` for more details.
