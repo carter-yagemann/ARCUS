@@ -811,7 +811,9 @@ def dump_mem(dir, pid, main_bin, blobs_dir=None):
 def dump_files(outdir, tracee_args, symbolic_files=False):
     """Save copies of files touched by the tracee.
 
-    Currently, this just checks each argv to see if it's a valid filepath.
+    Currently, this checks and grabs the following:
+    * Files passed to the program via command line arguments
+    * System locale files, to speed up execution of functions like setlocale.
     """
     files_json = {"files": {}, "cwd": None}
     files_dir = os.path.join(outdir, "files")
@@ -841,6 +843,21 @@ def dump_files(outdir, tracee_args, symbolic_files=False):
         # the tracer to be attached at all times. Staying attached is
         # inevitable in some advanced modes (API snapshot), but we want
         # to keep the default mode as simple and hands-off as possible.
+
+    # grab common locale files, this significantly speeds up
+    # analysis of functions like setlocale, bindtextdomain, and more.
+    locale_configs = {'/usr/lib/locale/locale-archive'}
+
+    for locale_fp in locale_configs:
+        if os.path.isfile(locale_fp):
+            shasum = sha256_file(locale_fp)
+            dest = os.path.join(files_dir, shasum)
+            if not os.path.exists(dest):
+                copyfile(locale_fp, dest)
+            files_json["files"][locale_fp] = {
+                "data": os.path.join("files/", shasum),
+                "symbolic": False,
+            }
 
     # write files.json
     with open(os.path.join(outdir, "files.json"), "w") as ofile:
