@@ -17,6 +17,7 @@
 
 from datetime import datetime
 from hashlib import sha256
+import importlib
 import json
 import logging
 from optparse import OptionParser, OptionGroup
@@ -30,6 +31,7 @@ from traceback import format_exc
 import angr
 from angr import sim_options
 from angr.calling_conventions import SimRegArg, SimStackArg
+from archinfo.arch import ArchNotFound
 import claripy
 import IPython
 import psutil
@@ -108,6 +110,14 @@ def parse_args():
         type="int",
         default=None,
         help="Specify which task to analyze by PID (default: first occurring)",
+    )
+    group_analysis.add_option(
+        "-a",
+        "--arch",
+        action="store",
+        type="str",
+        default=None,
+        help='Import additional architecture from angr-platforms (example: "risc_v")',
     )
     group_analysis.add_option(
         "--api-snapshot",
@@ -1068,6 +1078,13 @@ def main():
     set_log_levels(options)
 
     # input validation
+    if isinstance(options.arch, str):
+        try:
+            importlib.import_module("angr_platforms.%s" % options.arch)
+        except ImportError:
+            log.error("Failed to import architecture: %s" % options.arch)
+            return
+
     if options.explore_after:
         if not options.explore:
             options.explore = True  # user clearly intends to explore
@@ -1190,16 +1207,21 @@ def main():
             shutil.rmtree(bin_temp)
             return
 
-    proj = angr.Project(
-        main_fp,
-        main_opts=main_opts,
-        force_load_libs=lib_files,
-        lib_opts=lib_opts,
-        use_sim_procedures=True,
-        except_missing_libs=False,
-        ld_path=[bin_temp],
-        use_system_libs=False,
-    )
+    try:
+        proj = angr.Project(
+            main_fp,
+            main_opts=main_opts,
+            force_load_libs=lib_files,
+            lib_opts=lib_opts,
+            use_sim_procedures=True,
+            except_missing_libs=False,
+            ld_path=[bin_temp],
+            use_system_libs=False,
+        )
+    except ArchNotFound as ex:
+        log.error("Unsupported architecture: %s" % str(ex))
+        log.info("Do you need to set --arch?")
+        return
 
     # apply any relevant custom hooks/simprocedures
     hooks.apply_hooks(proj)

@@ -17,6 +17,7 @@
 
 import gzip
 from hashlib import sha256
+import importlib
 import json
 import logging
 from optparse import OptionParser, OptionGroup
@@ -25,6 +26,7 @@ from shutil import copyfile
 import sys
 
 import angr
+from archinfo.arch import ArchNotFound
 
 PROGRAM_VERSION = "1.0.0"
 PROGRAM_USAGE = (
@@ -35,6 +37,17 @@ PROGRAM_USAGE = (
 def parse_args():
     """Parses sys.argv."""
     parser = OptionParser(usage=PROGRAM_USAGE, version="%prog " + PROGRAM_VERSION)
+
+    group_symbex = OptionGroup(parser, "Analysis Options")
+    group_symbex.add_option(
+        "-a",
+        "--arch",
+        action="store",
+        type="str",
+        default=None,
+        help="Import additional architecture from angr-platforms (ex: risc_v)"
+    )
+    parser.add_option_group(group_symbex)
 
     group_logging = OptionGroup(parser, "Logging Options")
     group_logging.add_option(
@@ -251,6 +264,21 @@ def resolve_path(name):
     return ""  # no match
 
 
+def prune(state):
+    """Determines whether a state is finished or not.
+
+    For some architectures like amd64, this isn't necessary, but some of the
+    community provided ones require some extra help.
+    """
+    # risc_v
+    if (state.arch.name == 'RISCV' and
+            not state.solver.symbolic(state._ip) and
+            state.addr == 0):
+        return True
+
+    return False
+
+
 def main():
     """The main method."""
     options, args = parse_args()
@@ -258,6 +286,13 @@ def main():
     tracee_path = args[1]
 
     init_logging(options)
+
+    if isinstance(options.arch, str):
+        try:
+            importlib.import_module("angr_platforms.%s" % options.arch)
+        except ImportError:
+            log.error("Failed to import architecture: %s" % options.arch)
+            sys.exit(1)
 
     if not os.path.exists(tracee_path):
         # user may have provided a program name in PATH
@@ -282,7 +317,12 @@ def main():
         sys.exit(1)
 
     log.info("Creating angr project for: %s" % tracee_path)
-    proj = angr.Project(tracee_path)
+    try:
+        proj = angr.Project(tracee_path)
+    except ArchNotFound as ex:
+        log.error("Unsupported architecture: %s" % str(ex))
+        log.info("Do you need to use --arch?")
+        sys.exit(1)
 
     init_state = proj.factory.entry_state(
             concrete_fs=True,
@@ -298,7 +338,12 @@ def main():
     simgr = proj.factory.simgr(init_state)
 
     log.info("Starting exploration")
-    simgr.run()
+    while len(simgr.stashes["active"]) > 0:
+        simgr.step()
+        simgr.move('active', 'deadended', prune)
+        log.info("Status: Active (%d), Deadended (%d)" % (
+                len(simgr.stashes['active']),
+                len(simgr.stashes['deadended'])))
 
     log.info("Exploration complete, processing results")
     if len(simgr.stashes['deadended']) < 1:
