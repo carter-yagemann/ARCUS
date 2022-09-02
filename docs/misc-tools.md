@@ -8,6 +8,7 @@ of executed basic blocks along with some other details.
 * `tools/angr/rewriter.py` - Instruments program to record run-time data in PT trace. Explained in more detail
 in a following subsection.
 * `tools/pt/cmppath` - Compares traces using hashmaps and checksums.
+* `tools/angr/simulator.py` - A Tracer simulator to help developers. See this [document](simulator.md) for more details.
 
 ## Instrumenting Programs
 
