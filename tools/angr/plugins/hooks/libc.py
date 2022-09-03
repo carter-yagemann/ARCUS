@@ -334,7 +334,18 @@ class libc_strncat(angr.SimProcedure):
             max_len = src_len
         self.inline_call(strncpy, dst + dst_len, src, max_len + 1, src_len=src_len)
         return dst
+    
 
+class libc_setlocale(angr.SimProcedure):
+	locale = None
+	def run (self, category, locale):	
+		if self.locale is None:
+		    self.locale = self.inline_call(
+		        angr.SIM_PROCEDURES["libc"]["malloc"], 256
+		    ).ret_expr
+		    self.state.memory.store(self.locale + 255, b"\x00")
+		return self.locale
+	
 
 libc_hooks = {
     # Additional functions that angr doesn't provide hooks for
@@ -356,6 +367,7 @@ libc_hooks = {
     "__snprintf_chk": libc__snprintf_chk,
     "strncat": libc_strncat,
     "strrchr": libc_strrchr,
+    "setlocale":libc_setlocale,
 }
 
 hook_condition = ("libc\.so.*", libc_hooks)
