@@ -337,15 +337,34 @@ class libc_strncat(angr.SimProcedure):
     
 
 class libc_setlocale(angr.SimProcedure):
-	locale = None
-	def run (self, category, locale):	
-		if self.locale is None:
-		    self.locale = self.inline_call(
-		        angr.SIM_PROCEDURES["libc"]["malloc"], 256
-		    ).ret_expr
-		    self.state.memory.store(self.locale + 255, b"\x00")
-		return self.locale
-	
+    locale = None
+    def run (self, category, locale):	
+        if self.locale is None:
+            self.locale = self.inline_call(
+                angr.SIM_PROCEDURES["libc"]["malloc"], 256
+            ).ret_expr
+            self.state.memory.store(self.locale + 255, b"\x00")
+        return self.locale
+
+class libc_bindtextdomain(angr.SimProcedure):
+    domainname = None
+    def run (self, domainname, dirname):
+        if self.domainname is None:
+            self.domainname = self.inline_call(
+               angr.SIM_PROCEDURES["libc"]["malloc"], 256
+            ).ret_expr
+            self.state.memory.store(self.domainname + 255, b"\x00")
+        return self.domainname
+
+class libc_textdomain(angr.SimProcedure):
+    domainname = None
+    def run (self, domainname):
+        if self.domainname is None:
+            self.domainname = self.inline_call(
+               angr.SIM_PROCEDURES["libc"]["malloc"], 256
+            ).ret_expr
+            self.state.memory.store(self.domainname + 255, b"\x00")
+        return self.domainname
 
 libc_hooks = {
     # Additional functions that angr doesn't provide hooks for
@@ -368,6 +387,8 @@ libc_hooks = {
     "strncat": libc_strncat,
     "strrchr": libc_strrchr,
     "setlocale":libc_setlocale,
+    "bindtextdomain": libc_bindtextdomain,
+    "textdomain": libc_textdomain,
 }
 
 hook_condition = ("libc\.so.*", libc_hooks)
