@@ -270,7 +270,7 @@ def find_bad_addr(states, state_idx, arg_idx):
             return None
 
     elif isinstance(loc, angr.calling_conventions.SimStackArg):
-        sp_bv = bug_state.registers.load(bug_state.arch.sp_offset, bug_state.arch.bits)
+        sp_bv = bug_state.registers.load(bug_state.arch.sp_offset, size=bug_state.arch.bits // 8)
         return bug_state.solver.eval(sp_bv) + loc.stack_offset
     else:
         log.error("Unknown argument type: %s" % type(loc))

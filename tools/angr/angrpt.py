@@ -282,7 +282,7 @@ class Tracer(ExplorationTechnique):
         """Maintain a list of stack frame addresses in the state's global dictionary."""
         kind = state.history.jumpkind
         if kind.startswith("Ijk_Call"):
-            sp_bv = state.registers.load(state.arch.sp_offset, state.arch.bits)
+            sp_bv = state.registers.load(state.arch.sp_offset, size=state.arch.bits // 8)
             curr_frame = state.solver.eval(sp_bv)
             state.deep["frame_addrs"].append(curr_frame)
         elif kind.startswith("Ijk_Ret") and len(state.deep["frame_addrs"]) > 0:

@@ -451,7 +451,7 @@ class LoopBounds(ExplorationTechnique):
         # Due to the before_main libc simproc, main's stack frame address will be missing from
         # the list. A hacky workaround so we don't keep iterating until the *entire* stack is
         # corrupted is to check the next word after the base register, if the arch has one.
-        bp_bv = state.registers.load(state.arch.bp_offset, state.arch.bits)
+        bp_bv = state.registers.load(state.arch.bp_offset, size=state.arch.bits // 8)
         base = state.memory.load(bp_bv + word_size, size=abs(word_size))
 
         if state.solver.symbolic(base):
@@ -476,7 +476,7 @@ class LoopBounds(ExplorationTechnique):
         in_cycle = False
         mem_writes = dict()
         for idx, pred in enumerate(preds[::-1]):
-            ip_bv = pred.registers.load(pred.arch.ip_offset, pred.arch.bits)
+            ip_bv = pred.registers.load(pred.arch.ip_offset, size=pred.arch.bits // 8)
             if len(pred.solver.eval_upto(ip_bv, 2)) > 1:
                 # symbolic IP with multiple values, skip it
                 continue
