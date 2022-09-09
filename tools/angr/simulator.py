@@ -28,7 +28,9 @@ import sys
 import angr
 from archinfo.arch import ArchNotFound
 
-PROGRAM_VERSION = "1.0.0"
+import hooks
+
+PROGRAM_VERSION = "1.0.1"
 PROGRAM_USAGE = (
     "Usage: %prog [options] <output_directory> <tracee_path> [tracee_args]..."
 )
@@ -323,6 +325,8 @@ def main():
         log.error("Unsupported architecture: %s" % str(ex))
         log.info("Do you need to use --arch?")
         sys.exit(1)
+
+    hooks.apply_hooks(proj)
 
     init_state = proj.factory.entry_state(
             concrete_fs=True,

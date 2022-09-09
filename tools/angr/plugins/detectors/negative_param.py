@@ -198,7 +198,8 @@ def analyze_state(simgr, trace, state, report):
 
     elif isinstance(ex.offset, angr.calling_conventions.SimStackArg):
         # stack memory
-        bad_mem = prev_state.solver.eval(state.regs.rsp) + ex.offset.stack_offset
+        sp_bv = state.registers.load(state.arch.sp_offset, state.arch.bits)
+        bad_mem = prev_state.solver.eval(sp_bv) + ex.offset.stack_offset
     else:
         log.error("Unknown argument type: %s" % type(ex.offset))
         return

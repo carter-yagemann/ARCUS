@@ -1227,7 +1227,8 @@ def main():
     hooks.apply_hooks(proj)
 
     # initialize the starting state, exploration technique and simulation manager
-    tech = angrpt.Tracer(bb_seq, start_address=regs["rip"])
+    ip_reg_name = proj.arch.register_names[proj.arch.ip_offset]
+    tech = angrpt.Tracer(bb_seq, start_address=regs[ip_reg_name])
     init_state, init_env = parse_entry_state_json(
         proj, trace_dir, snapshot_dir, options.explore, options.override_max_argv
     )

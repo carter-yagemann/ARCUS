@@ -218,7 +218,7 @@ class Tracer(ExplorationTechnique):
                         % (prev_vex.addr, trace_addr, next_trace_addr, str(succs))
                     )
                     raise AngrTracerError("Cannot find next trace address")
-            elif prev_cap.insns[-1].mnemonic.startswith("rep"):
+            elif succs[0].arch.name == 'AMD64' and prev_cap.insns[-1].mnemonic.startswith("rep"):
                 log.warn(
                     "State split at rep instruction: %s" % prev_cap.insns[-1].mnemonic
                 )
@@ -282,7 +282,8 @@ class Tracer(ExplorationTechnique):
         """Maintain a list of stack frame addresses in the state's global dictionary."""
         kind = state.history.jumpkind
         if kind.startswith("Ijk_Call"):
-            curr_frame = state.solver.eval(state.regs.rsp)
+            sp_bv = state.registers.load(state.arch.sp_offset, state.arch.bits)
+            curr_frame = state.solver.eval(sp_bv)
             state.deep["frame_addrs"].append(curr_frame)
         elif kind.startswith("Ijk_Ret") and len(state.deep["frame_addrs"]) > 0:
             state.deep["frame_addrs"].pop()
