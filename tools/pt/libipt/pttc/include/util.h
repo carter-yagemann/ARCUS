@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2021, Intel Corporation
+ * Copyright (c) 2013-2022, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -30,15 +30,17 @@
 #define UTIL_H
 
 #include <stdint.h>
+#include <stddef.h>
 
-/* Duplicates @s and returns a pointer to it.
+/* Duplicates @s into *@d provided the length of @s does not exceed @n bytes.
  *
- * The returned pointer must be freed by the caller.
+ * The provided pointer must be freed by the caller.
  *
- * Returns the pointer to the duplicate on success; otherwise NULL is
- * returned.
+ * Returns zero on success; a negative enum errcode otherwise.
+ * Returns -err_name_too_long if the length of @s exceeds @n bytes.
+ * Returns -err_no_mem when running out of memory.
  */
-extern char *duplicate_str(const char *s);
+extern int duplicate_name(char **d, const char *s, size_t n);
 
 /* Converts the string @str into an usigned x-bit value @val using base @base.
  *

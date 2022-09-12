@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2021, Intel Corporation
+ * Copyright (c) 2013-2022, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -47,10 +47,11 @@ extern int parse_yasm_labels(struct label *l, const struct text *t);
 /* Modifies @s, so it can be used as a label, if @s actually looks like
  * a label.
  *
- * Returns true if @s looks like a label; false otherwise.
- * Returns -err_internal if @l or @name is the NULL pointer.
+ * @end points one byte beyond the end of the string buffer containing @s.
+ *
+ * Returns non-zero if @s looks like a label; zero otherwise.
  */
-extern int make_label(char *s);
+extern int make_label(char *s, const char *end);
 
 /* Represents the state of the pt directive parser.  The parser uses the
  * canonical yasm lst file syntax to follow all asm source files that

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2021, Intel Corporation
+ * Copyright (c) 2013-2022, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -35,32 +35,35 @@
 #include <string.h>
 #include <errno.h>
 
-struct text *text_alloc(const char *s)
+struct text *text_alloc(char *s, size_t n)
 {
-	size_t n, i;
+	size_t i;
 	char **line;
 	struct text *t;
 
 	t = calloc(1, sizeof(struct text));
-	if (!t)
+	if (!t) {
+		free(s);
 		return NULL;
+	}
 
 	/* If s is NULL or empty, there is nothing to do.  */
-	if (!s || *s == '\0')
+	if (!s || *s == '\0') {
+		free(s);
 		return t;
+	}
 
 	/* beginning of s is the first line.  */
 	t->n = 1;
 	t->line = calloc(1, sizeof(*t->line));
-	if (!t->line)
+	if (!t->line) {
+		free(s);
 		goto error;
+	}
 
-	t->line[0] = duplicate_str(s);
-	if (!t->line[0])
-		goto error;
+	t->line[0] = s;
 
 	/* iterate through all chars and make \r?\n to \0.  */
-	n = strlen(t->line[0]);
 	for (i = 0; i < n; i++) {
 		if (t->line[0][i] == '\r') {
 			if (i+1 >= n) {
@@ -69,16 +72,22 @@ struct text *text_alloc(const char *s)
 				break;
 			}
 			/* terminate the line string if it's a line end. */
-			if (t->line[0][i+1] == '\n')
+			if (t->line[0][i+1] == '\n') {
 				t->line[0][i] = '\0';
+				continue;
+			}
+		}
 
-		} else if (t->line[0][i] == '\n') {
+		if (t->line[0][i] == '\n') {
 			/* set newline character always to \0.  */
 			t->line[0][i] = '\0';
 			if (i+1 >= n) {
 				/* the file ends with \n.  */
 				break;
 			}
+		}
+
+		if (t->line[0][i] == '\0') {
 			/* increase line pointer buffer.  */
 			line = realloc(t->line, (t->n+1) * sizeof(*t->line));
 			if (!line)
@@ -190,11 +199,9 @@ static int fl_append(struct file_list *fl, struct text **t,
 		goto error;
 	}
 
-	fl->next->filename = duplicate_str(filename);
-	if (!fl->next->filename) {
-		errcode = -err_no_mem;
+	errcode = duplicate_name(&fl->next->filename, filename, FILENAME_MAX);
+	if (errcode < 0)
 		goto error;
-	}
 
 	errno = 0;
 	f = fopen(filename, "rb");
@@ -245,13 +252,12 @@ static int fl_append(struct file_list *fl, struct text **t,
 		goto error;
 	}
 
-	*t = text_alloc(s);
+	*t = text_alloc(s, fsize);
 	if (!*t) {
 		errcode = -err_no_mem;
 		goto error;
 	}
 
-	free(s);
 	fl->next->text = *t;
 
 	return 0;
@@ -262,7 +268,6 @@ error:
 	/* filename is closed after reading before handling error.  */
 	fl_free(fl->next);
 	fl->next = NULL;
-	free(s);
 	text_free(*t);
 	*t = NULL;
 	return errcode;

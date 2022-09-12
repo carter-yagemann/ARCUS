@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2021, Intel Corporation
+ * Copyright (c) 2014-2022, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -29,59 +29,50 @@
 #ifndef PT_QUERY_DECODER_H
 #define PT_QUERY_DECODER_H
 
-#include "pt_last_ip.h"
+#include "pt_event_decoder.h"
 #include "pt_tnt_cache.h"
-#include "pt_time.h"
-#include "pt_event_queue.h"
 
 #include "intel-pt.h"
-
-struct pt_decoder_function;
 
 
 /* An Intel PT query decoder. */
 struct pt_query_decoder {
-	/* The decoder configuration. */
-	struct pt_config config;
+	/* The Intel PT event decoder. */
+	struct pt_event_decoder evdec;
 
-	/* The current position in the trace buffer. */
-	const uint8_t *pos;
-
-	/* The position of the last PSB packet. */
-	const uint8_t *sync;
-
-	/* The decoding function for the next packet. */
-	const struct pt_decoder_function *next;
-
-	/* The last-ip. */
-	struct pt_last_ip ip;
+	/* The configuration flags.
+	 *
+	 * Those are our flags set by the user.  In @evdec.config.flags, we set
+	 * the flags we need for the event decoder.
+	 */
+	struct pt_conf_flags flags;
 
 	/* The cached tnt indicators. */
 	struct pt_tnt_cache tnt;
 
-	/* Timing information. */
-	struct pt_time time;
-
 	/* The time at the last query (before reading ahead). */
 	struct pt_time last_time;
 
-	/* Timing calibration. */
-	struct pt_time_cal tcal;
-
-	/* Pending (incomplete) events. */
-	struct pt_event_queue evq;
-
-	/* The current event. */
-	struct pt_event *event;
-
-	/* A collection of flags relevant for decoding:
+	/* The current event to be processed.
 	 *
-	 * - tracing is enabled.
+	 * This will be valid as long as there are events available, i.e. until
+	 * @status is not negative.
+	 *
+	 * The decoder starts by reading the first event after synchronizing
+	 * onto the trace stream.
+	 *
+	 * When it is done processing an event, it fetches the next event for
+	 * the next iteration.
 	 */
-	uint32_t enabled:1;
+	struct pt_event event;
 
-	/* - consume the current packet. */
-	uint32_t consume_packet:1;
+	/* The last status of the event decoder.
+	 *
+	 * It will be zero most of the time.  Since we fetch new events at the
+	 * end of an iteration, we need to store the status until the next
+	 * pt_qry_*() call.
+	 */
+	int status;
 };
 
 /* Initialize the query decoder.
@@ -94,41 +85,21 @@ extern int pt_qry_decoder_init(struct pt_query_decoder *,
 /* Finalize the query decoder. */
 extern void pt_qry_decoder_fini(struct pt_query_decoder *);
 
-/* Decoder functions (tracing context). */
-extern int pt_qry_decode_unknown(struct pt_query_decoder *);
-extern int pt_qry_decode_pad(struct pt_query_decoder *);
-extern int pt_qry_decode_psb(struct pt_query_decoder *);
-extern int pt_qry_decode_tip(struct pt_query_decoder *);
-extern int pt_qry_decode_tnt_8(struct pt_query_decoder *);
-extern int pt_qry_decode_tnt_64(struct pt_query_decoder *);
-extern int pt_qry_decode_tip_pge(struct pt_query_decoder *);
-extern int pt_qry_decode_tip_pgd(struct pt_query_decoder *);
-extern int pt_qry_decode_fup(struct pt_query_decoder *);
-extern int pt_qry_decode_pip(struct pt_query_decoder *);
-extern int pt_qry_decode_ovf(struct pt_query_decoder *);
-extern int pt_qry_decode_mode(struct pt_query_decoder *);
-extern int pt_qry_decode_psbend(struct pt_query_decoder *);
-extern int pt_qry_decode_tsc(struct pt_query_decoder *);
-extern int pt_qry_header_tsc(struct pt_query_decoder *);
-extern int pt_qry_decode_cbr(struct pt_query_decoder *);
-extern int pt_qry_header_cbr(struct pt_query_decoder *);
-extern int pt_qry_decode_tma(struct pt_query_decoder *);
-extern int pt_qry_decode_mtc(struct pt_query_decoder *);
-extern int pt_qry_decode_cyc(struct pt_query_decoder *);
-extern int pt_qry_decode_stop(struct pt_query_decoder *);
-extern int pt_qry_decode_vmcs(struct pt_query_decoder *);
-extern int pt_qry_decode_mnt(struct pt_query_decoder *);
-extern int pt_qry_decode_exstop(struct pt_query_decoder *);
-extern int pt_qry_decode_mwait(struct pt_query_decoder *);
-extern int pt_qry_decode_pwre(struct pt_query_decoder *);
-extern int pt_qry_decode_pwrx(struct pt_query_decoder *);
-extern int pt_qry_decode_ptw(struct pt_query_decoder *);
+static inline const struct pt_config *
+pt_qry_config(const struct pt_query_decoder *decoder)
+{
+	if (!decoder)
+		return NULL;
 
-/* Decoder functions (header context). */
-extern int pt_qry_header_fup(struct pt_query_decoder *);
-extern int pt_qry_header_pip(struct pt_query_decoder *);
-extern int pt_qry_header_mode(struct pt_query_decoder *);
-extern int pt_qry_header_vmcs(struct pt_query_decoder *);
-extern int pt_qry_header_mnt(struct pt_query_decoder *);
+	return pt_evt_config(&decoder->evdec);
+}
+
+static inline const uint8_t *pt_qry_pos(const struct pt_query_decoder *decoder)
+{
+	if (!decoder)
+		return NULL;
+
+	return pt_evt_pos(&decoder->evdec);
+}
 
 #endif /* PT_QUERY_DECODER_H */

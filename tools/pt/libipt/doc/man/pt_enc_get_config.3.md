@@ -1,7 +1,7 @@
 % PT_ENC_GET_CONFIG(3)
 
 <!---
- ! Copyright (c) 2015-2021, Intel Corporation
+ ! Copyright (c) 2015-2022, Intel Corporation
  !
  ! Redistribution and use in source and binary forms, with or without
  ! modification, are permitted provided that the following conditions are met:
@@ -30,9 +30,9 @@
 
 # NAME
 
-pt_enc_get_config, pt_pkt_get_config, pt_qry_get_config, pt_insn_get_config,
-pt_blk_get_config - get an Intel(R) Processor Trace encoder/decoder's
-configuration
+pt_enc_get_config, pt_pkt_get_config, pt_evt_get_config, pt_qry_get_config,
+pt_insn_get_config, pt_blk_get_config - get an Intel(R) Processor Trace
+encoder/decoder's configuration
 
 
 # SYNOPSIS
@@ -44,6 +44,9 @@ configuration
 |
 | **const struct pt_config \***
 | **pt_pkt_get_config(const struct pt_packet_decoder \**decoder*);**
+|
+| **const struct pt_config \***
+| **pt_evt_get_config(const struct pt_event_decoder \**decoder*);**
 |
 | **const struct pt_config \***
 | **pt_qry_get_config(const struct pt_query_decoder \**decoder*);**
@@ -73,5 +76,5 @@ is NULL if their argument is NULL.
 # SEE ALSO
 
 **pt_config**(3), **pt_alloc_encoder**(3), **pt_pkt_alloc_decoder**(3),
-**pt_qry_alloc_decoder**(3), **pt_insn_alloc_decoder**(3),
-**pt_blk_alloc_decoder**(3)
+**pt_evt_alloc_decoder**(3), **pt_qry_alloc_decoder**(3)**,
+**pt_insn_alloc_decoder**(3), **pt_blk_alloc_decoder**(3)

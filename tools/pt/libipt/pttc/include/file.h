@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2021, Intel Corporation
+ * Copyright (c) 2013-2022, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -44,13 +44,16 @@ struct text {
 	char **line;
 };
 
-/* Allocates new text.
+/* Turns @s into a new text; @n is the length of @s excluding termination.
+ *
+ * On success, the returned text owns @s and @s will be freed by text_free();
+ * otherwise @s will be freed by text_alloc() and NULL will be returned.
  *
  * Note, if s is NULL or the empty string the text has zero lines.
  *
  * Returns a non-NULL text object on success; NULL otherwise.
  */
-extern struct text *text_alloc(const char *s);
+extern struct text *text_alloc(char *s, size_t n);
 
 /* Deallocates @t.
  * If @t is the NULL pointer, nothing happens.

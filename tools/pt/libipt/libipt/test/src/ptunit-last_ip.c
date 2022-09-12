@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2021, Intel Corporation
+ * Copyright (c) 2013-2022, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -313,6 +313,8 @@ static struct ptunit_result update_ip_null_ip(void)
 {
 	struct pt_packet_ip packet;
 	int errcode;
+
+	memset(&packet, 0, sizeof(packet));
 
 	errcode = pt_last_ip_update_ip(NULL, &packet, NULL);
 	ptu_int_eq(errcode, -pte_internal);

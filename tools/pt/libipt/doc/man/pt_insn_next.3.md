@@ -1,7 +1,7 @@
 % PT_INSN_NEXT(3)
 
 <!---
- ! Copyright (c) 2015-2021, Intel Corporation
+ ! Copyright (c) 2015-2022, Intel Corporation
  !
  ! Redistribution and use in source and binary forms, with or without
  ! modification, are permitted provided that the following conditions are met:
@@ -143,8 +143,8 @@ iclass
  * reconstructing the execution flow.
  */
 enum pt_insn_class {
-	/* The instruction could not be classified. */
-	ptic_error,
+	/* The instruction has not been classified. */
+	ptic_unknown,
 
 	/* The instruction is something not listed below. */
 	ptic_other,
@@ -174,7 +174,13 @@ enum pt_insn_class {
 	/* The instruction is a jump-like far transfer.
 	 * E.g. FAR JMP.
 	 */
-	ptic_far_jump
+	ptic_far_jump,
+
+	/* The instruction is a PTWRITE. */
+	ptic_ptwrite,
+
+	/* The instruction is an indirect jump or a far transfer. */
+	ptic_indirect
 };
 ~~~
 

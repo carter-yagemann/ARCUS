@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2021, Intel Corporation
+ * Copyright (c) 2017-2022, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -1539,6 +1539,9 @@ static int ploc_from_event(enum pt_sb_pevent_loc *loc,
 					    event->variant.tick.ip);
 
 		break;
+
+	case ptev_tip:
+		return ploc_from_ip(loc, priv, event->variant.tip.ip);
 	}
 
 	*loc = ploc_unknown;

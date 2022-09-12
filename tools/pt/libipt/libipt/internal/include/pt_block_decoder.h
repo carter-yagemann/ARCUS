@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021, Intel Corporation
+ * Copyright (c) 2016-2022, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -29,7 +29,7 @@
 #ifndef PT_BLOCK_DECODER_H
 #define PT_BLOCK_DECODER_H
 
-#include "pt_query_decoder.h"
+#include "pt_event_decoder.h"
 #include "pt_image.h"
 #include "pt_retstack.h"
 #include "pt_ild.h"
@@ -43,8 +43,8 @@
  * of trace.
  */
 struct pt_block_decoder {
-	/* The Intel(R) Processor Trace query decoder. */
-	struct pt_query_decoder query;
+	/* The event decoder. */
+	struct pt_event_decoder evdec;
 
 	/* The configuration flags.
 	 *
@@ -65,7 +65,17 @@ struct pt_block_decoder {
 	/* The current address space. */
 	struct pt_asid asid;
 
-	/* The current Intel(R) Processor Trace event. */
+	/* The current event.
+	 *
+	 * This will be valid as long as there are events available, i.e. until
+	 * @status is not negative.
+	 *
+	 * The decoder starts by reading the first event after synchronizing
+	 * onto the trace stream.
+	 *
+	 * When it is done processing an event, it fetches the next event for
+	 * the next iteration.
+	 */
 	struct pt_event event;
 
 	/* The call/return stack for ret compression. */
@@ -85,14 +95,22 @@ struct pt_block_decoder {
 	 */
 	uint64_t ip;
 
+	/* The last TSC.
+	 *
+	 * We use it to check for time updates when generating tick events.
+	 */
+	uint64_t tsc;
+
+	/* The number of lost MTC and CYC packets. */
+	uint32_t lost_mtc, lost_cyc;
+
+	/* The last CBR. */
+	uint32_t cbr;
+
 	/* The current execution mode. */
 	enum pt_exec_mode mode;
 
-	/* The status of the last successful decoder query.
-	 *
-	 * Errors are reported directly; the status is always a non-negative
-	 * pt_status_flag bit-vector.
-	 */
+	/* The last status of the event decoder. */
 	int status;
 
 	/* A collection of flags defining how to proceed flow reconstruction:
@@ -101,11 +119,11 @@ struct pt_block_decoder {
 	 */
 	uint32_t enabled:1;
 
-	/* - process @event. */
-	uint32_t process_event:1;
-
 	/* - instructions are executed speculatively. */
 	uint32_t speculative:1;
+
+	/* - whether @tsc tracks wall-clock time. */
+	uint32_t has_tsc:1;
 
 	/* - process @insn/@iext.
 	 *
@@ -139,5 +157,22 @@ extern int pt_blk_decoder_init(struct pt_block_decoder *decoder,
 
 /* Finalize a block decoder. */
 extern void pt_blk_decoder_fini(struct pt_block_decoder *decoder);
+
+static inline const struct pt_config *
+pt_blk_config(const struct pt_block_decoder *decoder)
+{
+	if (!decoder)
+		return NULL;
+
+	return pt_evt_config(&decoder->evdec);
+}
+
+static inline const uint8_t *pt_blk_pos(const struct pt_block_decoder *decoder)
+{
+	if (!decoder)
+		return NULL;
+
+	return pt_evt_pos(&decoder->evdec);
+}
 
 #endif /* PT_BLOCK_DECODER_H */

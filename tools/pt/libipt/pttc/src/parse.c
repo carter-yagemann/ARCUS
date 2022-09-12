@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2021, Intel Corporation
+ * Copyright (c) 2013-2022, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -36,17 +36,18 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <limits.h>
 
 #if defined(_MSC_VER) && (_MSC_VER < 1900)
 #  define snprintf _snprintf_c
 #endif
 
 
-static const char *pt_suffix = ".pt";
-static const char *exp_suffix = ".exp";
+static const char pt_suffix[] = ".pt";
+static const char exp_suffix[] = ".exp";
 
 #if defined(FEATURE_SIDEBAND)
-static const char *sb_suffix = ".sb";
+static const char sb_suffix[] = ".sb";
 #endif
 
 enum {
@@ -58,14 +59,16 @@ enum {
 static void sb_rename_file(struct sb_file *sb)
 {
 	char filename[FILENAME_MAX];
+	int len;
 
 	/* We encode the configuration in the sideband filename. */
 	switch (sb->format) {
 	case sbf_raw:
-		strncpy(filename, sb->name, sizeof(filename) - 1);
-
-		/* Make sure @filename is terminated. */
-		filename[sizeof(filename) - 1] = 0;
+		len = snprintf(filename, sizeof(filename), "%s", sb->name);
+		if ((len < 0) || (sizeof(filename) <= (size_t) len)) {
+			fprintf(stderr, "error renaming %s.\n", sb->name);
+			return;
+		}
 		break;
 
 #if defined(FEATURE_PEVENT)
@@ -89,7 +92,7 @@ static void sb_rename_file(struct sb_file *sb)
 
 		ext_len = (size_t) printed;
 
-		suffix_len = strnlen(sb_suffix, sizeof(filename));
+		suffix_len = sizeof(sb_suffix) - 1;
 		base_len = strnlen(sb->name, sizeof(filename));
 		if (base_len < suffix_len) {
 			fprintf(stderr, "error renaming %s.\n", sb->name);
@@ -105,12 +108,15 @@ static void sb_rename_file(struct sb_file *sb)
 			return;
 		}
 
-		strncpy(filename, sb->name, base_len);
+		if (INT_MAX < base_len) {
+			fprintf(stderr, "error renaming %s.\n", sb->name);
+			return;
+		}
 
-		printed = snprintf(filename + base_len,
-				   sizeof(filename) - base_len, "%s%s",
-				   extension, sb_suffix);
-		if (printed < 0) {
+		printed = snprintf(filename, sizeof(filename), "%.*s%s%s",
+				   (int) base_len, sb->name, extension,
+				   sb_suffix);
+		if ((printed < 0) || (sizeof(filename) <= (size_t) printed)) {
 			fprintf(stderr, "error renaming %s.\n", sb->name);
 			return;
 		}
@@ -175,8 +181,9 @@ static void p_free(struct parser *p)
  */
 static struct parser *p_alloc(const char *pttfile, const struct pt_config *conf)
 {
-	size_t n;
+	size_t n, size;
 	struct parser *p;
+	int len;
 
 	if (!conf)
 		return NULL;
@@ -192,14 +199,19 @@ static struct parser *p_alloc(const char *pttfile, const struct pt_config *conf)
 	if (!p->y)
 		goto error;
 
-	n = strlen(p->y->fileroot) + 1;
+	n = strnlen(p->y->fileroot, FILENAME_MAX - sizeof(pt_suffix));
+	if ((FILENAME_MAX - sizeof(pt_suffix)) <= n)
+		goto error;
 
-	p->ptfilename = malloc(n+strlen(pt_suffix));
+	size = n + sizeof(pt_suffix);
+
+	p->ptfilename = malloc(size);
 	if (!p->ptfilename)
 		goto error;
 
-	strcpy(p->ptfilename, p->y->fileroot);
-	strcat(p->ptfilename, pt_suffix);
+	len = snprintf(p->ptfilename, size, "%s%s", p->y->fileroot, pt_suffix);
+	if ((len < 0) || ((size_t) len != (size - 1)))
+		goto error;
 
 	p->pd = pd_alloc(pd_len);
 	if (!p->pd)
@@ -224,68 +236,50 @@ error:
 }
 
 /* Generates an .exp filename following the scheme:
- *	<fileroot>[-<extra>].exp
+ *	<fileroot>[-<extra>][-cpu_<f>_<m>[_<s>]].exp
  */
 static char *expfilename(struct parser *p, const char *extra)
 {
-	char *filename;
-	/* reserve enough space to hold the string
-	 *   "-cpu_fffff_mmm_sss" + 1 for the trailing null character.
-	 */
-	char cpu_suffix[19];
-	size_t n;
+	char filename[FILENAME_MAX], cpuext[64], *pfname;
+	int len;
 
-	if (!extra)
-		extra = "";
-	*cpu_suffix = '\0';
-
-	/* determine length of resulting filename, which looks like:
-	 *   <fileroot>[-<extra>][-cpu_<f>_<m>_<s>].exp
-	 */
-	n = strlen(p->y->fileroot);
-
-	if (*extra != '\0')
-		/* the extra string is prepended with a -.  */
-		n += 1 + strlen(extra);
+	memset(filename, 0, sizeof(filename));
+	memset(cpuext, 0, sizeof(cpuext));
 
 	if (p->conf->cpu.vendor != pcv_unknown) {
 		struct pt_cpu cpu;
-		int len;
 
 		cpu = p->conf->cpu;
 		if (cpu.stepping)
-			len = sprintf(cpu_suffix,
-				      "-cpu_%" PRIu16 "_%" PRIu8 "_%" PRIu8 "",
-				      cpu.family, cpu.model, cpu.stepping);
+			len = snprintf(cpuext, sizeof(cpuext),
+				       "-cpu_%" PRIu16 "_%" PRIu8 "_%" PRIu8,
+				       cpu.family, cpu.model, cpu.stepping);
 		else
-			len = sprintf(cpu_suffix,
-				      "-cpu_%" PRIu16 "_%" PRIu8 "", cpu.family,
-				      cpu.model);
+			len = snprintf(cpuext, sizeof(cpuext),
+				       "-cpu_%" PRIu16 "_%" PRIu8, cpu.family,
+				       cpu.model);
 
-		if (len < 0)
+		if ((len < 0) || (sizeof(cpuext) <= (size_t) len))
 			return NULL;
-
-		n += (size_t) len;
 	}
 
-	n += strlen(exp_suffix);
+	if (extra && *extra)
+		len = snprintf(filename, sizeof(filename), "%s-%s%s%s",
+			       p->y->fileroot, extra, cpuext, exp_suffix);
+	else
+		len = snprintf(filename, sizeof(filename), "%s-%s%s",
+			       p->y->fileroot, cpuext, exp_suffix);
 
-	/* trailing null character.  */
-	n += 1;
-
-	filename = malloc(n);
-	if (!filename)
+	if ((len < 0) || (sizeof(filename) <= (size_t) len))
 		return NULL;
 
-	strcpy(filename, p->y->fileroot);
-	if (*extra != '\0') {
-		strcat(filename, "-");
-		strcat(filename, extra);
-	}
-	strcat(filename, cpu_suffix);
-	strcat(filename, exp_suffix);
+	pfname = malloc((size_t) len + 1);
+	if (!pfname)
+		return NULL;
 
-	return filename;
+	pfname[len] = 0;
+
+	return memcpy(pfname, filename, (size_t) len);
 }
 
 /* Returns true if @c is part of a label; false otherwise.  */
@@ -312,11 +306,11 @@ static int islabelchar(int c)
 static int p_gen_expfile(struct parser *p)
 {
 	int errcode;
-	enum { slen = 1024 };
-	char s[slen];
+	char s[1024];
 	struct pt_directive *pd;
 	char *filename;
 	FILE *f;
+	size_t slen;
 
 	if (bug_on(!p))
 		return -err_internal;
@@ -342,11 +336,18 @@ static int p_gen_expfile(struct parser *p)
 
 	for (;;) {
 		int i;
-		char *line, *comment;
+		char *line, *comment, *end;
 
-		errcode = yasm_next_line(p->y, s, slen);
+		errcode = yasm_next_line(p->y, s, sizeof(s));
 		if (errcode < 0)
 			break;
+
+		slen = strnlen(s, sizeof(s));
+		if (sizeof(s) <= slen) {
+			errcode = -err_internal;
+			break;
+		}
+		end = &s[slen];
 
 		errcode = yasm_pd_parse(p->y, pd);
 		if (errcode < 0 && errcode != -err_no_directive)
@@ -374,12 +375,13 @@ static int p_gen_expfile(struct parser *p)
 		line += 1;
 
 		comment = strchr(line, '#');
-		if (comment)
+		if (comment) {
+			end = comment;
 			*comment = '\0';
-
+		}
 		/* remove trailing spaces.  */
-		for (i = (int) strlen(line)-1; i >= 0 && isspace(line[i]); i--)
-			line[i] = '\0';
+		for (end -= 1; line <= end && isspace(*end); --end)
+			*end = '\0';
 
 		for (;;) {
 			char *tmp, label[256];
@@ -442,7 +444,7 @@ static int p_gen_expfile(struct parser *p)
 			for (i = 0; islabelchar(line[i]); i++)
 				;
 
-			if (i > 255) {
+			if (l_max <= i) {
 				errcode = -err_label_name;
 				goto error;
 			}
@@ -1158,6 +1160,7 @@ static int sb_open(struct parser *p, const char *fmt, const char *src,
 	const char *root;
 	char name[FILENAME_MAX];
 	FILE *file;
+	int errcode;
 
 	if (bug_on(!p) || bug_on(!p->y) || bug_on(!prio))
 		return -err_internal;
@@ -1196,12 +1199,13 @@ static int sb_open(struct parser *p, const char *fmt, const char *src,
 
 		memset(&sbfiles->sbfile, 0, sizeof(sbfiles->sbfile));
 
-		sbfiles->sbfile.name = duplicate_str(name);
-		if (!sbfiles->sbfile.name) {
-			yasm_print_err(p->y, "open", -err_no_mem);
+		errcode = duplicate_name(&sbfiles->sbfile.name, name,
+					 FILENAME_MAX);
+		if (errcode < 0) {
+			yasm_print_err(p->y, "open", errcode);
 			fclose(file);
 			free(sbfiles);
-			return -err_no_mem;
+			return errcode;
 		}
 
 		sbfiles->sbfile.file = file;
@@ -1745,7 +1749,8 @@ static int pevent_comm(struct parser *p, const char *pid, const char *tid,
 		uint8_t buffer[FILENAME_MAX];
 	} record;
 	struct pev_event event;
-	int errcode;
+	size_t limit;
+	int errcode, len;
 
 	if (bug_on(!p) || bug_on(!p->y))
 		return -err_internal;
@@ -1765,7 +1770,12 @@ static int pevent_comm(struct parser *p, const char *pid, const char *tid,
 		return errcode;
 	}
 
-	strcpy(record.comm.comm, comm);
+	limit = sizeof(record.buffer) - sizeof(record.comm);
+	len = snprintf(record.comm.comm, limit, "%s", comm);
+	if (len < 0)
+		return -err_parse;
+	if (limit <= (size_t) len)
+		return -err_name_too_long;
 
 	event.type = PERF_RECORD_COMM;
 	event.misc = misc;
@@ -2469,8 +2479,9 @@ static int p_process_sb(struct parser *p)
  */
 static int p_process(struct parser *p, struct pt_encoder *e)
 {
-	char *directive, *tmp;
+	char *directive, *tmp, *end;
 	struct pt_directive *pd;
+	size_t nlen;
 
 	if (bug_on(!p))
 		return -err_internal;
@@ -2480,6 +2491,13 @@ static int p_process(struct parser *p, struct pt_encoder *e)
 		return -err_internal;
 
 	directive = pd->name;
+
+	nlen = strnlen(directive, pd_len);
+	if (pd_len <= nlen)
+		return -err_internal;
+
+	/* Plus 1 for termination. */
+	end = directive + nlen + 1;
 
 	/* We must have a directive. */
 	if (!directive || (strcmp(directive, "") == 0))
@@ -2507,7 +2525,7 @@ static int p_process(struct parser *p, struct pt_encoder *e)
 		char *pt_label_name;
 		uint64_t x;
 		int errcode, bytes_written;
-		size_t len;
+		size_t limit, len;
 
 		pt_label_name = directive;
 		directive = tmp+1;
@@ -2572,8 +2590,16 @@ static int p_process(struct parser *p, struct pt_encoder *e)
 			return errcode;
 
 		/* Update the directive name in the parser. */
-		len = strlen(directive) + 1;
+		if (end <= directive)
+			return -err_internal;
+
+		limit = (size_t) ((uintptr_t) end - (uintptr_t) directive);
+		len = strnlen(directive, limit);
+		if (limit <= len)
+			return -err_internal;
+
 		memmove(pd->name, directive, len);
+		pd->name[len] = '\0';
 	}
 
 	switch (pd->kind) {
