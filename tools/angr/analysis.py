@@ -402,20 +402,14 @@ def parse_entry_state_json(
     state.register_plugin("deep", SimStateDeepGlobals())
 
     # restore registers
+    sp_name = project.arch.register_names[project.arch.sp_offset]
+    bp_name = project.arch.register_names[project.arch.bp_offset]
     for reg in regs:
-        if not is_snapshot and reg in ["rsp", "rbp", "esp", "ebp"]:
+        if not is_snapshot and reg in [sp_name, bp_name]:
             # we made a new stack so symbolic variables could be added,
             # don't point the state back at the original (it doesn't exist anymore)
             continue
-        if project.arch.name == "AMD64" and reg in [
-            "gs_base",
-            "cs",
-            "es",
-            "fs_base",
-            "ds",
-            "ss",
-        ]:
-            # Angr doesn't manage these registers for AMD64
+        if not reg in project.arch.registers:
             continue
         try:
             setattr(state.regs, reg, regs[reg])
@@ -1228,7 +1222,8 @@ def main():
     hooks.apply_hooks(proj)
 
     # initialize the starting state, exploration technique and simulation manager
-    tech = angrpt.Tracer(bb_seq, start_address=regs["rip"])
+    ip_reg_name = proj.arch.register_names[proj.arch.ip_offset]
+    tech = angrpt.Tracer(bb_seq, start_address=regs[ip_reg_name])
     init_state, init_env = parse_entry_state_json(
         proj, trace_dir, snapshot_dir, options.explore, options.override_max_argv
     )
