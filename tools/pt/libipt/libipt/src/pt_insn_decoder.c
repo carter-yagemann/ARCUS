@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2021, Intel Corporation
+ * Copyright (c) 2013-2022, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -99,6 +99,8 @@ static int pt_insn_init_qry_flags(struct pt_conf_flags *qflags,
 		return -pte_internal;
 
 	memset(qflags, 0, sizeof(*qflags));
+	qflags->variant.query.keep_tcal_on_ovf =
+		flags->variant.insn.keep_tcal_on_ovf;
 
 	return 0;
 }
@@ -406,10 +408,7 @@ int pt_insn_set_image(struct pt_insn_decoder *decoder,
 const struct pt_config *
 pt_insn_get_config(const struct pt_insn_decoder *decoder)
 {
-	if (!decoder)
-		return NULL;
-
-	return pt_qry_get_config(&decoder->query);
+	return pt_insn_config(decoder);
 }
 
 int pt_insn_time(struct pt_insn_decoder *decoder, uint64_t *time,
@@ -586,9 +585,10 @@ static int pt_insn_proceed(struct pt_insn_decoder *decoder,
 	case ptic_far_call:
 	case ptic_far_return:
 	case ptic_far_jump:
+	case ptic_indirect:
 		break;
 
-	case ptic_error:
+	case ptic_unknown:
 		return -pte_bad_insn;
 	}
 
@@ -711,10 +711,11 @@ static int pt_insn_at_disabled_event(const struct pt_event *ev,
 		case ptic_far_call:
 		case ptic_far_return:
 		case ptic_far_jump:
+		case ptic_indirect:
 		case ptic_cond_jump:
 			return 1;
 
-		case ptic_error:
+		case ptic_unknown:
 			return -pte_bad_insn;
 		}
 	}
@@ -819,6 +820,10 @@ static int pt_insn_check_insn_event(struct pt_insn_decoder *decoder,
 
 	ev = &decoder->event;
 	switch (ev->type) {
+	case ptev_tip:
+	case ptev_tnt:
+		return -pte_internal;
+
 	case ptev_enabled:
 	case ptev_overflow:
 	case ptev_async_paging:
@@ -839,8 +844,11 @@ static int pt_insn_check_insn_event(struct pt_insn_decoder *decoder,
 		return 0;
 
 	case ptev_disabled:
+		if (ev->status_update)
+			return 0;
+
 		status = pt_insn_at_disabled_event(ev, insn, iext,
-						   &decoder->query.config);
+						   pt_insn_config(decoder));
 		if (status <= 0)
 			return status;
 
@@ -1021,10 +1029,18 @@ static inline int pt_insn_postpone_tsx(struct pt_insn_decoder *decoder,
 	if (ev->ip_suppressed)
 		return 0;
 
-	if (insn && iext && decoder->query.config.errata.bdm64) {
-		status = handle_erratum_bdm64(decoder, ev, insn, iext);
-		if (status < 0)
-			return status;
+	if (insn && iext) {
+		const struct pt_config *config;
+
+		config = pt_insn_config(decoder);
+		if (!config)
+			return -pte_internal;
+
+		if (config->errata.bdm64) {
+			status = handle_erratum_bdm64(decoder, ev, insn, iext);
+			if (status < 0)
+				return status;
+		}
 	}
 
 	if (decoder->ip != ev->variant.tsx.ip)
@@ -1062,18 +1078,26 @@ static int pt_insn_check_ip_event(struct pt_insn_decoder *decoder,
 	ev = &decoder->event;
 	switch (ev->type) {
 	case ptev_disabled:
+		if (ev->status_update)
+			return pt_insn_status(decoder, pts_event_pending);
+
 		break;
 
 	case ptev_enabled:
 		return pt_insn_status(decoder, pts_event_pending);
 
-	case ptev_async_disabled:
+	case ptev_async_disabled: {
+		const struct pt_config *config;
+		int errcode;
+
 		if (ev->variant.async_disabled.at != decoder->ip)
 			break;
 
-		if (decoder->query.config.errata.skd022) {
-			int errcode;
+		config = pt_insn_config(decoder);
+		if (!config)
+			return -pte_internal;
 
+		if (config->errata.skd022) {
 			errcode = handle_erratum_skd022(decoder);
 			if (errcode != 0) {
 				if (errcode < 0)
@@ -1088,6 +1112,7 @@ static int pt_insn_check_ip_event(struct pt_insn_decoder *decoder,
 		}
 
 		return pt_insn_status(decoder, pts_event_pending);
+	}
 
 	case ptev_tsx:
 		status = pt_insn_postpone_tsx(decoder, insn, iext, ev);
@@ -1183,6 +1208,10 @@ static int pt_insn_check_ip_event(struct pt_insn_decoder *decoder,
 	case ptev_cbr:
 	case ptev_mnt:
 		return pt_insn_status(decoder, pts_event_pending);
+
+	case ptev_tip:
+	case ptev_tnt:
+		return -pte_internal;
 	}
 
 	return pt_insn_status(decoder, 0);
@@ -1385,9 +1414,13 @@ static int pt_insn_process_enabled(struct pt_insn_decoder *decoder)
 
 	ev = &decoder->event;
 
-	/* This event can't be a status update. */
-	if (ev->status_update)
-		return -pte_bad_context;
+	/* Use status update events to diagnose inconsistencies. */
+	if (ev->status_update) {
+		if (!decoder->enabled)
+			return -pte_bad_status_update;
+
+		return 0;
+	}
 
 	/* We must have an IP in order to start decoding. */
 	if (ev->ip_suppressed)
@@ -1412,9 +1445,13 @@ static int pt_insn_process_disabled(struct pt_insn_decoder *decoder)
 
 	ev = &decoder->event;
 
-	/* This event can't be a status update. */
-	if (ev->status_update)
-		return -pte_bad_context;
+	/* Use status update events to diagnose inconsistencies. */
+	if (ev->status_update) {
+		if (decoder->enabled)
+			return -pte_bad_status_update;
+
+		return 0;
+	}
 
 	/* We must currently be enabled. */
 	if (!decoder->enabled)
@@ -1722,6 +1759,10 @@ int pt_insn_event(struct pt_insn_decoder *decoder, struct pt_event *uevent,
 	case ptev_cbr:
 	case ptev_mnt:
 		break;
+
+	case ptev_tip:
+	case ptev_tnt:
+		return -pte_internal;
 	}
 
 	/* Copy the event to the user.  Make sure we're not writing beyond the

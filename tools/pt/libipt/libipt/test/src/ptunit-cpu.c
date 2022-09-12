@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2021, Intel Corporation
+ * Copyright (c) 2013-2022, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -29,22 +29,10 @@
 #include "ptunit.h"
 
 #include "pt_cpu.h"
-#include "pt_cpuid.h"
 
 #include "intel-pt.h"
 
 #include <stdlib.h>
-
-
-void pt_cpuid(uint32_t leaf, uint32_t *eax, uint32_t *ebx, uint32_t *ecx,
-	      uint32_t *edx)
-{
-	(void) leaf;
-	(void) eax;
-	(void) ebx;
-	(void) ecx;
-	(void) edx;
-}
 
 
 static struct ptunit_result cpu_valid(void)

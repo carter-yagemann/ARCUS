@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2021, Intel Corporation
+ * Copyright (c) 2013-2022, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -78,6 +78,8 @@ enum errcode {
 	err_other,
 
 	err_no_mem,
+
+	err_name_too_long,
 
 	/* Used for all invalid function arguments.  */
 	err_internal,

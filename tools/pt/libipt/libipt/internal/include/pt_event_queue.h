@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2021, Intel Corporation
+ * Copyright (c) 2013-2022, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -39,6 +39,7 @@ enum pt_event_binding {
 	evb_psbend,
 	evb_tip,
 	evb_fup,
+	evb_exstop,
 
 	evb_max
 };

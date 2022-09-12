@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2021, Intel Corporation
+ * Copyright (c) 2013-2022, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -162,10 +162,12 @@ static struct ptunit_result create(struct section_fixture *sfix)
 	const char *name;
 	uint8_t bytes[] = { 0xcc, 0xcc, 0xcc, 0xcc, 0xcc };
 	uint64_t offset, size;
+	int errcode;
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	errcode = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(errcode, 0);
 	ptu_ptr(sfix->section);
 
 	name = pt_section_filename(sfix->section);
@@ -182,8 +184,10 @@ static struct ptunit_result create(struct section_fixture *sfix)
 
 static struct ptunit_result create_bad_offset(struct section_fixture *sfix)
 {
-	sfix->section = pt_mk_section(sfix->name, 0x10ull, 0x0ull);
-	ptu_null(sfix->section);
+	int errcode;
+
+	errcode = pt_mk_section(&sfix->section, sfix->name, 0x10ull, 0x0ull);
+	ptu_int_eq(errcode, -pte_invalid);
 
 	return ptu_passed();
 }
@@ -193,10 +197,12 @@ static struct ptunit_result create_truncated(struct section_fixture *sfix)
 	const char *name;
 	uint8_t bytes[] = { 0xcc, 0xcc, 0xcc, 0xcc, 0xcc };
 	uint64_t offset, size;
+	int errcode;
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, UINT64_MAX);
+	errcode = pt_mk_section(&sfix->section, sfix->name, 0x1ull, UINT64_MAX);
+	ptu_int_eq(errcode, 0);
 	ptu_ptr(sfix->section);
 
 	name = pt_section_filename(sfix->section);
@@ -213,7 +219,10 @@ static struct ptunit_result create_truncated(struct section_fixture *sfix)
 
 static struct ptunit_result create_empty(struct section_fixture *sfix)
 {
-	sfix->section = pt_mk_section(sfix->name, 0x0ull, 0x10ull);
+	int errcode;
+
+	errcode = pt_mk_section(&sfix->section, sfix->name, 0x0ull, 0x10ull);
+	ptu_int_eq(errcode, -pte_invalid);
 	ptu_null(sfix->section);
 
 	return ptu_passed();
@@ -359,7 +368,8 @@ static struct ptunit_result get_overflow(struct section_fixture *sfix)
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	errcode = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(errcode, 0);
 	ptu_ptr(sfix->section);
 
 	sfix->section->ucount = UINT16_MAX;
@@ -380,7 +390,8 @@ static struct ptunit_result attach_overflow(struct section_fixture *sfix)
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	errcode = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(errcode, 0);
 	ptu_ptr(sfix->section);
 
 	sfix->section->acount = UINT16_MAX;
@@ -401,7 +412,8 @@ static struct ptunit_result attach_bad_ucount(struct section_fixture *sfix)
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	errcode = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(errcode, 0);
 	ptu_ptr(sfix->section);
 
 	sfix->section->acount = 2;
@@ -421,7 +433,8 @@ static struct ptunit_result map_change(struct section_fixture *sfix)
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	errcode = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(errcode, 0);
 	ptu_ptr(sfix->section);
 
 	sfix_write(sfix, bytes);
@@ -439,7 +452,8 @@ static struct ptunit_result map_put(struct section_fixture *sfix)
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	errcode = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(errcode, 0);
 	ptu_ptr(sfix->section);
 
 	errcode = pt_section_map(sfix->section);
@@ -461,7 +475,8 @@ static struct ptunit_result unmap_nomap(struct section_fixture *sfix)
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	errcode = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(errcode, 0);
 	ptu_ptr(sfix->section);
 
 	errcode = pt_section_unmap(sfix->section);
@@ -477,7 +492,8 @@ static struct ptunit_result map_overflow(struct section_fixture *sfix)
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	errcode = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(errcode, 0);
 	ptu_ptr(sfix->section);
 
 	sfix->section->mcount = UINT16_MAX;
@@ -497,7 +513,8 @@ static struct ptunit_result get_put(struct section_fixture *sfix)
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	errcode = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(errcode, 0);
 	ptu_ptr(sfix->section);
 
 	errcode = pt_section_get(sfix->section);
@@ -523,7 +540,8 @@ static struct ptunit_result attach_detach(struct section_fixture *sfix)
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	errcode = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(errcode, 0);
 	ptu_ptr(sfix->section);
 
 	sfix->section->ucount += 2;
@@ -553,7 +571,8 @@ static struct ptunit_result attach_bad_iscache(struct section_fixture *sfix)
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	errcode = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(errcode, 0);
 	ptu_ptr(sfix->section);
 
 	sfix->section->ucount += 2;
@@ -580,7 +599,8 @@ static struct ptunit_result detach_bad_iscache(struct section_fixture *sfix)
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	errcode = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(errcode, 0);
 	ptu_ptr(sfix->section);
 
 	errcode = pt_section_attach(sfix->section, &iscache);
@@ -602,7 +622,8 @@ static struct ptunit_result map_unmap(struct section_fixture *sfix)
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	errcode = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(errcode, 0);
 	ptu_ptr(sfix->section);
 
 	errcode = pt_section_map(sfix->section);
@@ -630,7 +651,8 @@ static struct ptunit_result attach_map(struct section_fixture *sfix)
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	errcode = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(errcode, 0);
 	ptu_ptr(sfix->section);
 
 	errcode = pt_section_attach(sfix->section, &iscache);
@@ -666,7 +688,8 @@ static struct ptunit_result attach_bad_map(struct section_fixture *sfix)
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	errcode = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(errcode, 0);
 	ptu_ptr(sfix->section);
 
 	errcode = pt_section_attach(sfix->section, &iscache);
@@ -691,7 +714,8 @@ static struct ptunit_result attach_map_overflow(struct section_fixture *sfix)
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	errcode = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(errcode, 0);
 	ptu_ptr(sfix->section);
 
 	errcode = pt_section_attach(sfix->section, &iscache);
@@ -701,6 +725,8 @@ static struct ptunit_result attach_map_overflow(struct section_fixture *sfix)
 
 	errcode = pt_section_map(sfix->section);
 	ptu_int_eq(errcode, -pte_overflow);
+
+	sfix->section->mcount = 0;
 
 	errcode = pt_section_detach(sfix->section, &iscache);
 	ptu_int_eq(errcode, 0);
@@ -716,7 +742,8 @@ static struct ptunit_result read(struct section_fixture *sfix)
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	status = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(status, 0);
 	ptu_ptr(sfix->section);
 
 	status = pt_section_map(sfix->section);
@@ -742,7 +769,8 @@ static struct ptunit_result read_null(struct section_fixture *sfix)
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	status = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(status, 0);
 	ptu_ptr(sfix->section);
 
 	status = pt_section_map(sfix->section);
@@ -770,7 +798,8 @@ static struct ptunit_result read_offset(struct section_fixture *sfix)
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	status = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(status, 0);
 	ptu_ptr(sfix->section);
 
 	status = pt_section_map(sfix->section);
@@ -795,7 +824,8 @@ static struct ptunit_result read_truncated(struct section_fixture *sfix)
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	status = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(status, 0);
 	ptu_ptr(sfix->section);
 
 	status = pt_section_map(sfix->section);
@@ -819,7 +849,8 @@ static struct ptunit_result read_from_truncated(struct section_fixture *sfix)
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x2ull, 0x10ull);
+	status = pt_mk_section(&sfix->section, sfix->name, 0x2ull, 0x10ull);
+	ptu_int_eq(status, 0);
 	ptu_ptr(sfix->section);
 
 	status = pt_section_map(sfix->section);
@@ -843,7 +874,8 @@ static struct ptunit_result read_nomem(struct section_fixture *sfix)
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	status = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(status, 0);
 	ptu_ptr(sfix->section);
 
 	status = pt_section_map(sfix->section);
@@ -866,7 +898,8 @@ static struct ptunit_result read_overflow(struct section_fixture *sfix)
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	status = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(status, 0);
 	ptu_ptr(sfix->section);
 
 	status = pt_section_map(sfix->section);
@@ -890,7 +923,8 @@ static struct ptunit_result read_overflow_32bit(struct section_fixture *sfix)
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	status = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(status, 0);
 	ptu_ptr(sfix->section);
 
 	status = pt_section_map(sfix->section);
@@ -914,7 +948,8 @@ static struct ptunit_result read_nomap(struct section_fixture *sfix)
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	status = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(status, 0);
 	ptu_ptr(sfix->section);
 
 	status = pt_section_read(sfix->section, buffer, 1, 0x0ull);
@@ -932,7 +967,8 @@ static struct ptunit_result read_unmap_map(struct section_fixture *sfix)
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	status = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(status, 0);
 	ptu_ptr(sfix->section);
 
 	status = pt_section_map(sfix->section);
@@ -1071,7 +1107,8 @@ static struct ptunit_result stress(struct section_fixture *sfix,
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	errcode = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(errcode, 0);
 	ptu_ptr(sfix->section);
 
 #if defined(FEATURE_THREADS)
@@ -1097,7 +1134,8 @@ static struct ptunit_result init_no_bcache(struct section_fixture *sfix)
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	errcode = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(errcode, 0);
 	ptu_ptr(sfix->section);
 
 	errcode = pt_section_map(sfix->section);
@@ -1120,7 +1158,8 @@ static struct ptunit_result bcache_alloc_free(struct section_fixture *sfix)
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	errcode = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(errcode, 0);
 	ptu_ptr(sfix->section);
 
 	errcode = pt_section_map(sfix->section);
@@ -1149,7 +1188,8 @@ static struct ptunit_result bcache_alloc_twice(struct section_fixture *sfix)
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	errcode = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(errcode, 0);
 	ptu_ptr(sfix->section);
 
 	errcode = pt_section_map(sfix->section);
@@ -1174,7 +1214,8 @@ static struct ptunit_result bcache_alloc_nomap(struct section_fixture *sfix)
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	errcode = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(errcode, 0);
 	ptu_ptr(sfix->section);
 
 	errcode = pt_section_alloc_bcache(sfix->section);
@@ -1191,7 +1232,8 @@ static struct ptunit_result memsize_nomap(struct section_fixture *sfix)
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	errcode = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(errcode, 0);
 	ptu_ptr(sfix->section);
 
 	errcode = pt_section_memsize(sfix->section, &memsize);
@@ -1209,7 +1251,8 @@ static struct ptunit_result memsize_unmap(struct section_fixture *sfix)
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	errcode = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(errcode, 0);
 	ptu_ptr(sfix->section);
 
 	errcode = pt_section_map(sfix->section);
@@ -1233,7 +1276,8 @@ static struct ptunit_result memsize_map_nobcache(struct section_fixture *sfix)
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	errcode = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(errcode, 0);
 	ptu_ptr(sfix->section);
 
 	errcode = pt_section_map(sfix->section);
@@ -1260,7 +1304,8 @@ static struct ptunit_result memsize_map_bcache(struct section_fixture *sfix)
 
 	sfix_write(sfix, bytes);
 
-	sfix->section = pt_mk_section(sfix->name, 0x1ull, 0x3ull);
+	errcode = pt_mk_section(&sfix->section, sfix->name, 0x1ull, 0x3ull);
+	ptu_int_eq(errcode, 0);
 	ptu_ptr(sfix->section);
 
 	errcode = pt_section_map(sfix->section);
@@ -1298,30 +1343,54 @@ static struct ptunit_result sfix_init(struct section_fixture *sfix)
 
 static struct ptunit_result sfix_fini(struct section_fixture *sfix)
 {
-	int thrd;
+	char *filename;
+	FILE *file;
+	int thrd, errcode;
 
 	ptu_test(ptunit_thrd_fini, &sfix->thrd);
-
-	for (thrd = 0; thrd < sfix->thrd.nthreads; ++thrd)
-		ptu_int_eq(sfix->thrd.result[thrd], 0);
 
 	if (sfix->section) {
 		pt_section_put(sfix->section);
 		sfix->section = NULL;
 	}
 
-	if (sfix->file) {
-		fclose(sfix->file);
-		sfix->file = NULL;
+	filename = sfix->name;
+	file = sfix->file;
+	sfix->name = NULL;
+	sfix->file = NULL;
 
-		if (sfix->name)
-			remove(sfix->name);
+	/* Try removing the file while we still have it open to avoid races
+	 * with others re-using the temporary filename.
+	 *
+	 * On some systems that may not be possible and we can choose between:
+	 *
+	 *   - guaranteed leaking files or
+	 *   - running the risk of removing someone elses file
+	 *
+	 * We choose the latter.  Assuming those systems behave consistently,
+	 * removing someone elses file should only succeed if it isn't open at
+	 * the moment we try removing it.  Given that this is a temporary file,
+	 * we should be able to rule out accidental name clashes with
+	 * non-termporary files.
+	 */
+	if (filename && file) {
+		errcode = remove(filename);
+		if (!errcode) {
+			free(filename);
+			filename = NULL;
+		}
 	}
 
-	if (sfix->name) {
-		free(sfix->name);
-		sfix->name = NULL;
+	if (file)
+		fclose(file);
+
+	if (filename) {
+		(void) remove(filename);
+		free(filename);
 	}
+
+	for (thrd = 0; thrd < sfix->thrd.nthreads; ++thrd)
+		ptu_int_eq(sfix->thrd.result[thrd], 0);
 
 	return ptu_passed();
 }

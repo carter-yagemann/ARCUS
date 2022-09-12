@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2021, Intel Corporation
+ * Copyright (c) 2014-2022, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -42,6 +42,15 @@ int pev_time_to_tsc(uint64_t *tsc, uint64_t time,
 
 	if (!tsc || !config)
 		return -pte_internal;
+
+	/* "time 0" is for synthesized events, and is not a real time. Using
+	 * the normal conversion for a synthesized time causes problems, so
+	 * just translate it as TSC time 0 ("beginning of time").
+	 */
+	if (!time) {
+		*tsc = 0;
+		return 0;
+	}
 
 	if (!pev_config_has(config, time_zero))
 		return -pte_bad_config;
@@ -478,7 +487,11 @@ int pev_write(const struct pev_event *event, uint8_t *begin, uint8_t *end,
 	case PERF_RECORD_MMAP: {
 		size_t slen, gap;
 
-		slen = strlen(event->record.mmap->filename) + 1;
+		slen = strnlen(event->record.mmap->filename, UINT16_MAX);
+		if (UINT16_MAX <= slen)
+			return -pte_eos;
+
+		slen += 1;
 		gap = ((slen + 7u) & ~7u) - slen;
 
 		size += sizeof(*event->record.mmap) + slen + gap;
@@ -512,7 +525,11 @@ int pev_write(const struct pev_event *event, uint8_t *begin, uint8_t *end,
 	case PERF_RECORD_COMM: {
 		size_t slen, gap;
 
-		slen = strlen(event->record.comm->comm) + 1;
+		slen = strnlen(event->record.comm->comm, UINT16_MAX);
+		if (UINT16_MAX <= slen)
+			return -pte_eos;
+
+		slen += 1;
 		gap = ((slen + 7u) & ~7u) - slen;
 
 		size += sizeof(*event->record.comm) + slen + gap;
@@ -574,7 +591,11 @@ int pev_write(const struct pev_event *event, uint8_t *begin, uint8_t *end,
 	case PERF_RECORD_MMAP2: {
 		size_t slen, gap;
 
-		slen = strlen(event->record.mmap2->filename) + 1;
+		slen = strnlen(event->record.mmap2->filename, UINT16_MAX);
+		if (UINT16_MAX <= slen)
+			return -pte_eos;
+
+		slen += 1;
 		gap = ((slen + 7u) & ~7u) - slen;
 
 		size += sizeof(*event->record.mmap2) + slen + gap;

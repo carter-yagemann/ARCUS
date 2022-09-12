@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021, Intel Corporation
+ * Copyright (c) 2016-2022, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -95,6 +95,7 @@ int pt_insn_is_branch(const struct pt_insn *insn,
 	case ptic_far_call:
 	case ptic_far_return:
 	case ptic_far_jump:
+	case ptic_indirect:
 		return 1;
 	}
 }
@@ -196,7 +197,7 @@ int pt_insn_next_ip(uint64_t *pip, const struct pt_insn *insn,
 	default:
 		return -pte_bad_query;
 
-	case ptic_error:
+	case ptic_unknown:
 		return -pte_bad_insn;
 	}
 

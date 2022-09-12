@@ -1211,6 +1211,7 @@ def main():
             except_missing_libs=False,
             ld_path=[bin_temp],
             use_system_libs=False,
+            eager_ifunc_resolution=False,
         )
     except ArchNotFound as ex:
         log.error("Unsupported architecture: %s" % str(ex))
@@ -1227,6 +1228,11 @@ def main():
         proj, trace_dir, snapshot_dir, options.explore, options.override_max_argv
     )
     simgr = proj.factory.simgr(init_state)
+
+    # ensure Tracer is the only active technique
+    if len(simgr._techniques) > 0:
+        for default_tech in simgr._techniques.copy():
+            simgr.remove_technique(default_tech)
 
     try:
         simgr.use_technique(tech)
