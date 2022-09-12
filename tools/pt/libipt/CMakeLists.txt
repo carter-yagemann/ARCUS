@@ -1,4 +1,4 @@
-# Copyright (c) 2013-2021, Intel Corporation
+# Copyright (c) 2013-2022, Intel Corporation
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
@@ -24,7 +24,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-cmake_minimum_required(VERSION 2.8.6)
+cmake_minimum_required(VERSION 2.8.12)
 
 project(PT C)
 
@@ -36,8 +36,8 @@ project(PT C)
 # a build number and a version extension can be optionally specified.
 #
 set(PT_VERSION_MAJOR 2)
-set(PT_VERSION_MINOR 0)
-set(PT_VERSION_PATCH 4)
+set(PT_VERSION_MINOR 1)
+set(PT_VERSION_PATCH 0)
 set(PT_VERSION_BUILD "0" CACHE STRING "")
 set(PT_VERSION_EXT "" CACHE STRING "")
 
@@ -75,6 +75,7 @@ option(DEVBUILD "Enable compiler warnings and turn them into errors." OFF)
 option(PTDUMP "Enable ptdump, a packet dumper")
 option(PTXED  "Enable ptxed, an instruction flow dumper")
 option(PTTC   "Enable pttc, a test compiler")
+option(PTSEG  "Enable ptseg, a PSB segment finder")
 option(PTUNIT "Enable ptunit, a unit test system and libipt unit tests")
 option(MAN "Enable man pages (requires pandoc)." OFF)
 option(SIDEBAND "Enable libipt-sb, a sideband correlation library")
@@ -304,6 +305,9 @@ endif (PTXED)
 if (PTTC)
   add_subdirectory(pttc)
 endif (PTTC)
+if (PTSEG)
+  add_subdirectory(ptseg)
+endif (PTSEG)
 if (PTUNIT)
   add_subdirectory(ptunit)
 endif (PTUNIT)

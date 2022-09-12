@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2021, Intel Corporation
+ * Copyright (c) 2013-2022, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -32,6 +32,7 @@
 #include <stdio.h>
 #include <inttypes.h>
 #include <string.h>
+#include <limits.h>
 
 
 struct ptunit_srcloc ptunit_mk_srcloc(const char *file, uint32_t line)
@@ -211,11 +212,16 @@ static void ptunit_print_test(const struct ptunit_test *test)
 static const char *basename(const char *file)
 {
 	const char *base;
+	size_t len;
 
 	if (!file)
 		return NULL;
 
-	for (base = file + strlen(file); base != file; base -= 1) {
+	len = strnlen(file, FILENAME_MAX);
+	if (FILENAME_MAX <= len)
+		return NULL;
+
+	for (base = file + len; base != file; base -= 1) {
 		char ch;
 
 		ch = base[-1];
@@ -228,7 +234,8 @@ static const char *basename(const char *file)
 
 static void ptunit_print_srcloc(const struct ptunit_test *test)
 {
-	const char *file;
+	const char *file, *base;
+	int prec;
 
 	switch (test->result.type) {
 	case ptur_passed:
@@ -240,11 +247,17 @@ static void ptunit_print_srcloc(const struct ptunit_test *test)
 	case ptur_failed_unsigned_int:
 	case ptur_failed_pointer:
 	case ptur_failed_str:
-		file = basename(test->result.failed.where.file);
+		file = test->result.failed.where.file;
 		if (!file)
 			file = "<unknown>";
 
-		fprintf(stderr, "%s:%" PRIu32 ": ", file,
+		base = basename(file);
+		if (!base)
+			base = file;
+
+		prec = (INT_MAX < FILENAME_MAX ? INT_MAX : FILENAME_MAX);
+
+		fprintf(stderr, "%.*s:%" PRIu32 ": ", prec, base,
 			test->result.failed.where.line);
 		break;
 	}

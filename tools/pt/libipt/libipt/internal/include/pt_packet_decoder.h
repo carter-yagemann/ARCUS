@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2021, Intel Corporation
+ * Copyright (c) 2014-2022, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -55,38 +55,34 @@ extern int pt_pkt_decoder_init(struct pt_packet_decoder *,
 /* Finalize the packet decoder. */
 extern void pt_pkt_decoder_fini(struct pt_packet_decoder *);
 
+static inline const struct pt_config *
+pt_pkt_config(const struct pt_packet_decoder *decoder)
+{
+	if (!decoder)
+		return NULL;
 
-/* Decoder functions for the packet decoder. */
-extern int pt_pkt_decode_unknown(struct pt_packet_decoder *,
-				 struct pt_packet *);
-extern int pt_pkt_decode_pad(struct pt_packet_decoder *, struct pt_packet *);
-extern int pt_pkt_decode_psb(struct pt_packet_decoder *, struct pt_packet *);
-extern int pt_pkt_decode_tip(struct pt_packet_decoder *, struct pt_packet *);
-extern int pt_pkt_decode_tnt_8(struct pt_packet_decoder *, struct pt_packet *);
-extern int pt_pkt_decode_tnt_64(struct pt_packet_decoder *,
-				struct pt_packet *);
-extern int pt_pkt_decode_tip_pge(struct pt_packet_decoder *,
-				 struct pt_packet *);
-extern int pt_pkt_decode_tip_pgd(struct pt_packet_decoder *,
-				 struct pt_packet *);
-extern int pt_pkt_decode_fup(struct pt_packet_decoder *, struct pt_packet *);
-extern int pt_pkt_decode_pip(struct pt_packet_decoder *, struct pt_packet *);
-extern int pt_pkt_decode_ovf(struct pt_packet_decoder *, struct pt_packet *);
-extern int pt_pkt_decode_mode(struct pt_packet_decoder *, struct pt_packet *);
-extern int pt_pkt_decode_psbend(struct pt_packet_decoder *,
-				struct pt_packet *);
-extern int pt_pkt_decode_tsc(struct pt_packet_decoder *, struct pt_packet *);
-extern int pt_pkt_decode_cbr(struct pt_packet_decoder *, struct pt_packet *);
-extern int pt_pkt_decode_tma(struct pt_packet_decoder *, struct pt_packet *);
-extern int pt_pkt_decode_mtc(struct pt_packet_decoder *, struct pt_packet *);
-extern int pt_pkt_decode_cyc(struct pt_packet_decoder *, struct pt_packet *);
-extern int pt_pkt_decode_stop(struct pt_packet_decoder *, struct pt_packet *);
-extern int pt_pkt_decode_vmcs(struct pt_packet_decoder *, struct pt_packet *);
-extern int pt_pkt_decode_mnt(struct pt_packet_decoder *, struct pt_packet *);
-extern int pt_pkt_decode_exstop(struct pt_packet_decoder *, struct pt_packet *);
-extern int pt_pkt_decode_mwait(struct pt_packet_decoder *, struct pt_packet *);
-extern int pt_pkt_decode_pwre(struct pt_packet_decoder *, struct pt_packet *);
-extern int pt_pkt_decode_pwrx(struct pt_packet_decoder *, struct pt_packet *);
-extern int pt_pkt_decode_ptw(struct pt_packet_decoder *, struct pt_packet *);
+	return &decoder->config;
+}
+
+static inline const uint8_t *
+pt_pkt_pos(const struct pt_packet_decoder *decoder)
+{
+	if (!decoder)
+		return NULL;
+
+	return decoder->pos;
+}
+
+static inline const uint8_t *
+pt_pkt_end(const struct pt_packet_decoder *decoder)
+{
+	const struct pt_config *config;
+
+	config = pt_pkt_config(decoder);
+	if (!config)
+		return NULL;
+
+	return config->end;
+}
 
 #endif /* PT_PACKET_DECODER_H */

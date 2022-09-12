@@ -1,4 +1,4 @@
-; Copyright (c) 2013-2021, Intel Corporation
+; Copyright (c) 2013-2022, Intel Corporation
 ;
 ; Redistribution and use in source and binary forms, with or without
 ; modification, are permitted provided that the following conditions are met:
@@ -50,6 +50,11 @@
 ;   cpu 6/143
 ;   cpu 6/140
 ;   cpu 6/141
+;   cpu 6/167
+;   cpu 6/168
+;   cpu 6/151
+;   cpu 6/154
+;   cpu 6/191
 ;
 ; Variant: sync at the PSB directly preceding the TIP.PGE.
 ;

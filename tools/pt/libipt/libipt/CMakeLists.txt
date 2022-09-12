@@ -1,4 +1,4 @@
-# Copyright (c) 2013-2021, Intel Corporation
+# Copyright (c) 2013-2022, Intel Corporation
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
@@ -36,6 +36,7 @@ set(LIBIPT_SECTION_FILES
 set(LIBIPT_FILES
   src/pt_error.c
   src/pt_packet_decoder.c
+  src/pt_event_decoder.c
   src/pt_query_decoder.c
   src/pt_encoder.c
   src/pt_sync.c
@@ -51,7 +52,6 @@ set(LIBIPT_FILES
   src/pt_asid.c
   src/pt_event_queue.c
   src/pt_packet.c
-  src/pt_decoder_function.c
   src/pt_config.c
   src/pt_insn.c
   src/pt_block_decoder.c
@@ -135,14 +135,13 @@ add_ptunit_c_test(mapped_section src/pt_asid.c)
 add_ptunit_c_test(query
   src/pt_encoder.c
   src/pt_last_ip.c
-  src/pt_packet_decoder.c
+  src/pt_event_decoder.c
   src/pt_sync.c
   src/pt_tnt_cache.c
   src/pt_time.c
   src/pt_event_queue.c
   src/pt_query_decoder.c
   src/pt_packet.c
-  src/pt_decoder_function.c
   src/pt_packet_decoder.c
   src/pt_config.c
   src/pt_time.c
@@ -159,14 +158,26 @@ add_ptunit_c_test(packet
   src/pt_packet_decoder.c
   src/pt_sync.c
   src/pt_packet.c
-  src/pt_decoder_function.c
   src/pt_config.c
 )
-add_ptunit_c_test(fetch
-  src/pt_decoder_function.c
+add_ptunit_c_test(encoder
   src/pt_encoder.c
   src/pt_config.c
 )
+add_ptunit_c_test(packet_decoder
+  src/pt_packet_decoder.c
+  src/pt_packet.c
+  src/pt_config.c
+  src/pt_sync.c
+  src/pt_query_decoder.c
+  src/pt_event_decoder.c
+  src/pt_event_queue.c
+  src/pt_last_ip.c
+  src/pt_tnt_cache.c
+  src/pt_time.c
+)
+add_ptunit_c_test(insn_decoder ${LIBIPT_FILES})
+add_ptunit_c_test(block_decoder ${LIBIPT_FILES})
 
 add_ptunit_cpp_test(cpp)
 add_ptunit_libraries(cpp libipt)

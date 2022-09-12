@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2021, Intel Corporation
+ * Copyright (c) 2013-2022, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -135,5 +135,14 @@ extern int pt_insn_decoder_init(struct pt_insn_decoder *decoder,
 
 /* Finalize an instruction flow decoder. */
 extern void pt_insn_decoder_fini(struct pt_insn_decoder *decoder);
+
+static inline const struct pt_config *
+pt_insn_config(const struct pt_insn_decoder *decoder)
+{
+	if (!decoder)
+		return NULL;
+
+	return pt_qry_config(&decoder->query);
+}
 
 #endif /* PT_INSN_DECODER_H */

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2021, Intel Corporation
+ * Copyright (c) 2013-2022, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -153,13 +153,15 @@ static int lookup_section_vstart(struct label *l, char *line,
 	return lookup_section_label(l, name, "vstart", vstart);
 }
 
+static const char key_section[] = "[section";
+static const char key_org[] = "[org";
+
 int parse_yasm_labels(struct label *l, const struct text *t)
 {
 	int errcode, no_org_directive;
 	size_t i;
 	uint64_t base_addr;
-	enum { linelen = 1024 };
-	char line[linelen];
+	char line[1024], *end;
 	struct label *length;
 
 	if (bug_on(!t))
@@ -168,6 +170,7 @@ int parse_yasm_labels(struct label *l, const struct text *t)
 	base_addr = 0;
 	no_org_directive = 1;
 	length = NULL;
+	end = line + sizeof(line);
 
 	/* determine base address from org directive and insert special
 	 * section labels.
@@ -175,24 +178,24 @@ int parse_yasm_labels(struct label *l, const struct text *t)
 	for (i = 0; i < t->n; i++) {
 		char *tmp;
 
-		errcode = text_line(t, line, linelen, i);
+		errcode = text_line(t, line, sizeof(line), i);
 		if (errcode < 0)
 			return errcode;
 
-		tmp = strstr(line, "[section");
+		tmp = strstr(line, key_section);
 		if (tmp) {
-			tmp += strlen("[section");
+			tmp += sizeof(key_section) - 1;
 			errcode = parse_section(tmp, l, &length);
 			if (errcode < 0)
 				return errcode;
 			continue;
 		}
 
-		tmp = strstr(line, "[org");
+		tmp = strstr(line, key_org);
 		if (tmp) {
 			char *org;
 
-			org = tmp + strlen("[org");
+			org = tmp + sizeof(key_org) - 1;
 			tmp = strstr(org, "]");
 			if (!tmp)
 				return -err_no_org_directive;
@@ -258,17 +261,17 @@ int parse_yasm_labels(struct label *l, const struct text *t)
 		return -err_no_org_directive;
 
 	for (i = 0; i < t->n; i++) {
-		char *tmp, *name;
+		char *tmp;
 		uint64_t addr;
 
-		errcode = text_line(t, line, linelen, i);
+		errcode = text_line(t, line, sizeof(line), i);
 		if (errcode < 0)
 			goto error;
 
 		/* Change the base on section switches. */
-		tmp = strstr(line, "[section");
+		tmp = strstr(line, key_section);
 		if (tmp) {
-			tmp += strlen("[section");
+			tmp += sizeof(key_section) - 1;
 			errcode = lookup_section_vstart(l, tmp, &base_addr);
 			if (errcode < 0)
 				return errcode;
@@ -297,7 +300,7 @@ int parse_yasm_labels(struct label *l, const struct text *t)
 		if (!tmp)
 			continue;
 
-		if (!make_label(tmp)) {
+		if (!make_label(tmp, end)) {
 			uint64_t laddr;
 
 			/* get address in case we find a label later.  */
@@ -311,7 +314,7 @@ int parse_yasm_labels(struct label *l, const struct text *t)
 
 			/* this might be a label now.  */
 			tmp = strtok(NULL, " ");
-			if (!make_label(tmp))
+			if (!make_label(tmp, end))
 				continue;
 
 			laddr = addr + base_addr;
@@ -325,11 +328,6 @@ int parse_yasm_labels(struct label *l, const struct text *t)
 				goto error;
 			continue;
 		}
-		name = duplicate_str(tmp);
-		if (!name) {
-			errcode = -err_no_mem;
-			goto error;
-		}
 
 		/* there was a label so now an address needs to
 		 * be found.
@@ -338,7 +336,7 @@ int parse_yasm_labels(struct label *l, const struct text *t)
 		for (i += 1; i < t->n; i++) {
 			int errcode_text;
 
-			errcode_text = text_line(t, line, linelen, i);
+			errcode_text = text_line(t, line, sizeof(line), i);
 			if (errcode_text < 0) {
 				errcode = errcode_text;
 				break;
@@ -353,13 +351,13 @@ int parse_yasm_labels(struct label *l, const struct text *t)
 					break;
 				}
 
-				errcode = l_append(l, name, laddr);
+				errcode = l_append(l, tmp, laddr);
 				break;
 			}
 		}
 		if (errcode == -err_label_addr)
-			fprintf(stderr, "label '%s' has no address\n", name);
-		free(name);
+			fprintf(stderr, "label '%s' has no address\n", tmp);
+
 		if (errcode < 0)
 			goto error;
 	}
@@ -374,14 +372,21 @@ error:
 	return errcode;
 }
 
-int make_label(char *s)
+int make_label(char *s, const char *end)
 {
-	size_t n;
+	size_t n, size;
 
 	if (bug_on(!s))
-		return -err_internal;
+		return 0;
 
-	n = strlen(s);
+	if (bug_on(end <= s))
+		return 0;
+
+	size = (size_t) ((uintptr_t) end - (uintptr_t) s);
+	n = strnlen(s, size);
+	if (size <= n)
+		return 0;
+
 	if (n == 0 || s[n-1] != ':')
 		return 0;
 
@@ -430,6 +435,8 @@ int st_print_err(const struct state *st, const char *s, int errcode)
  */
 static int st_set_file(struct state *st, const char *filename, int inc, int n)
 {
+	int errcode;
+
 	if (bug_on(!st))
 		return -err_internal;
 
@@ -437,9 +444,10 @@ static int st_set_file(struct state *st, const char *filename, int inc, int n)
 		return -err_internal;
 
 	free(st->filename);
-	st->filename = duplicate_str(filename);
-	if (!st->filename)
-		return -err_no_mem;
+	errcode = duplicate_name(&st->filename, filename, FILENAME_MAX);
+	if (errcode < 0)
+		return errcode;
+
 	st->inc = inc;
 	st->n = n;
 	return 0;
@@ -451,10 +459,14 @@ static int st_set_file(struct state *st, const char *filename, int inc, int n)
  */
 static int st_update(struct state *st, const char *s)
 {
+	int errcode;
+
 	free(st->line);
-	st->line = duplicate_str(s);
-	if (!st->line)
-		return -err_no_mem;
+	st->line = NULL;
+
+	errcode = duplicate_name(&st->line, s, FILENAME_MAX);
+	if (errcode < 0)
+		return errcode;
 
 	st->n += st->inc;
 	return 0;
@@ -520,10 +532,10 @@ int pd_set(struct pt_directive *pd, enum pt_directive_kind kind,
 }
 
 /* Magic annotation markers.  */
-static const char *pt_marker = "@pt ";
+static const char pt_marker[] = "@pt ";
 
 #if defined(FEATURE_SIDEBAND)
-static const char *sb_marker = "@sb ";
+static const char sb_marker[] = "@sb ";
 #endif
 
 int pd_parse(struct pt_directive *pd, struct state *st)
@@ -540,9 +552,9 @@ int pd_parse(struct pt_directive *pd, struct state *st)
 		return -err_internal;
 
 
-	line = duplicate_str(st->line);
-	if (!line)
-		return -err_no_mem;
+	errcode = duplicate_name(&line, st->line, FILENAME_MAX);
+	if (errcode < 0)
+		return errcode;
 
 	/* make line lower case.  */
 	for (c = line; *c; ++c)
@@ -565,14 +577,14 @@ int pd_parse(struct pt_directive *pd, struct state *st)
 	/* search for @pt marker.  */
 	directive = strstr(comment+1, pt_marker);
 	if (directive) {
-		directive += strlen(pt_marker);
+		directive += sizeof(pt_marker) - 1;
 		kind = pdk_pt;
 	} else {
 #if defined(FEATURE_SIDEBAND)
 		/* search for @sb marker. */
 		directive = strstr(comment+1, sb_marker);
 		if (directive) {
-			directive += strlen(sb_marker);
+			directive += sizeof(sb_marker) - 1;
 			kind = pdk_sb;
 		} else
 #endif
@@ -620,18 +632,16 @@ cleanup:
 	return errcode;
 }
 
-static const char *bin_suffix = ".bin";
-static const char *lst_suffix = ".lst";
+static const char bin_suffix[] = ".bin";
+static const char lst_suffix[] = ".lst";
 static const char path_separator = '/';
-enum {
-	max_filename_len = 1024
-};
 
 struct yasm *yasm_alloc(const char *pttfile)
 {
 	char *tmp;
-	size_t n;
+	size_t flen, binsize, lstsize;
 	struct yasm *y;
+	int errcode, len;
 
 	if (bug_on(!pttfile))
 		return NULL;
@@ -648,12 +658,12 @@ struct yasm *yasm_alloc(const char *pttfile)
 	if (!y->st_asm)
 		goto error;
 
-	y->fileroot = duplicate_str(pttfile);
-	if (!y->fileroot)
+	errcode = duplicate_name(&y->fileroot, pttfile, FILENAME_MAX);
+	if (errcode < 0)
 		goto error;
 
-	y->pttfile = duplicate_str(pttfile);
-	if (!y->pttfile)
+	errcode = duplicate_name(&y->pttfile, pttfile, FILENAME_MAX);
+	if (errcode < 0)
 		goto error;
 
 	tmp = strrchr(y->fileroot, '.');
@@ -663,23 +673,37 @@ struct yasm *yasm_alloc(const char *pttfile)
 	tmp = strrchr(y->fileroot, path_separator);
 	if (tmp) {
 		tmp += 1;
-		memmove(y->fileroot, tmp, strlen(tmp)+1);
+
+		flen = strnlen(tmp, FILENAME_MAX);
+		if (FILENAME_MAX <= flen)
+			goto error;
+
+		memmove(y->fileroot, tmp, flen);
+		y->fileroot[flen] = '\0';
 	}
 
-	y->binfile = malloc(strlen(y->fileroot)+strlen(bin_suffix)+1);
+	flen = strnlen(y->fileroot, FILENAME_MAX);
+	if (FILENAME_MAX <= flen)
+		goto error;
+
+	binsize = flen + sizeof(bin_suffix);
+	lstsize = flen + sizeof(lst_suffix);
+
+	y->binfile = malloc(binsize);
 	if (!y->binfile)
 		goto error;
 
-	y->lstfile = malloc(strlen(y->fileroot)+strlen(lst_suffix)+1);
+	len = snprintf(y->binfile, binsize, "%s%s", y->fileroot, bin_suffix);
+	if ((len < 0) || ((size_t) len != (binsize - 1)))
+		goto error;
+
+	y->lstfile = malloc(lstsize);
 	if (!y->lstfile)
 		goto error;
 
-	n = strlen(y->fileroot);
-
-	strcpy(y->binfile, y->fileroot);
-	strcpy(y->binfile+n, bin_suffix);
-	strcpy(y->lstfile, y->fileroot);
-	strcpy(y->lstfile+n, lst_suffix);
+	len = snprintf(y->lstfile, lstsize, "%s%s", y->fileroot, lst_suffix);
+	if ((len < 0) || ((size_t) len != (lstsize - 1)))
+		goto error;
 
 	y->l = l_alloc();
 	if (!y->l)
@@ -762,9 +786,8 @@ int yasm_lookup_label(const struct yasm *y, uint64_t *addr,
 
 static int yasm_advance_next_line(struct yasm *y)
 {
-	enum { slen = 1024 };
-	char s[slen];
-	char filename[max_filename_len];
+	char s[1024];
+	char filename[FILENAME_MAX];
 	int errcode;
 	int asm_line, asm_inc;
 
@@ -773,7 +796,7 @@ static int yasm_advance_next_line(struct yasm *y)
 
 
 	for (;;) {
-		errcode = fl_getline(y->fl, s, (size_t) slen, y->lstfile,
+		errcode = fl_getline(y->fl, s, sizeof(s), y->lstfile,
 				     (size_t) y->lst_curr_line);
 		/* always advance in lst file.  */
 		y->lst_curr_line += 1;
@@ -802,10 +825,13 @@ static int yasm_advance_next_line(struct yasm *y)
 		 * correlated to the source file, so we retrieve the
 		 * line from it and update the state.
 		 */
-		errcode = fl_getline(y->fl, s, (size_t) slen,
+		errcode = fl_getline(y->fl, s, (size_t) sizeof(s),
 				     y->st_asm->filename,
 				     (size_t) y->st_asm->n - 1u);
-		st_update(y->st_asm, s);
+		if (errcode < 0)
+			break;
+
+		errcode = st_update(y->st_asm, s);
 		break;
 	}
 
