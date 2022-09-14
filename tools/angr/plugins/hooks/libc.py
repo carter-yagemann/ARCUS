@@ -365,7 +365,17 @@ class libc_textdomain(angr.SimProcedure):
             ).ret_expr
             self.state.memory.store(self.domainname + 255, b"\x00")
         return self.domainname
-
+    
+class libc_signal(angr.SimProcedure):
+    SIG_HNDLR = {}
+    def run(self, signum, handler):
+        signum_int = self.state.solver.eval(signum)
+        if signum_int not in self.SIG_HNDLR:
+            self.SIG_HNDLR[signum_int] = self.state.solver.BVV(-1, self.state.arch.bits)
+        old = self.SIG_HNDLR[signum_int]
+        self.SIG_HNDLR[signum_int] = handler
+        return old
+    
 libc_hooks = {
     # Additional functions that angr doesn't provide hooks for
     "atol": libc_atol,
@@ -389,6 +399,8 @@ libc_hooks = {
     "setlocale":libc_setlocale,
     "bindtextdomain": libc_bindtextdomain,
     "textdomain": libc_textdomain,
+    "signal": libc_signal,
+    "mmap": angr.procedures.posix.mmap.mmap,
 }
 
 hook_condition = ("libc\.so.*", libc_hooks)
