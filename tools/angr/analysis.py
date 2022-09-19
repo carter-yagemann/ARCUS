@@ -426,15 +426,6 @@ def parse_entry_state_json(
 
             gotaddr = reloc.rebased_addr
             gotvalue = project.loader.memory.unpack_word(gotaddr)
-
-            # angr introduced its own simulated IFuncResolver and the devs implemented it in a
-            # terrible way that makes it impossible to rehook the function via hook_symbol(). To
-            # work around this, we intentionally detect and do not restore IFuncResolver hooks.
-            if gotvalue in project._sim_procedures:
-                simproc = project._sim_procedures[gotvalue]
-                if isinstance(simproc, angr.procedures.linux_loader.sim_loader.IFuncResolver):
-                    continue
-
             orig_relocs[gotaddr] = gotvalue
 
     # restore memory
@@ -1211,7 +1202,6 @@ def main():
             except_missing_libs=False,
             ld_path=[bin_temp],
             use_system_libs=False,
-            eager_ifunc_resolution=False,
         )
     except ArchNotFound as ex:
         log.error("Unsupported architecture: %s" % str(ex))

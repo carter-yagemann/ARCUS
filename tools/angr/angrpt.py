@@ -365,7 +365,8 @@ class Tracer(ExplorationTechnique):
                 orig_trace_addr = self.project.loader.find_symbol(
                     proc.display_name
                 ).rebased_addr
-                # this is fine. we do nothing and then next round it'll get handled by the is_hooked(state.history.addr) case
+                # this is fine. we do nothing and then next round it'll get handled by the
+                # is_hooked(state.history.addr) case
                 pass
             elif state.addr == getattr(self.project.simos, "vsyscall_addr", None):
                 if not self._sync_callsite(state, idx, state.history.addr):
@@ -387,6 +388,11 @@ class Tracer(ExplorationTechnique):
         elif self.project.is_hooked(state.history.addr):
             # simprocedures - is this safe..?
             self._fast_forward(state)
+        elif (self.project.is_hooked(state.addr) and
+                self.project.loader.find_symbol(self.project.hooked_by(state.addr).display_name)):
+            # likely an IFUNC
+            log.debug("Hooked indirect function (ifunc) resolver detected")
+            self._sync_callsite(state, idx - 1, state.history.bbl_addrs[-2])
         elif self._analyze_misfollow(state, idx):
             # misfollow analysis will set a sync point somewhere if it succeeds
             pass

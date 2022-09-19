@@ -371,13 +371,6 @@ class TestAnalysis(unittest.TestCase):
             "timeout": 60,
             "reports": [{"count": 2, "prefix": "alloc"}],
         },
-        "uaf-05-ben": {
-            "explore": True,
-            "plugins": "uaf_explore",
-            "max-arg": "1024",
-            "timeout": 120,
-            "reports": [{"count": 1, "prefix": "alloc"}],
-        },
         "df-01-poc": {
             "explore": False,
             "timeout": 60,
@@ -601,9 +594,6 @@ class TestAnalysis(unittest.TestCase):
 
     def test_uaf_05_poc(self):
         self.do_analysis_test("uaf-05-poc")
-
-    def test_uaf_05_ben(self):
-        self.do_analysis_test("uaf-05-ben")
 
     def test_df_01_poc(self):
         self.do_analysis_test("df-01-poc")
