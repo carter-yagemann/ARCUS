@@ -33,9 +33,9 @@ from elftools.common.exceptions import ELFError
 
 import perf
 
-PROGRAM_VERSION = "3.1.1"
+PROGRAM_VERSION = "3.2.0"
 PROGRAM_USAGE = (
-    "Usage: %prog [options] <output_directory> <tracee_path> [tracee_args]..."
+    "Usage: %prog [options] <output_directory> [tracee_args]..."
 )
 
 BREAKPOINTS = dict()
@@ -1032,23 +1032,29 @@ def main():
     """The main method."""
     options, args = parse_args()
     output_dir = args[0]
-    tracee_path = args[1]
 
     if os.getuid() != 0:
         sys.stderr.write("This program must run as root\n")
         sys.exit(1)
 
+    # resolve tracee's argv[0] (Tracer's args[1]) to get the real filepath
+    tracee_path = args[1]
     if not os.path.exists(tracee_path):
         # user may have provided a program name in PATH
         tracee_path = resolve_path(tracee_path)
+        if len(tracee_path) < 1:
+            sys.stderr.write("Failed to resolve: %s\n" % args[1])
+            sys.stderr.write("Is root's PATH correct?\n")
+            sys.exit(1)
+
+    # realpath() dereferences symlinks that would otherwise confuse enable_griffin()
+    tracee_path = os.path.realpath(tracee_path)
 
     if not os.path.isfile(tracee_path):
         sys.stderr.write("%s is not a file\n" % tracee_path)
         sys.exit(1)
 
-    # realpath() dereferences symlinks that would otherwise confuse enable_griffin()
-    tracee_path = os.path.realpath(tracee_path)
-    tracee_args = [os.path.basename(tracee_path)] + args[2:]
+    tracee_argv = args[1:]
 
     if not os.path.exists(output_dir):
         try:
@@ -1069,11 +1075,11 @@ def main():
     try:
         if options.wait_exec is None:
             # immediate attachment
-            tracee_pid = attach(tracee_path, tracee_args, output_dir, options)
+            tracee_pid = attach(tracee_path, tracee_argv, output_dir, options)
         else:
             # delayed attachment
             tracee_pid, tracee_path = attach_delayed(
-                tracee_path, tracee_args, output_dir, options
+                tracee_path, tracee_argv, output_dir, options
             )
     except:
         sys.stderr.write("**ERROR OCCURRED IN TRACER\n")
