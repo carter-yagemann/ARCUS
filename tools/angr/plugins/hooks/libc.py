@@ -25,6 +25,22 @@ from cle.backends.externs.simdata.io_file import io_file_data_for_arch
 log = logging.getLogger(name=__name__)
 
 
+class libc_clock_gettime(angr.SimProcedure):
+
+    timespec_bits = 16 * 8
+
+    def run(self, clockid, tp):
+        if self.state.solver.is_true(tp == 0):
+            return -1
+
+        result = {
+            'tv_sec': self.state.solver.BVS('tv_sec', self.arch.bits, key=('api', 'clock_gettime', 'tv_sec')),
+            'tv_nsec': self.state.solver.BVS('tv_nsec', self.arch.bits, key=('api', 'clock_gettime', 'tv_nsec')),
+        }
+
+        self.state.mem[tp].struct.timespec = result
+        return 0
+
 class libc___cxa_atexit(angr.SimProcedure):
     def run(self, func):
         # we don't actually care about at_exit callbacks
@@ -334,11 +350,11 @@ class libc_strncat(angr.SimProcedure):
             max_len = src_len
         self.inline_call(strncpy, dst + dst_len, src, max_len + 1, src_len=src_len)
         return dst
-    
+
 
 class libc_setlocale(angr.SimProcedure):
     locale = None
-    def run (self, category, locale):	
+    def run (self, category, locale):
         if self.locale is None:
             self.locale = self.inline_call(
                 angr.SIM_PROCEDURES["libc"]["malloc"], 256
@@ -365,7 +381,7 @@ class libc_textdomain(angr.SimProcedure):
             ).ret_expr
             self.state.memory.store(self.domainname + 255, b"\x00")
         return self.domainname
-    
+
 class libc_signal(angr.SimProcedure):
     SIG_HNDLR = {}
     def run(self, signum, handler):
@@ -375,10 +391,11 @@ class libc_signal(angr.SimProcedure):
         old = self.SIG_HNDLR[signum_int]
         self.SIG_HNDLR[signum_int] = handler
         return old
-    
+
 libc_hooks = {
     # Additional functions that angr doesn't provide hooks for
     "atol": libc_atol,
+    "clock_gettime": libc_clock_gettime,
     "__cxa_atexit": libc___cxa_atexit,
     "exit": angr.SIM_PROCEDURES["libc"]["exit"],
     "__fprintf_chk": libc__fprintf_chk,
