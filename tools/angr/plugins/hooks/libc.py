@@ -392,6 +392,11 @@ class libc_signal(angr.SimProcedure):
         self.SIG_HNDLR[signum_int] = handler
         return old
 
+class libc_sysconf(angr.SimProcedure):
+
+    def run(self, name):
+        return self.state.solver.BVS("sysconf_ret", self.state.arch.bits)
+
 libc_hooks = {
     # Additional functions that angr doesn't provide hooks for
     "atol": libc_atol,
@@ -417,6 +422,7 @@ libc_hooks = {
     "bindtextdomain": libc_bindtextdomain,
     "textdomain": libc_textdomain,
     "signal": libc_signal,
+    "sysconf": libc_sysconf,
     "mmap": angr.procedures.posix.mmap.mmap,
 }
 
