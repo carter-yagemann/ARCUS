@@ -425,6 +425,13 @@ class libc_sysconf(angr.SimProcedure):
     def run(self, name):
         return self.state.solver.BVS("sysconf_ret", self.state.arch.bits)
 
+class libc_wcslen(angr.SimProcedure):
+
+    def run(self, s):
+        strlen = angr.SIM_PROCEDURES["libc"]["strlen"]
+        res = self.inline_call(strlen, s, wchar=True)
+        return res.ret_expr
+
 class libc_wcsncpy(angr.SimProcedure):
 
     wchar_bytes = 4
@@ -469,6 +476,7 @@ libc_hooks = {
     "signal": libc_signal,
     "sysconf": libc_sysconf,
     "mmap": angr.procedures.posix.mmap.mmap,
+    "wcslen": libc_wcslen,
     "wcsncpy": libc_wcsncpy,
 }
 
