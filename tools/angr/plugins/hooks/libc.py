@@ -234,6 +234,34 @@ class libc_getpwnam(angr.SimProcedure):
 
         return self.PASSWD_PTR
 
+class libc_mbsrtowcs(angr.SimProcedure):
+
+    max_dest_size = 2048
+    wchar_bytes = 4
+
+    def run(self, dest, src, len, ps):
+        # return value is number of wide characters parsed
+        ret = self.state.solver.BVS("mbsrtowcs_ret", self.state.arch.bits)
+        self.state.add_constraints(ret <= len)
+
+        # pointer at src is updated to point after last parsed character
+        src_base = self.state.memory.load(src, self.state.arch.bytes,
+                endness=self.state.arch.memory_endness)
+        src_res = self.state.solver.BVS("mbsrtowcs_src", self.state.arch.bits)
+        self.state.add_constraints(src_res >= src_base)
+        self.state.add_constraints(src_res <= src_base + len)
+        self.state.memory.store(src, src_res, endness=self.state.arch.memory_endness)
+
+        if not self.state.solver.is_true(dest == 0):
+            # if provided, converted wide characters are written to dest
+            dest_size = self.state.solver.max(len) * self.wchar_bytes
+            # limit in case len is unconstrained
+            dest_size = min(dest_size, self.max_dest_size)
+            for offset in range(dest_size):
+                oc = self.state.solver.BVS("wchar_b%d" % offset, 8)
+                self.state.memory.store(dest + offset, oc)
+
+        return ret
 
 class libc_realpath(angr.SimProcedure):
     MAX_PATH = 4096
@@ -397,6 +425,22 @@ class libc_sysconf(angr.SimProcedure):
     def run(self, name):
         return self.state.solver.BVS("sysconf_ret", self.state.arch.bits)
 
+class libc_wcsncpy(angr.SimProcedure):
+
+    wchar_bytes = 4
+
+    def run(self, dest, src, n):
+        n_val = self.state.solver.max(n)
+        for offset in range(0, n_val * self.wchar_bytes, self.wchar_bytes):
+            wchar = self.state.memory.load(src + offset, self.wchar_bytes,
+                    endness=self.state.arch.memory_endness)
+            self.state.memory.store(dest + offset, wchar,
+                    endness=self.state.arch.memory_endness)
+            if self.state.solver.is_true(wchar == 0):
+                break
+
+        return dest
+
 libc_hooks = {
     # Additional functions that angr doesn't provide hooks for
     "atol": libc_atol,
@@ -411,6 +455,7 @@ libc_hooks = {
     "getcwd": angr.procedures.linux_kernel.cwd.getcwd,
     "getlogin": libc_getlogin,
     "getpwnam": libc_getpwnam,
+    "mbsrtowcs": libc_mbsrtowcs,
     "realpath": libc_realpath,
     # secure_getenv and getenv work the same from a symbolic perspective
     "secure_getenv": libc_getenv,
@@ -424,6 +469,7 @@ libc_hooks = {
     "signal": libc_signal,
     "sysconf": libc_sysconf,
     "mmap": angr.procedures.posix.mmap.mmap,
+    "wcsncpy": libc_wcsncpy,
 }
 
 hook_condition = ("libc\.so.*", libc_hooks)
