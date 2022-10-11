@@ -500,6 +500,36 @@ class libc_wcspbrk(angr.SimProcedure):
         self.state.add_constraints(ptr_expr)
         return ptr
 
+class libc_wcsrtombs(angr.SimProcedure):
+
+    max_dest_size = 2048
+
+    def run(self, dest, src, len, ps):
+        # return value is number of multibyte characters parsed
+        ret = self.state.solver.BVS("wcsrtombs_ret", self.state.arch.bits)
+        self.state.add_constraints(ret <= len)
+
+        # pointer at src is updated to point after last parsed character
+        src_base = self.state.memory.load(src, self.state.arch.bytes,
+                endness=self.state.arch.memory_endness)
+        src_len = self.inline_call(libc_wcslen, src).ret_expr * WCHAR_BYTES
+
+        src_res = self.state.solver.BVS("wcsrtombs_src", self.state.arch.bits)
+        self.state.add_constraints(src_res >= src_base)
+        self.state.add_constraints(src_res <= src_base + src_len)
+        self.state.memory.store(src, src_res, endness=self.state.arch.memory_endness)
+
+        if not self.state.solver.is_true(dest == 0):
+            # if provided, converted multibyte characters are written to dest
+            dest_size = self.state.solver.max(len)
+            # limit in case len is unconstrained
+            dest_size = min(dest_size, self.max_dest_size)
+            for offset in range(dest_size):
+                oc = self.state.solver.BVS("mbs_b%d" % offset, 8)
+                self.state.memory.store(dest + offset, oc)
+
+        return ret
+
 
 libc_hooks = {
     # Additional functions that angr doesn't provide hooks for
@@ -533,6 +563,7 @@ libc_hooks = {
     "wcslen": libc_wcslen,
     "wcsncpy": libc_wcsncpy,
     "wcspbrk": libc_wcspbrk,
+    "wcsrtombs": libc_wcsrtombs,
 }
 
 hook_condition = ("libc\.so.*", libc_hooks)
