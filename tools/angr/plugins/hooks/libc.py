@@ -20,9 +20,15 @@ import os
 
 import angr
 from angr.procedures.stubs.format_parser import FormatParser
+from angr.sim_options import MEMORY_CHUNK_INDIVIDUAL_READS
+from angr.storage.memory_mixins.address_concretization_mixin import MultiwriteAnnotation
 from cle.backends.externs.simdata.io_file import io_file_data_for_arch
 
 log = logging.getLogger(name=__name__)
+
+
+## Global Constants
+WCHAR_BYTES = 4
 
 
 class libc_clock_gettime(angr.SimProcedure):
@@ -237,7 +243,6 @@ class libc_getpwnam(angr.SimProcedure):
 class libc_mbsrtowcs(angr.SimProcedure):
 
     max_dest_size = 2048
-    wchar_bytes = 4
 
     def run(self, dest, src, len, ps):
         # return value is number of wide characters parsed
@@ -254,7 +259,7 @@ class libc_mbsrtowcs(angr.SimProcedure):
 
         if not self.state.solver.is_true(dest == 0):
             # if provided, converted wide characters are written to dest
-            dest_size = self.state.solver.max(len) * self.wchar_bytes
+            dest_size = self.state.solver.max(len) * WCHAR_BYTES
             # limit in case len is unconstrained
             dest_size = min(dest_size, self.max_dest_size)
             for offset in range(dest_size):
@@ -425,6 +430,39 @@ class libc_sysconf(angr.SimProcedure):
     def run(self, name):
         return self.state.solver.BVS("sysconf_ret", self.state.arch.bits)
 
+class libc_wcschr(angr.SimProcedure):
+
+    max_null_index = 1024
+
+    def run(self, wcs, wc):
+        wcs_len = self.inline_call(libc_wcslen, wcs)
+
+        chunk_size = None
+        if MEMORY_CHUNK_INDIVIDUAL_READS in self.state.options:
+            chunk_size = 1
+
+        if self.state.solver.symbolic(wcs_len.ret_expr):
+            log.debug("symbolic wcslen")
+            max_sym = min((self.state.solver.max_int(wcs_len.ret_expr) * WCHAR_BYTES) + WCHAR_BYTES,
+                    self.state.libc.max_symbolic_strchr)
+            a, c, i = self.state.memory.find(wcs, wc, self.max_null_index,
+                    max_symbolic_bytes=max_sym, default=0, char_size=WCHAR_BYTES)
+        else:
+            log.debug("concrete wcslen")
+            max_search = (self.state.solver.eval(wcs_len.ret_expr) * WCHAR_BYTES) + WCHAR_BYTES
+            a, c, i = self.state.memory.find(wcs, wc, max_search, default=0, chunk_size=chunk_size,
+                    char_size=WCHAR_BYTES)
+
+        if len(i) > 1:
+            a = a.annotate(MultiwriteAnnotation())
+            self.state.add_constraints(*c)
+
+        chrpos = a - wcs
+        self.state.add_constraints(self.state.solver.If(a != 0,
+                chrpos <= wcs_len.ret_expr * WCHAR_BYTES, True))
+
+        return a
+
 class libc_wcslen(angr.SimProcedure):
 
     def run(self, s):
@@ -434,12 +472,10 @@ class libc_wcslen(angr.SimProcedure):
 
 class libc_wcsncpy(angr.SimProcedure):
 
-    wchar_bytes = 4
-
     def run(self, dest, src, n):
         n_val = self.state.solver.max(n)
-        for offset in range(0, n_val * self.wchar_bytes, self.wchar_bytes):
-            wchar = self.state.memory.load(src + offset, self.wchar_bytes,
+        for offset in range(0, n_val * WCHAR_BYTES, WCHAR_BYTES):
+            wchar = self.state.memory.load(src + offset, WCHAR_BYTES,
                     endness=self.state.arch.memory_endness)
             self.state.memory.store(dest + offset, wchar,
                     endness=self.state.arch.memory_endness)
@@ -450,8 +486,6 @@ class libc_wcsncpy(angr.SimProcedure):
 
 class libc_wcspbrk(angr.SimProcedure):
 
-    wchar_bytes = 4
-
     def run(self, wcs, accept):
         Or = self.state.solver.Or
         And = self.state.solver.And
@@ -461,7 +495,7 @@ class libc_wcspbrk(angr.SimProcedure):
         ptr = self.state.solver.BVS("wcspbrk_ret", self.state.arch.bits)
         # either points to a match within the provided string or NULL
         # if no match was found
-        ptr_expr = Or(ptr == 0, And(ptr >= wcs, ptr < wcs + (len * self.wchar_bytes)))
+        ptr_expr = Or(ptr == 0, And(ptr >= wcs, ptr < wcs + (len * WCHAR_BYTES)))
 
         self.state.add_constraints(ptr_expr)
         return ptr
@@ -495,6 +529,7 @@ libc_hooks = {
     "signal": libc_signal,
     "sysconf": libc_sysconf,
     "mmap": angr.procedures.posix.mmap.mmap,
+    "wcschr": libc_wcschr,
     "wcslen": libc_wcslen,
     "wcsncpy": libc_wcsncpy,
     "wcspbrk": libc_wcspbrk,
