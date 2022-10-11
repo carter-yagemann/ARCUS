@@ -244,6 +244,9 @@ class libc_mbsrtowcs(angr.SimProcedure):
 
     max_dest_size = 2048
 
+    # TODO: This simproc makes no attempt to actually convert characters,
+    # which causes the string to be underconstrained
+
     def run(self, dest, src, len, ps):
         # return value is number of wide characters parsed
         ret = self.state.solver.BVS("mbsrtowcs_ret", self.state.arch.bits)
@@ -430,6 +433,16 @@ class libc_sysconf(angr.SimProcedure):
     def run(self, name):
         return self.state.solver.BVS("sysconf_ret", self.state.arch.bits)
 
+class libc_towupper(angr.SimProcedure):
+
+    # TODO: This simproc makes no attempt to actually convert the character,
+    # resulting in an underconstrained result. See angr's toupper simproc for
+    # a better implementation
+
+    def run(self, wc):
+        # sizeof(wint_t) == sizeof(wchar_t)
+        return self.state.solver.BVS("towupper_ret", self.state.arch.bits)
+
 class libc_wcschr(angr.SimProcedure):
 
     max_null_index = 1024
@@ -465,6 +478,9 @@ class libc_wcschr(angr.SimProcedure):
 
 class libc_wcslen(angr.SimProcedure):
 
+    # TODO: wchar=True assumes null terminator is \x0000, but wchar_t is
+    # 4 bytes, so should we actually be searching for \x00000000?
+
     def run(self, s):
         strlen = angr.SIM_PROCEDURES["libc"]["strlen"]
         res = self.inline_call(strlen, s, wchar=True)
@@ -486,6 +502,9 @@ class libc_wcsncpy(angr.SimProcedure):
 
 class libc_wcspbrk(angr.SimProcedure):
 
+    # TODO: This simproc makes no attempt to actually search the provided
+    # string, resulting in an underconstrained state.
+
     def run(self, wcs, accept):
         Or = self.state.solver.Or
         And = self.state.solver.And
@@ -503,6 +522,9 @@ class libc_wcspbrk(angr.SimProcedure):
 class libc_wcsrtombs(angr.SimProcedure):
 
     max_dest_size = 2048
+
+    # TODO: This simproc makes no attempt to actually convert characters,
+    # yielding an underconstrained destination buffer/string.
 
     def run(self, dest, src, len, ps):
         # return value is number of multibyte characters parsed
@@ -558,6 +580,7 @@ libc_hooks = {
     "textdomain": libc_textdomain,
     "signal": libc_signal,
     "sysconf": libc_sysconf,
+    "towupper": libc_towupper,
     "mmap": angr.procedures.posix.mmap.mmap,
     "wcschr": libc_wcschr,
     "wcslen": libc_wcslen,
