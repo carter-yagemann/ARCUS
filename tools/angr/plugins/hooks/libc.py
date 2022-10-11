@@ -486,6 +486,14 @@ class libc_wcslen(angr.SimProcedure):
         res = self.inline_call(strlen, s, wchar=True)
         return res.ret_expr
 
+class libc_wcscpy(angr.SimProcedure):
+
+    def run(self, dest, src):
+        src_len = self.inline_call(libc_wcslen, src).ret_expr
+        self.inline_call(angr.SIM_PROCEDURES["libc"]["memcpy"],
+                dest, src, src_len * WCHAR_BYTES + WCHAR_BYTES)
+        return dest
+
 class libc_wcsncpy(angr.SimProcedure):
 
     def run(self, dest, src, n):
@@ -584,6 +592,7 @@ libc_hooks = {
     "mmap": angr.procedures.posix.mmap.mmap,
     "wcschr": libc_wcschr,
     "wcslen": libc_wcslen,
+    "wcscpy": libc_wcscpy,
     "wcsncpy": libc_wcsncpy,
     "wcspbrk": libc_wcspbrk,
     "wcsrtombs": libc_wcsrtombs,
