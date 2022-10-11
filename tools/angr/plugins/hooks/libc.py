@@ -448,6 +448,25 @@ class libc_wcsncpy(angr.SimProcedure):
 
         return dest
 
+class libc_wcspbrk(angr.SimProcedure):
+
+    wchar_bytes = 4
+
+    def run(self, wcs, accept):
+        Or = self.state.solver.Or
+        And = self.state.solver.And
+
+        len = self.inline_call(libc_wcslen, wcs).ret_expr
+
+        ptr = self.state.solver.BVS("wcspbrk_ret", self.state.arch.bits)
+        # either points to a match within the provided string or NULL
+        # if no match was found
+        ptr_expr = Or(ptr == 0, And(ptr >= wcs, ptr < wcs + (len * self.wchar_bytes)))
+
+        self.state.add_constraints(ptr_expr)
+        return ptr
+
+
 libc_hooks = {
     # Additional functions that angr doesn't provide hooks for
     "atol": libc_atol,
@@ -478,6 +497,7 @@ libc_hooks = {
     "mmap": angr.procedures.posix.mmap.mmap,
     "wcslen": libc_wcslen,
     "wcsncpy": libc_wcsncpy,
+    "wcspbrk": libc_wcspbrk,
 }
 
 hook_condition = ("libc\.so.*", libc_hooks)
