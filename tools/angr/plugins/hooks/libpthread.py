@@ -55,10 +55,16 @@ class pthreads_open64(angr.SimProcedure):
         oflag_val = oflag_val | angr.storage.file.Flags.O_LARGEFILE
         return self.inline_call(pthreads_open, path, oflag_val).ret_expr
 
+class pthread_mutex_init(angr.SimProcedure):
+
+    def run(self):
+        # don't do anything
+        return
 
 libpthread_hooks = {
     "open": pthreads_open,
     "open64": pthreads_open64,
+    "pthread_mutex_init": pthread_mutex_init,
 }
 
 hook_condition = ("libpthread\.so.*", libpthread_hooks)
