@@ -489,10 +489,12 @@ class libc_wcschr(angr.SimProcedure):
 
 class libc_wcslen(angr.SimProcedure):
 
+    max_null_index = 1024
+
     def run(self, s):
         null = self.state.solver.BVV(0, WCHAR_BYTES * 8)
-        r, c, i = self.state.memory.find(s, null, 1024, max_symbolic_bytes=128,
-                char_size=WCHAR_BYTES)
+        r, c, i = self.state.memory.find(s, null, self.max_null_index,
+                max_symbolic_bytes=128, char_size=WCHAR_BYTES)
         self.state.add_constraints(*c)
         return (r - s) // WCHAR_BYTES
 
@@ -520,22 +522,30 @@ class libc_wcsncpy(angr.SimProcedure):
 
 class libc_wcspbrk(angr.SimProcedure):
 
-    # TODO: This simproc makes no attempt to actually search the provided
-    # string, resulting in an underconstrained state.
-
     def run(self, wcs, accept):
         Or = self.state.solver.Or
         And = self.state.solver.And
 
-        len = self.inline_call(libc_wcslen, wcs).ret_expr
+        wcs_len = self.inline_call(libc_wcslen, wcs)
+        acc_len = self.inline_call(libc_wcslen, accept)
+        best_match = None
 
-        ptr = self.state.solver.BVS("wcspbrk_ret", self.state.arch.bits)
-        # either points to a match within the provided string or NULL
-        # if no match was found
-        ptr_expr = Or(ptr == 0, And(ptr >= wcs, ptr < wcs + (len * WCHAR_BYTES)))
+        for idx in range(self.state.solver.max(acc_len.ret_expr)):
+            acc = self.state.memory.load(accept + (WCHAR_BYTES * idx), WCHAR_BYTES)
+            if self.state.solver.is_true(acc == 0):
+                break
+            a, c, i = self.state.memory.find(wcs, acc, wcs_len.max_null_index,
+                    max_symbolic_bytes=self.state.libc.max_symbolic_strchr * WCHAR_BYTES,
+                    default=0, char_size=WCHAR_BYTES)
+            if best_match is None or self.state.solver.is_true(
+                    self.state.solver.And(a != 0, a < best_match[0])):
+                best_match = [a, c, i]
 
-        self.state.add_constraints(ptr_expr)
-        return ptr
+        if best_match is None:
+            return 0
+
+        self.state.add_constraints(*(best_match[1]))
+        return best_match[0]
 
 class libc_wcsrtombs(angr.SimProcedure):
 
