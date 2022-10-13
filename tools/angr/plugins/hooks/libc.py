@@ -626,6 +626,19 @@ class libc_wcsrtombs(angr.SimProcedure):
 
         return ret_val
 
+class libc_mempcpy(angr.SimProcedure):
+
+    def run(self, dest, src, n):
+        res = self.inline_call(angr.SIM_PROCEDURES["libc"]["memcpy"],
+                dest, src, n)
+        return dest + n
+
+class libc_wmempcpy(angr.SimProcedure):
+
+    def run(self, dest, src, n):
+        cpy = self.inline_call(libc_mempcpy, dest, src, n * WCHAR_BYTES)
+        return cpy.ret_expr
+
 
 libc_hooks = {
     # Additional functions that angr doesn't provide hooks for
@@ -664,6 +677,8 @@ libc_hooks = {
     "wcsncpy": libc_wcsncpy,
     "wcspbrk": libc_wcspbrk,
     "wcsrtombs": libc_wcsrtombs,
+    "mempcpy": libc_mempcpy,
+    "wmempcpy": libc_wmempcpy,
 }
 
 hook_condition = ("libc\.so.*", libc_hooks)
