@@ -242,34 +242,42 @@ class libc_getpwnam(angr.SimProcedure):
 
 class libc_mbsrtowcs(angr.SimProcedure):
 
-    max_dest_size = 2048
-
-    # TODO: This simproc makes no attempt to actually convert characters,
-    # which causes the string to be underconstrained
+    max_dest_size = 1024
 
     def run(self, dest, src, len, ps):
         # return value is number of wide characters parsed
-        ret = self.state.solver.BVS("mbsrtowcs_ret", self.state.arch.bits)
-        self.state.add_constraints(ret <= len)
+        ret_val = 0
 
         # pointer at src is updated to point after last parsed character
         src_base = self.state.memory.load(src, self.state.arch.bytes,
                 endness=self.state.arch.memory_endness)
-        src_res = self.state.solver.BVS("mbsrtowcs_src", self.state.arch.bits)
-        self.state.add_constraints(src_res >= src_base)
-        self.state.add_constraints(src_res <= src_base + len)
-        self.state.memory.store(src, src_res, endness=self.state.arch.memory_endness)
 
-        if not self.state.solver.is_true(dest == 0):
-            # if provided, converted wide characters are written to dest
-            dest_size = self.state.solver.max(len) * WCHAR_BYTES
-            # limit in case len is unconstrained
-            dest_size = min(dest_size, self.max_dest_size)
-            for offset in range(dest_size):
-                oc = self.state.solver.BVS("wchar_b%d" % offset, 8)
-                self.state.memory.store(dest + offset, oc)
+        # determine max number of characters to parse
+        len_val = min(self.max_dest_size, self.state.solver.max(len))
 
-        return ret
+        for offset in range(len_val):
+            next_byte = self.state.memory.load(src_base + offset, 1)
+
+            if self.state.solver.is_true(next_byte < 0x80):
+                # most wide encodings are backwards compatible with ASCII
+                ret_val += 1
+                if not self.state.solver.is_true(dest == 0):
+                    wc = next_byte.zero_extend((WCHAR_BYTES * 8) - 8)
+                    self.state.memory.store(dest + (offset * WCHAR_BYTES), wc,
+                            endness=self.state.arch.memory_endness)
+            else:
+                log.warning("Simproc mbsrtowcs cannot handle non-ASCII")
+                break
+
+            if self.state.solver.is_true(next_byte == 0):
+                # reached and copied null terminator
+                break
+
+        # update src
+        src_val = src_base + ret_val
+        self.state.memory.store(src, src_val, endness=self.state.arch.memory_endness)
+
+        return ret_val
 
 class libc_realpath(angr.SimProcedure):
     MAX_PATH = 4096
@@ -435,13 +443,16 @@ class libc_sysconf(angr.SimProcedure):
 
 class libc_towupper(angr.SimProcedure):
 
-    # TODO: This simproc makes no attempt to actually convert the character,
-    # resulting in an underconstrained result. See angr's toupper simproc for
-    # a better implementation
-
     def run(self, wc):
         # sizeof(wint_t) == sizeof(wchar_t)
-        return self.state.solver.BVS("towupper_ret", self.state.arch.bits)
+        # Most wide encodings are backwards compatible with ASCII
+        if self.state.solver.is_true(wc < 0x80):
+            return self.state.solver.If(
+                    self.state.solver.And(wc >= 97, wc <= 122),  # a - z
+                    wc - 32, wc)
+        else:
+            log.warning("Simproc towupper cannot handle non-ASCII characters")
+            return self.state.solver.BVS("towupper_ret", self.state.arch.bits)
 
 class libc_wcschr(angr.SimProcedure):
 
@@ -478,13 +489,12 @@ class libc_wcschr(angr.SimProcedure):
 
 class libc_wcslen(angr.SimProcedure):
 
-    # TODO: wchar=True assumes null terminator is \x0000, but wchar_t is
-    # 4 bytes, so should we actually be searching for \x00000000?
-
     def run(self, s):
-        strlen = angr.SIM_PROCEDURES["libc"]["strlen"]
-        res = self.inline_call(strlen, s, wchar=True)
-        return res.ret_expr
+        null = self.state.solver.BVV(0, WCHAR_BYTES * 8)
+        r, c, i = self.state.memory.find(s, null, 1024, max_symbolic_bytes=128,
+                char_size=WCHAR_BYTES)
+        self.state.add_constraints(*c)
+        return (r - s) // WCHAR_BYTES
 
 class libc_wcscpy(angr.SimProcedure):
 
@@ -529,36 +539,42 @@ class libc_wcspbrk(angr.SimProcedure):
 
 class libc_wcsrtombs(angr.SimProcedure):
 
-    max_dest_size = 2048
-
-    # TODO: This simproc makes no attempt to actually convert characters,
-    # yielding an underconstrained destination buffer/string.
+    max_dest_size = 1024
 
     def run(self, dest, src, len, ps):
         # return value is number of multibyte characters parsed
-        ret = self.state.solver.BVS("wcsrtombs_ret", self.state.arch.bits)
-        self.state.add_constraints(ret <= len)
+        ret_val = 0
 
         # pointer at src is updated to point after last parsed character
         src_base = self.state.memory.load(src, self.state.arch.bytes,
                 endness=self.state.arch.memory_endness)
-        src_len = self.inline_call(libc_wcslen, src).ret_expr * WCHAR_BYTES
 
-        src_res = self.state.solver.BVS("wcsrtombs_src", self.state.arch.bits)
-        self.state.add_constraints(src_res >= src_base)
-        self.state.add_constraints(src_res <= src_base + src_len)
-        self.state.memory.store(src, src_res, endness=self.state.arch.memory_endness)
+        # determine max number of characters to parse
+        len_val = min(self.max_dest_size, self.state.solver.max(len))
 
-        if not self.state.solver.is_true(dest == 0):
-            # if provided, converted multibyte characters are written to dest
-            dest_size = self.state.solver.max(len)
-            # limit in case len is unconstrained
-            dest_size = min(dest_size, self.max_dest_size)
-            for offset in range(dest_size):
-                oc = self.state.solver.BVS("mbs_b%d" % offset, 8)
-                self.state.memory.store(dest + offset, oc)
+        for offset in range(len_val):
+            next_wc = self.state.memory.load(src_base + (offset * WCHAR_BYTES),
+                    WCHAR_BYTES, endness=self.state.arch.memory_endness)
 
-        return ret
+            if self.state.solver.is_true(next_wc < 0x80):
+                # most wide encodings are backwards compatible with ASCII
+                ret_val += 1
+                if not self.state.solver.is_true(dest == 0):
+                    mbs = next_wc.get_byte(WCHAR_BYTES - 1)
+                    self.state.memory.store(dest + offset, mbs)
+            else:
+                log.warning("Simproc wcsrtombs cannot handle non-ASCII")
+                break
+
+            if self.state.solver.is_true(next_wc == 0):
+                # reached and copied null terminator
+                break
+
+        # update src
+        src_val = src_base + (ret_val * WCHAR_BYTES)
+        self.state.memory.store(src, src_val, endness=self.state.arch.memory_endness)
+
+        return ret_val
 
 
 libc_hooks = {
