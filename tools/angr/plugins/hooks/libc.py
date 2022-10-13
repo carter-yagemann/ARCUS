@@ -454,6 +454,13 @@ class libc_towupper(angr.SimProcedure):
             log.warning("Simproc towupper cannot handle non-ASCII characters")
             return self.state.solver.BVS("towupper_ret", self.state.arch.bits)
 
+class libc_vfwprintf(angr.SimProcedure):
+
+    def run(self, stream, format, ap):
+        log.warning("vfwprintf not implemented, skipping write")
+        ret = self.state.solver.BVS("vfwprintf_ret", self.state.arch.bits)
+        return ret
+
 class libc_wcschr(angr.SimProcedure):
 
     max_null_index = 1024
@@ -616,6 +623,7 @@ libc_hooks = {
     "sysconf": libc_sysconf,
     "towupper": libc_towupper,
     "mmap": angr.procedures.posix.mmap.mmap,
+    "vfwprintf": libc_vfwprintf,
     "wcschr": libc_wcschr,
     "wcslen": libc_wcslen,
     "wcscpy": libc_wcscpy,
