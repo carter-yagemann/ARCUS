@@ -22,6 +22,7 @@ import angr
 from angr.procedures.stubs.format_parser import FormatParser
 from angr.sim_options import MEMORY_CHUNK_INDIVIDUAL_READS
 from angr.storage.memory_mixins.address_concretization_mixin import MultiwriteAnnotation
+import claripy
 from cle.backends.externs.simdata.io_file import io_file_data_for_arch
 
 log = logging.getLogger(name=__name__)
@@ -494,6 +495,38 @@ class libc_wcschr(angr.SimProcedure):
 
         return a
 
+class libc_wcsrchr(angr.SimProcedure):
+    def run(self, wcs, wc):
+        best_match = None
+
+        wcs_len = self.inline_call(libc_wcslen, wcs)
+        max_bytes = self.state.solver.max(wcs_len.ret_expr) * WCHAR_BYTES
+        offset = 0
+
+        # convert wc to wchar_t
+        if wc.length < (WCHAR_BYTES * 8):
+            wc = wc.zero_extend((WCHAR_BYTES * 8) - wc.length)
+        elif wc.length > (WCHAR_BYTES * 8):
+            wc = wc[31:]
+        assert wc.length == (WCHAR_BYTES * 8)
+        # flip endness
+        if self.state.arch.memory_endness == 'Iend_LE':
+            wc = claripy.Concat(*(wc.chop(8)[::-1]))
+
+        while offset < max_bytes:
+            a, c, i = self.state.memory.find(wcs + offset, wc, max_bytes - offset,
+                    max_symbolic_bytes=128, default=0, char_size=WCHAR_BYTES)
+            if self.state.solver.is_true(a == 0):
+                break
+            best_match = [a, c]
+            offset += (i[0] * WCHAR_BYTES) + WCHAR_BYTES
+
+        if best_match is None:
+            return 0
+
+        self.state.add_constraints(*(best_match[1]))
+        return best_match[0]
+
 class libc_wcslen(angr.SimProcedure):
 
     max_null_index = 1024
@@ -625,6 +658,7 @@ libc_hooks = {
     "mmap": angr.procedures.posix.mmap.mmap,
     "vfwprintf": libc_vfwprintf,
     "wcschr": libc_wcschr,
+    "wcsrchr": libc_wcsrchr,
     "wcslen": libc_wcslen,
     "wcscpy": libc_wcscpy,
     "wcsncpy": libc_wcsncpy,
