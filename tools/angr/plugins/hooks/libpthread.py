@@ -59,6 +59,7 @@ class pthread_mutex_init(angr.SimProcedure):
 
     def run(self):
         # don't do anything
+        log.warning("We don't model multi-threading, skipping pthread_mutex_init")
         return
 
 libpthread_hooks = {
