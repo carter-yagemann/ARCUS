@@ -311,6 +311,23 @@ class libc_realpath(angr.SimProcedure):
 
         return buf
 
+class libc_unlink(angr.SimProcedure):
+
+    def run(self, path_addr):
+        strlen = angr.SIM_PROCEDURES['libc']['strlen']
+
+        p_strlen = self.inline_call(strlen, path_addr)
+        str_expr = self.state.memory.load(path_addr, p_strlen.max_null_index, endness='Iend_BE')
+        str_val = self.state.solver.eval(str_expr, cast_to=bytes)
+
+        # Check if entity exists before attempting to unlink
+        if not self.state.fs.get(str_val):
+            return -1
+
+        if self.state.fs.delete(str_val):
+            return 0
+        else:
+            return -1
 
 class libc_snprintf(FormatParser):
     """Custom snprintf simproc because angr's doesn't honor the size argument"""
@@ -639,6 +656,13 @@ class libc_wmempcpy(angr.SimProcedure):
         cpy = self.inline_call(libc_mempcpy, dest, src, n * WCHAR_BYTES)
         return cpy.ret_expr
 
+class libc_wcsncmp(angr.SimProcedure):
+
+    def run(self, s1, s2, n):
+        # don't need to actually compare because we can just let the trace
+        # determine whether they matched or not for us
+        return self.state.solver.BVS("wcsncmp_ret", self.state.arch.bits)
+
 
 libc_hooks = {
     # Additional functions that angr doesn't provide hooks for
@@ -656,6 +680,8 @@ libc_hooks = {
     "getpwnam": libc_getpwnam,
     "mbsrtowcs": libc_mbsrtowcs,
     "realpath": libc_realpath,
+    # angr's version is buggy
+    "unlink": libc_unlink,
     # secure_getenv and getenv work the same from a symbolic perspective
     "secure_getenv": libc_getenv,
     "snprintf": libc_snprintf,
@@ -679,6 +705,7 @@ libc_hooks = {
     "wcsrtombs": libc_wcsrtombs,
     "mempcpy": libc_mempcpy,
     "wmempcpy": libc_wmempcpy,
+    "wcsncmp": libc_wcsncmp,
 }
 
 hook_condition = ("libc\.so.*", libc_hooks)
