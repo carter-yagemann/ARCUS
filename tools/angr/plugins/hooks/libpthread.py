@@ -62,10 +62,26 @@ class pthread_mutex_init(angr.SimProcedure):
         log.warning("We don't model multi-threading, skipping pthread_mutex_init")
         return
 
+class pthread_cond_broadcast(angr.SimProcedure):
+
+    def run(self):
+        log.warning("We don't model multi-threading, skipping pthread_cond_broadcast")
+        return
+
+class pthread_mutex_destroy(angr.SimProcedure):
+
+    def run(self):
+        # since we didn't actually initialize a mutux, we don't have anything
+        # to destroy
+        log.warning("We don't model multi-threading, skipping pthread_mutex_destroy")
+        return
+
 libpthread_hooks = {
     "open": pthreads_open,
     "open64": pthreads_open64,
     "pthread_mutex_init": pthread_mutex_init,
+    "pthread_cond_broadcast": pthread_cond_broadcast,
+    "pthread_mutex_destroy": pthread_mutex_destroy,
 }
 
 hook_condition = ("libpthread\.so.*", libpthread_hooks)
