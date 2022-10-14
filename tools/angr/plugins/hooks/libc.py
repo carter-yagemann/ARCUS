@@ -20,10 +20,33 @@ import os
 
 import angr
 from angr.procedures.stubs.format_parser import FormatParser
+from angr.sim_options import MEMORY_CHUNK_INDIVIDUAL_READS
+from angr.storage.memory_mixins.address_concretization_mixin import MultiwriteAnnotation
+import claripy
 from cle.backends.externs.simdata.io_file import io_file_data_for_arch
 
 log = logging.getLogger(name=__name__)
 
+
+## Global Constants
+WCHAR_BYTES = 4
+
+
+class libc_clock_gettime(angr.SimProcedure):
+
+    timespec_bits = 16 * 8
+
+    def run(self, clockid, tp):
+        if self.state.solver.is_true(tp == 0):
+            return -1
+
+        result = {
+            'tv_sec': self.state.solver.BVS('tv_sec', self.arch.bits, key=('api', 'clock_gettime', 'tv_sec')),
+            'tv_nsec': self.state.solver.BVS('tv_nsec', self.arch.bits, key=('api', 'clock_gettime', 'tv_nsec')),
+        }
+
+        self.state.mem[tp].struct.timespec = result
+        return 0
 
 class libc___cxa_atexit(angr.SimProcedure):
     def run(self, func):
@@ -218,6 +241,44 @@ class libc_getpwnam(angr.SimProcedure):
 
         return self.PASSWD_PTR
 
+class libc_mbsrtowcs(angr.SimProcedure):
+
+    max_dest_size = 1024
+
+    def run(self, dest, src, len, ps):
+        # return value is number of wide characters parsed
+        ret_val = 0
+
+        # pointer at src is updated to point after last parsed character
+        src_base = self.state.memory.load(src, self.state.arch.bytes,
+                endness=self.state.arch.memory_endness)
+
+        # determine max number of characters to parse
+        len_val = min(self.max_dest_size, self.state.solver.max(len))
+
+        for offset in range(len_val):
+            next_byte = self.state.memory.load(src_base + offset, 1)
+
+            if self.state.solver.is_true(next_byte < 0x80):
+                # most wide encodings are backwards compatible with ASCII
+                ret_val += 1
+                if not self.state.solver.is_true(dest == 0):
+                    wc = next_byte.zero_extend((WCHAR_BYTES * 8) - 8)
+                    self.state.memory.store(dest + (offset * WCHAR_BYTES), wc,
+                            endness=self.state.arch.memory_endness)
+            else:
+                log.warning("Simproc mbsrtowcs cannot handle non-ASCII")
+                break
+
+            if self.state.solver.is_true(next_byte == 0):
+                # reached and copied null terminator
+                break
+
+        # update src
+        src_val = src_base + ret_val
+        self.state.memory.store(src, src_val, endness=self.state.arch.memory_endness)
+
+        return ret_val
 
 class libc_realpath(angr.SimProcedure):
     MAX_PATH = 4096
@@ -250,6 +311,23 @@ class libc_realpath(angr.SimProcedure):
 
         return buf
 
+class libc_unlink(angr.SimProcedure):
+
+    def run(self, path_addr):
+        strlen = angr.SIM_PROCEDURES['libc']['strlen']
+
+        p_strlen = self.inline_call(strlen, path_addr)
+        str_expr = self.state.memory.load(path_addr, p_strlen.max_null_index, endness='Iend_BE')
+        str_val = self.state.solver.eval(str_expr, cast_to=bytes)
+
+        # Check if entity exists before attempting to unlink
+        if not self.state.fs.get(str_val):
+            return -1
+
+        if self.state.fs.delete(str_val):
+            return 0
+        else:
+            return -1
 
 class libc_snprintf(FormatParser):
     """Custom snprintf simproc because angr's doesn't honor the size argument"""
@@ -334,11 +412,11 @@ class libc_strncat(angr.SimProcedure):
             max_len = src_len
         self.inline_call(strncpy, dst + dst_len, src, max_len + 1, src_len=src_len)
         return dst
-    
+
 
 class libc_setlocale(angr.SimProcedure):
     locale = None
-    def run (self, category, locale):	
+    def run (self, category, locale):
         if self.locale is None:
             self.locale = self.inline_call(
                 angr.SIM_PROCEDURES["libc"]["malloc"], 256
@@ -365,7 +443,7 @@ class libc_textdomain(angr.SimProcedure):
             ).ret_expr
             self.state.memory.store(self.domainname + 255, b"\x00")
         return self.domainname
-    
+
 class libc_signal(angr.SimProcedure):
     SIG_HNDLR = {}
     def run(self, signum, handler):
@@ -375,10 +453,221 @@ class libc_signal(angr.SimProcedure):
         old = self.SIG_HNDLR[signum_int]
         self.SIG_HNDLR[signum_int] = handler
         return old
-    
+
+class libc_sysconf(angr.SimProcedure):
+
+    def run(self, name):
+        return self.state.solver.BVS("sysconf_ret", self.state.arch.bits)
+
+class libc_towupper(angr.SimProcedure):
+
+    def run(self, wc):
+        # sizeof(wint_t) == sizeof(wchar_t)
+        # Most wide encodings are backwards compatible with ASCII
+        if self.state.solver.is_true(wc < 0x80):
+            return self.state.solver.If(
+                    self.state.solver.And(wc >= 97, wc <= 122),  # a - z
+                    wc - 32, wc)
+        else:
+            log.warning("Simproc towupper cannot handle non-ASCII characters")
+            return self.state.solver.BVS("towupper_ret", self.state.arch.bits)
+
+class libc_vfwprintf(angr.SimProcedure):
+
+    def run(self, stream, format, ap):
+        log.warning("vfwprintf not implemented, skipping write")
+        ret = self.state.solver.BVS("vfwprintf_ret", self.state.arch.bits)
+        return ret
+
+class libc_wcschr(angr.SimProcedure):
+
+    max_null_index = 1024
+
+    def run(self, wcs, wc):
+        wcs_len = self.inline_call(libc_wcslen, wcs)
+
+        chunk_size = None
+        if MEMORY_CHUNK_INDIVIDUAL_READS in self.state.options:
+            chunk_size = 1
+
+        if self.state.solver.symbolic(wcs_len.ret_expr):
+            log.debug("symbolic wcslen")
+            max_sym = min((self.state.solver.max_int(wcs_len.ret_expr) * WCHAR_BYTES) + WCHAR_BYTES,
+                    self.state.libc.max_symbolic_strchr)
+            a, c, i = self.state.memory.find(wcs, wc, self.max_null_index,
+                    max_symbolic_bytes=max_sym, default=0, char_size=WCHAR_BYTES)
+        else:
+            log.debug("concrete wcslen")
+            max_search = (self.state.solver.eval(wcs_len.ret_expr) * WCHAR_BYTES) + WCHAR_BYTES
+            a, c, i = self.state.memory.find(wcs, wc, max_search, default=0, chunk_size=chunk_size,
+                    char_size=WCHAR_BYTES)
+
+        if len(i) > 1:
+            a = a.annotate(MultiwriteAnnotation())
+            self.state.add_constraints(*c)
+
+        chrpos = a - wcs
+        self.state.add_constraints(self.state.solver.If(a != 0,
+                chrpos <= wcs_len.ret_expr * WCHAR_BYTES, True))
+
+        return a
+
+class libc_wcsrchr(angr.SimProcedure):
+    def run(self, wcs, wc):
+        best_match = None
+
+        wcs_len = self.inline_call(libc_wcslen, wcs)
+        max_bytes = self.state.solver.max(wcs_len.ret_expr) * WCHAR_BYTES
+        offset = 0
+
+        # convert wc to wchar_t
+        if wc.length < (WCHAR_BYTES * 8):
+            wc = wc.zero_extend((WCHAR_BYTES * 8) - wc.length)
+        elif wc.length > (WCHAR_BYTES * 8):
+            wc = wc[31:]
+        assert wc.length == (WCHAR_BYTES * 8)
+        # flip endness
+        if self.state.arch.memory_endness == 'Iend_LE':
+            wc = claripy.Concat(*(wc.chop(8)[::-1]))
+
+        while offset < max_bytes:
+            a, c, i = self.state.memory.find(wcs + offset, wc, max_bytes - offset,
+                    max_symbolic_bytes=128, default=0, char_size=WCHAR_BYTES)
+            if self.state.solver.is_true(a == 0):
+                break
+            best_match = [a, c]
+            offset += (i[0] * WCHAR_BYTES) + WCHAR_BYTES
+
+        if best_match is None:
+            return 0
+
+        self.state.add_constraints(*(best_match[1]))
+        return best_match[0]
+
+class libc_wcslen(angr.SimProcedure):
+
+    max_null_index = 1024
+
+    def run(self, s):
+        null = self.state.solver.BVV(0, WCHAR_BYTES * 8)
+        r, c, i = self.state.memory.find(s, null, self.max_null_index,
+                max_symbolic_bytes=128, char_size=WCHAR_BYTES)
+        self.state.add_constraints(*c)
+        return (r - s) // WCHAR_BYTES
+
+class libc_wcscpy(angr.SimProcedure):
+
+    def run(self, dest, src):
+        src_len = self.inline_call(libc_wcslen, src).ret_expr
+        self.inline_call(angr.SIM_PROCEDURES["libc"]["memcpy"],
+                dest, src, src_len * WCHAR_BYTES + WCHAR_BYTES)
+        return dest
+
+class libc_wcsncpy(angr.SimProcedure):
+
+    def run(self, dest, src, n):
+        n_val = self.state.solver.max(n)
+        for offset in range(0, n_val * WCHAR_BYTES, WCHAR_BYTES):
+            wchar = self.state.memory.load(src + offset, WCHAR_BYTES,
+                    endness=self.state.arch.memory_endness)
+            self.state.memory.store(dest + offset, wchar,
+                    endness=self.state.arch.memory_endness)
+            if self.state.solver.is_true(wchar == 0):
+                break
+
+        return dest
+
+class libc_wcspbrk(angr.SimProcedure):
+
+    def run(self, wcs, accept):
+        Or = self.state.solver.Or
+        And = self.state.solver.And
+
+        wcs_len = self.inline_call(libc_wcslen, wcs)
+        acc_len = self.inline_call(libc_wcslen, accept)
+        best_match = None
+
+        for idx in range(self.state.solver.max(acc_len.ret_expr)):
+            acc = self.state.memory.load(accept + (WCHAR_BYTES * idx), WCHAR_BYTES)
+            if self.state.solver.is_true(acc == 0):
+                break
+            a, c, i = self.state.memory.find(wcs, acc, wcs_len.max_null_index,
+                    max_symbolic_bytes=self.state.libc.max_symbolic_strchr * WCHAR_BYTES,
+                    default=0, char_size=WCHAR_BYTES)
+            if best_match is None or self.state.solver.is_true(
+                    self.state.solver.And(a != 0, a < best_match[0])):
+                best_match = [a, c, i]
+
+        if best_match is None:
+            return 0
+
+        self.state.add_constraints(*(best_match[1]))
+        return best_match[0]
+
+class libc_wcsrtombs(angr.SimProcedure):
+
+    max_dest_size = 1024
+
+    def run(self, dest, src, len, ps):
+        # return value is number of multibyte characters parsed
+        ret_val = 0
+
+        # pointer at src is updated to point after last parsed character
+        src_base = self.state.memory.load(src, self.state.arch.bytes,
+                endness=self.state.arch.memory_endness)
+
+        # determine max number of characters to parse
+        len_val = min(self.max_dest_size, self.state.solver.max(len))
+
+        for offset in range(len_val):
+            next_wc = self.state.memory.load(src_base + (offset * WCHAR_BYTES),
+                    WCHAR_BYTES, endness=self.state.arch.memory_endness)
+
+            if self.state.solver.is_true(next_wc < 0x80):
+                # most wide encodings are backwards compatible with ASCII
+                ret_val += 1
+                if not self.state.solver.is_true(dest == 0):
+                    mbs = next_wc.get_byte(WCHAR_BYTES - 1)
+                    self.state.memory.store(dest + offset, mbs)
+            else:
+                log.warning("Simproc wcsrtombs cannot handle non-ASCII")
+                break
+
+            if self.state.solver.is_true(next_wc == 0):
+                # reached and copied null terminator
+                break
+
+        # update src
+        src_val = src_base + (ret_val * WCHAR_BYTES)
+        self.state.memory.store(src, src_val, endness=self.state.arch.memory_endness)
+
+        return ret_val
+
+class libc_mempcpy(angr.SimProcedure):
+
+    def run(self, dest, src, n):
+        res = self.inline_call(angr.SIM_PROCEDURES["libc"]["memcpy"],
+                dest, src, n)
+        return dest + n
+
+class libc_wmempcpy(angr.SimProcedure):
+
+    def run(self, dest, src, n):
+        cpy = self.inline_call(libc_mempcpy, dest, src, n * WCHAR_BYTES)
+        return cpy.ret_expr
+
+class libc_wcsncmp(angr.SimProcedure):
+
+    def run(self, s1, s2, n):
+        # don't need to actually compare because we can just let the trace
+        # determine whether they matched or not for us
+        return self.state.solver.BVS("wcsncmp_ret", self.state.arch.bits)
+
+
 libc_hooks = {
     # Additional functions that angr doesn't provide hooks for
     "atol": libc_atol,
+    "clock_gettime": libc_clock_gettime,
     "__cxa_atexit": libc___cxa_atexit,
     "exit": angr.SIM_PROCEDURES["libc"]["exit"],
     "__fprintf_chk": libc__fprintf_chk,
@@ -389,7 +678,10 @@ libc_hooks = {
     "getcwd": angr.procedures.linux_kernel.cwd.getcwd,
     "getlogin": libc_getlogin,
     "getpwnam": libc_getpwnam,
+    "mbsrtowcs": libc_mbsrtowcs,
     "realpath": libc_realpath,
+    # angr's version is buggy
+    "unlink": libc_unlink,
     # secure_getenv and getenv work the same from a symbolic perspective
     "secure_getenv": libc_getenv,
     "snprintf": libc_snprintf,
@@ -400,7 +692,20 @@ libc_hooks = {
     "bindtextdomain": libc_bindtextdomain,
     "textdomain": libc_textdomain,
     "signal": libc_signal,
+    "sysconf": libc_sysconf,
+    "towupper": libc_towupper,
     "mmap": angr.procedures.posix.mmap.mmap,
+    "vfwprintf": libc_vfwprintf,
+    "wcschr": libc_wcschr,
+    "wcsrchr": libc_wcsrchr,
+    "wcslen": libc_wcslen,
+    "wcscpy": libc_wcscpy,
+    "wcsncpy": libc_wcsncpy,
+    "wcspbrk": libc_wcspbrk,
+    "wcsrtombs": libc_wcsrtombs,
+    "mempcpy": libc_mempcpy,
+    "wmempcpy": libc_wmempcpy,
+    "wcsncmp": libc_wcsncmp,
 }
 
 hook_condition = ("libc\.so.*", libc_hooks)
