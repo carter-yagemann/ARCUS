@@ -76,6 +76,8 @@ without performing this step.
 
 * [Analyzing with ARCUS](docs/arcus.md).
 
+* [Debugging ARCUS](docs/arcus.md#debugging-analysis).
+
 * [Analyzing with ARCUS at scale](docs/scaling-arcus.md).
 
 * [Miscellaneous tools](docs/misc-tools.md).
