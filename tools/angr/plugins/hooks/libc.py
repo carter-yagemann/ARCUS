@@ -179,6 +179,42 @@ class libc_getenv(angr.SimProcedure):
         return ret_val
 
 
+class libc_getline(angr.SimProcedure):
+
+    MAX_STRING = 128
+
+    def run(self, lineptr_ptr, n_ptr, stream):
+        # warn users that we're making an assumption about max string length
+        log.warning("Simulation procedure for getline currently assumes a max"
+                " string length of %d bytes" % self.MAX_STRING)
+
+        # free buffer if already allocated
+        lineptr = self.state.memory.load(lineptr_ptr, self.state.arch.bits // 8,
+                endness=self.state.arch.memory_endness)
+        if not self.state.solver.is_true(lineptr == 0):
+            self.inline_call(angr.SIM_PROCEDURES["libc"]["free"], lineptr)
+
+        # allocate new buffer
+        buf = self.inline_call(angr.SIM_PROCEDURES["libc"]["malloc"],
+                self.MAX_STRING).ret_expr
+        # place null terminator
+        self.state.memory.store(buf + self.MAX_STRING - 1, b"\x00")
+
+        # store it as the new lineptr
+        self.state.memory.store(lineptr_ptr, buf, size=self.state.arch.bits // 8,
+                endness=self.state.arch.memory_endness)
+
+        # update n_ptr
+        n_bv = self.state.solver.BVS("getline_n", 32)
+        self.state.add_constraints(n_bv <= self.MAX_STRING)
+        self.state.memory.store(n_ptr, n_bv, endness=self.state.arch.memory_endness)
+
+        # generate return value
+        ret = self.state.solver.BVS("getline_ret", self.state.arch.bits)
+        self.state.add_constraints(ret < self.MAX_STRING)
+        return ret
+
+
 class libc_getlogin(angr.SimProcedure):
 
     LOGIN_PTR = None
@@ -454,6 +490,15 @@ class libc_signal(angr.SimProcedure):
         self.SIG_HNDLR[signum_int] = handler
         return old
 
+class libc_symlink(angr.SimProcedure):
+
+    def run(self, target_ptr, linkpath_ptr):
+        # believe it or not, angr currently does not support symlinks, but since
+        # our state has an option set to pretend all files exist, we don't have
+        # to worry about this
+        ret = self.state.solver.BVS("symlink_ret", self.state.arch.bits)
+        return ret
+
 class libc_sysconf(angr.SimProcedure):
 
     def run(self, name):
@@ -676,8 +721,10 @@ libc_hooks = {
     "getenv": libc_getenv,
     # kernel and libc have the same API
     "getcwd": angr.procedures.linux_kernel.cwd.getcwd,
+    "getline": libc_getline,
     "getlogin": libc_getlogin,
     "getpwnam": libc_getpwnam,
+    "malloc": angr.SIM_PROCEDURES["libc"]["malloc"],
     "mbsrtowcs": libc_mbsrtowcs,
     "realpath": libc_realpath,
     # angr's version is buggy
@@ -692,6 +739,7 @@ libc_hooks = {
     "bindtextdomain": libc_bindtextdomain,
     "textdomain": libc_textdomain,
     "signal": libc_signal,
+    "symlink": libc_symlink,
     "sysconf": libc_sysconf,
     "towupper": libc_towupper,
     "mmap": angr.procedures.posix.mmap.mmap,
