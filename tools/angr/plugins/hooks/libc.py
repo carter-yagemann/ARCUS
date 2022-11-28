@@ -282,6 +282,8 @@ class libc_mbsrtowcs(angr.SimProcedure):
     max_dest_size = 1024
 
     def run(self, dest, src, len, ps):
+        warn_once = True
+
         # return value is number of wide characters parsed
         ret_val = 0
 
@@ -303,8 +305,13 @@ class libc_mbsrtowcs(angr.SimProcedure):
                     self.state.memory.store(dest + (offset * WCHAR_BYTES), wc,
                             endness=self.state.arch.memory_endness)
             else:
-                log.warning("Simproc mbsrtowcs cannot handle non-ASCII")
-                break
+                if warn_once:
+                    log.warning("mbsrtowcs is assuming source string is all ASCII")
+                    warn_once = False
+
+                ret_val += 1
+                wc = self.state.solver.BVS('mbsrtowcs_%d' % offset, WCHAR_BYTES * 8)
+                self.state.memory.store(dest + (offset * WCHAR_BYTES), wc)
 
             if self.state.solver.is_true(next_byte == 0):
                 # reached and copied null terminator
@@ -654,6 +661,8 @@ class libc_wcsrtombs(angr.SimProcedure):
     max_dest_size = 1024
 
     def run(self, dest, src, len, ps):
+        warn_once = True
+
         # return value is number of multibyte characters parsed
         ret_val = 0
 
@@ -675,8 +684,13 @@ class libc_wcsrtombs(angr.SimProcedure):
                     mbs = next_wc.get_byte(WCHAR_BYTES - 1)
                     self.state.memory.store(dest + offset, mbs)
             else:
-                log.warning("Simproc wcsrtombs cannot handle non-ASCII")
-                break
+                if warn_once:
+                    log.warning("wcsrtombs is assuming source string is all ASCII")
+                    warn_once = False
+
+                ret_val += 1
+                mbs = self.state.solver.BVS('wcsrtombs_%d' % offset, 8)
+                self.state.memory.store(dest + offset, mbs)
 
             if self.state.solver.is_true(next_wc == 0):
                 # reached and copied null terminator
