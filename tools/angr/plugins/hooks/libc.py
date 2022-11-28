@@ -282,6 +282,8 @@ class libc_mbsrtowcs(angr.SimProcedure):
     max_dest_size = 1024
 
     def run(self, dest, src, len, ps):
+        warn_once = True
+
         # return value is number of wide characters parsed
         ret_val = 0
 
@@ -303,8 +305,13 @@ class libc_mbsrtowcs(angr.SimProcedure):
                     self.state.memory.store(dest + (offset * WCHAR_BYTES), wc,
                             endness=self.state.arch.memory_endness)
             else:
-                log.warning("Simproc mbsrtowcs cannot handle non-ASCII")
-                break
+                if warn_once:
+                    log.warning("mbsrtowcs is assuming source string is all ASCII")
+                    warn_once = False
+
+                ret_val += 1
+                wc = self.state.solver.BVS('mbsrtowcs_%d' % offset, WCHAR_BYTES * 8)
+                self.state.memory.store(dest + (offset * WCHAR_BYTES), wc)
 
             if self.state.solver.is_true(next_byte == 0):
                 # reached and copied null terminator
@@ -524,6 +531,26 @@ class libc_vfwprintf(angr.SimProcedure):
         ret = self.state.solver.BVS("vfwprintf_ret", self.state.arch.bits)
         return ret
 
+class libc_swprintf(angr.SimProcedure):
+
+    def run(self, wcs_ptr, maxlen, format):
+        log.warning("swprintf not implemented, symbolizing output string")
+        len_val = self.state.solver.max(maxlen)
+        log.debug("Symbolizing %d wide characters" % len_val)
+
+        for offset in range(len_val):
+            wcs = self.state.solver.BVS('swprintf_%d' % offset, WCHAR_BYTES * 8)
+            self.state.memory.store(wcs_ptr + (offset * WCHAR_BYTES), wcs)
+
+        # insert final null character
+        null_wcs = self.state.solver.BVV(0, WCHAR_BYTES * 8)
+        self.state.memory.store(wcs_ptr + ((len_val - 1) * WCHAR_BYTES), null_wcs)
+
+        # return number of wide characters written
+        ret = self.state.solver.BVS('swprintf_ret', self.state.arch.bits)
+        self.state.add_constraints(ret <= len_val)
+        return ret
+
 class libc_wcschr(angr.SimProcedure):
 
     max_null_index = 1024
@@ -654,6 +681,8 @@ class libc_wcsrtombs(angr.SimProcedure):
     max_dest_size = 1024
 
     def run(self, dest, src, len, ps):
+        warn_once = True
+
         # return value is number of multibyte characters parsed
         ret_val = 0
 
@@ -675,8 +704,13 @@ class libc_wcsrtombs(angr.SimProcedure):
                     mbs = next_wc.get_byte(WCHAR_BYTES - 1)
                     self.state.memory.store(dest + offset, mbs)
             else:
-                log.warning("Simproc wcsrtombs cannot handle non-ASCII")
-                break
+                if warn_once:
+                    log.warning("wcsrtombs is assuming source string is all ASCII")
+                    warn_once = False
+
+                ret_val += 1
+                mbs = self.state.solver.BVS('wcsrtombs_%d' % offset, 8)
+                self.state.memory.store(dest + offset, mbs)
 
             if self.state.solver.is_true(next_wc == 0):
                 # reached and copied null terminator
@@ -743,6 +777,7 @@ libc_hooks = {
     "sysconf": libc_sysconf,
     "towupper": libc_towupper,
     "mmap": angr.procedures.posix.mmap.mmap,
+    "swprintf": libc_swprintf,
     "vfwprintf": libc_vfwprintf,
     "wcschr": libc_wcschr,
     "wcsrchr": libc_wcsrchr,
