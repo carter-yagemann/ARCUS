@@ -50,15 +50,6 @@ class unrar__Z10Checksum14tPKvm(angr.SimProcedure):
         # building constraints for checksums is hard, so just under-constrain
         return self.state.solver.BVS("checksum14", self.state.arch.bits)
 
-class unrar__Z9UtfToWidePKcPwm(angr.SimProcedure):
-
-    def run(self, src, dest, dest_size):
-        src_ptr = self.inline_call(angr.SIM_PROCEDURES["libc"]["malloc"], self.state.arch.bytes).ret_expr
-        self.state.memory.store(src_ptr, src, endness=self.state.arch.memory_endness)
-        self.inline_call(libc_mbsrtowcs, dest, src_ptr, dest_size // WCHAR_BYTES, 0)
-        self.inline_call(angr.SIM_PROCEDURES["libc"]["free"], src_ptr)
-        return
-
 class unrar__Z3LogPKwS0_z(angr.SimProcedure):
 
     def run(self, arc_name, fmt):
@@ -67,13 +58,13 @@ class unrar__Z3LogPKwS0_z(angr.SimProcedure):
 
 class unrar__ZN7Archive15BrokenHeaderMsgEv(angr.SimProcedure):
 
-    def run(self):
+    def run(self, this_ptr):
         # don't care about logging
         return
 
 class unrar__ZN12ErrorHandler14CreateErrorMsgEPKwS1(angr.SimProcedure):
 
-    def run(self, arc_name, file_name):
+    def run(self, this_ptr, arc_name, file_name):
         # don't care about logging
         return
 
@@ -81,7 +72,7 @@ class unrar__ZN12ErrorHandler14CreateErrorMsgEPKwS1(angr.SimProcedure):
 
 class unrar__ZN7RawRead4Get1Ev(angr.SimProcedure):
 
-    def run(self):
+    def run(self, this_ptr):
         # returns a byte read from input file
         val = self.state.solver.BVS("raw_read_get1", 8)
         if self.state.arch.bits > val.length:
@@ -90,7 +81,7 @@ class unrar__ZN7RawRead4Get1Ev(angr.SimProcedure):
 
 class unrar__ZN7RawRead4Get2Ev(angr.SimProcedure):
 
-    def run(self):
+    def run(self, this_ptr):
         # returns a ushort read from input file
         val = self.state.solver.BVS("raw_read_get2", 16)
         if self.state.arch.bits > val.length:
@@ -99,7 +90,7 @@ class unrar__ZN7RawRead4Get2Ev(angr.SimProcedure):
 
 class unrar__ZN7RawRead4Get4Ev(angr.SimProcedure):
 
-    def run(self):
+    def run(self, this_ptr):
         # returns a uint read from input file
         val = self.state.solver.BVS("raw_read_get4", 32)
         if self.state.arch.bits > val.length:
@@ -108,7 +99,7 @@ class unrar__ZN7RawRead4Get4Ev(angr.SimProcedure):
 
 class unrar__ZN7RawRead4GetVEv(angr.SimProcedure):
 
-    def run(self):
+    def run(self, this_ptr):
         # returns a uint64 read from input file
         val = self.state.solver.BVS("raw_read_getv", 64)
         if self.state.arch.bits > val.length:
@@ -117,25 +108,25 @@ class unrar__ZN7RawRead4GetVEv(angr.SimProcedure):
 
 class unrar__ZN7RawRead6SetPosEm(angr.SimProcedure):
 
-    def run(self, pos):
+    def run(self, this_ptr, pos):
         # simulating RawRead, so don't actually need to move position
         return
 
 class unrar__ZN7RawRead5ResetEv(angr.SimProcedure):
 
-    def run(self):
+    def run(self, this_ptr):
         # simulating RawRead, so don't actually need to reset
         return
 
 class unrar__ZN7RawRead4ReadEm(angr.SimProcedure):
 
-    def run(self, size):
+    def run(self, this_ptr, size):
         # simulating RawRead, so don't actually need to read from file
         return
 
 class unrar__ZN7RawRead4ReadEPhm(angr.SimProcedure):
 
-    def run(self, src_data, size):
+    def run(self, this_ptr, src_data, size):
         # simulating RawRead, so don't actually need to read from file
         return
 
@@ -147,12 +138,53 @@ class unrar__Z9cleandataPvm(angr.SimProcedure):
         # a ton of steps
         return
 
+class unrar__ZN7RawRead4GetWEPwm(angr.SimProcedure):
+
+    MAX_SIZE = 128
+
+    def run(self, this_ptr, field_ptr, size):
+        if not self.state.solver.symbolic(size):
+            log.debug("RawRead::GetW with concrete size")
+            max_size = self.state.solver.eval(size)
+        else:
+            log.debug("RawRead::GetW with symbolic size")
+            max_size = min(self.MAX_SIZE, self.state.solver.max(size))
+
+        log.debug("Proceeding with max size: %d" % max_size * WCHAR_BYTES)
+
+        for idx in range(0, max_size * WCHAR_BYTES, WCHAR_BYTES):
+            wchar = self.state.solver.BVS('rawread_getw_%d' % idx, WCHAR_BYTES * 8)
+            self.state.memory.store(field_ptr + (idx * WCHAR_BYTES),
+                    wchar, endness=self.state.arch.memory_endness)
+
+class unrar__ZN7RawRead4GetBEPvm(angr.SimProcedure):
+
+    MAX_SIZE = 256
+
+    def run(self, this_ptr, field_ptr, size):
+        if not self.state.solver.symbolic(size):
+            log.debug("RawRead::GetB with concrete size")
+            max_size = self.state.solver.eval(size)
+        else:
+            log.debug("RawRead::GetB with symbolic size")
+            max_size = min(self.MAX_SIZE, self.state.solver.max(size))
+
+        log.debug("Proceeding with max size: %d" % max_size)
+
+        for idx in range(0, max_size):
+            char = self.state.solver.BVS('rawread_getb_%d' % idx, 8)
+            self.state.memory.store(field_ptr + idx, char)
+
+        # returns number of bytes read
+        ret = self.state.solver.BVS('rawread_getb_ret', self.state.arch.bits)
+        self.state.add_constraints(ret <= max_size)
+        return ret
+
 unrar_hooks = {
     "_Z9InitCRC32Pj": unrar__Z9InitCRC32Pj,
     "_Z5CRC32jPKvm": unrar__Z5CRC32jPKvm,
     "_ZL10InitTablesv": unrar__ZL10InitTablesv,
     "_Z10Checksum14tPKvm": unrar__Z10Checksum14tPKvm,
-    "_Z9UtfToWidePKcPwm": unrar__Z9UtfToWidePKcPwm,
     "_Z3LogPKwS0_z": unrar__Z3LogPKwS0_z,
     "_ZN7Archive15BrokenHeaderMsgEv": unrar__ZN7Archive15BrokenHeaderMsgEv,
     "_ZN12ErrorHandler14CreateErrorMsgEPKwS1_": unrar__ZN12ErrorHandler14CreateErrorMsgEPKwS1,
@@ -166,8 +198,8 @@ unrar_hooks = {
     "_ZN7RawRead8GetCRC50Ev": unrar__ZN7RawRead4Get4Ev,
     "_ZN7RawRead8GetCRC15Eb": unrar__ZN7RawRead4Get4Ev,
     "_ZN7RawRead8GetVSizeEm": unrar__ZN7RawRead4Get4Ev,
-    # TODO: _ZN7RawRead4GetWEPwm (RawRead::GetW(wchar_t*, unsigned long))
-    # TODO: _ZN7RawRead4GetBEPvm (RawRead::GetB(void*, unsigned long))
+    "_ZN7RawRead4GetWEPwm": unrar__ZN7RawRead4GetWEPwm,
+    "_ZN7RawRead4GetBEPvm": unrar__ZN7RawRead4GetBEPvm,
     "_ZN7RawRead5ResetEv": unrar__ZN7RawRead5ResetEv,
     "_ZN7RawRead4ReadEm": unrar__ZN7RawRead4ReadEm,
     "_ZN7RawRead4Get2Ev": unrar__ZN7RawRead4Get2Ev,
