@@ -296,6 +296,14 @@ class Tracer(ExplorationTechnique):
         # update call depth
         if state.history.jumpkind.startswith("Ijk_Call"):
             state.globals["call_depth"] += 1
+        elif state.arch.name == 'RISCV':
+            # TODO: pyvex does not fully recognize RISCV call instructions as of
+            # angr v9.2.25, so we have to do some manual checks
+            last_insns = state.block(state.history.addr).capstone.insns
+            if len(last_insns) > 0:
+                last_mnemonic = last_insns[-1].mnemonic
+                if last_mnemonic in ['jal', 'c.jal', 'jalr', 'c.jalr']:
+                    state.globals["call_depth"] += 1
         elif state.history.jumpkind.startswith("Ijk_Ret"):
             state.globals["call_depth"] -= 1
 
