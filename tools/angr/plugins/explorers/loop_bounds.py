@@ -169,8 +169,6 @@ class LoopBounds(ExplorationTechnique):
 
     def setup(self, simgr):
         """Select candidate loops to stress"""
-        self.call_pushes_ret = self.project.arch.call_pushes_ret
-
         if not "missed" in simgr.stashes:
             simgr.populate("missed", [])
         simgr.drop(stash="active")
@@ -446,16 +444,6 @@ class LoopBounds(ExplorationTechnique):
                 )
                 if next_state.solver.eval(ret_corruption):
                     return True
-            return False
-
-        # Due to the before_main libc simproc, main's stack frame address will be missing from
-        # the list. A hacky workaround so we don't keep iterating until the *entire* stack is
-        # corrupted is to check the next word after the base register, if the arch has one.
-        bp_bv = state.registers.load(state.arch.bp_offset, size=state.arch.bits // 8)
-        base = state.memory.load(bp_bv + word_size, size=abs(word_size))
-
-        if state.solver.symbolic(base):
-            return True
 
         return False
 
@@ -665,7 +653,7 @@ class LoopBounds(ExplorationTechnique):
                     succs["missed"] = succs["missed"][1:]
                     exited_cycle = True
 
-                elif self.call_pushes_ret and len(succs["active"]) > 0:
+                elif len(succs["active"]) > 0:
                     # there's a successor that follows the cycle and this is a return-on-stack
                     # kind of machine arch, check if its stack is corrupt
                     oob_frame_write = self.is_prior_frame_symbolic(
