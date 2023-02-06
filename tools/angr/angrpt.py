@@ -113,9 +113,12 @@ class Tracer(ExplorationTechnique):
 
         # if tracing started mid-execution, the stack we use for analysis will have
         # fewer frames than the real execution, so we need to stop when we run out
-        if not state.solver.symbolic(state._ip):
+        #
+        # TODO: We currently do not track stack frames or call depth for RISC-V
+        # because Capstone and PyVex don't detect calls and returns reliably
+        if not state.solver.symbolic(state._ip) and state.arch.name != 'RISCV':
             next_jumpkind = state.project.factory.block(state.addr).vex.jumpkind
-            if state.globals["call_depth"] < 1 and (next_jumpkind.startswith("Ijk_Ret") or self._is_riscv_ret(state.addr, state)):
+            if state.globals["call_depth"] < 1 and next_jumpkind.startswith("Ijk_Ret"):
                 return "traced"
             next_obj = state.project.loader.find_object_containing(state.addr)
             if (
@@ -278,46 +281,14 @@ class Tracer(ExplorationTechnique):
         self._update_state_tracking(res[0])
         return res[0]
 
-    def _is_riscv_call(self, state):
-        """PyVex does not fully recognize RISCV call instructions as of angr
-        v9.2.25, so we have to do some manual checks"""
-        if state.history.addr is None:
-            return False
-
-        if state.arch.name == 'RISCV':
-            last_insns = state.block(state.history.addr).capstone.insns
-            if len(last_insns) > 0:
-                last_mnemonic = last_insns[-1].mnemonic
-                if last_mnemonic in ['jal', 'c.jal', 'jalr', 'c.jalr']:
-                    return True
-
-        return False
-
-    def _is_riscv_ret(self, addr, state):
-        """PyVex does not fully recognize RISCV return instructions as of angr
-        v9.2.25, so we have to do some manual checks"""
-        if addr is None:
-            return False
-
-        if state.arch.name != 'RISCV':
-            return False
-
-        last_insns = state.block(addr).capstone.insns
-        if len(last_insns) > 0:
-            last_mnemonic = last_insns[-1].mnemonic
-            if last_mnemonic in ["c.jr", "jr"] and last_insns[-1].operands[0].reg == 2:
-                return True
-
-        return False
-
     def _update_stack_frame_list(self, state):
         """Maintain a list of stack frame addresses in the state's global dictionary."""
         kind = state.history.jumpkind
-        if kind.startswith("Ijk_Call") or self._is_riscv_call(state):
+        if kind.startswith("Ijk_Call"):
             sp_bv = state.registers.load(state.arch.sp_offset, size=state.arch.bits // 8)
             curr_frame = state.solver.eval(sp_bv)
             state.deep["frame_addrs"].append(curr_frame)
-        elif (kind.startswith("Ijk_Ret") or self._is_riscv_ret(state.history.addr, state)) and len(state.deep["frame_addrs"]) > 0:
+        elif kind.startswith("Ijk_Ret") and len(state.deep["frame_addrs"]) > 0:
             state.deep["frame_addrs"].pop()
 
     def _update_state_tracking(self, state: "angr.SimState"):
@@ -326,13 +297,21 @@ class Tracer(ExplorationTechnique):
         timer = state.globals["sync_timer"]
 
         # update call depth
-        if state.history.jumpkind.startswith("Ijk_Call") or self._is_riscv_call(state):
-            state.globals["call_depth"] += 1
-        elif state.history.jumpkind.startswith("Ijk_Ret") or self._is_riscv_ret(state.history.addr, state):
-            state.globals["call_depth"] -= 1
+        #
+        # TODO: We currently do not track stack frames or call depth for RISC-V
+        # because Capstone and PyVex don't detect calls and returns reliably
+        if state.arch.name != 'RISCV':
+            if state.history.jumpkind.startswith("Ijk_Call"):
+                state.globals["call_depth"] += 1
+            elif state.history.jumpkind.startswith("Ijk_Ret"):
+                state.globals["call_depth"] -= 1
 
         # update stack frames list
-        self._update_stack_frame_list(state)
+        #
+        # TODO: We currently do not track stack frames or call depth for RISC-V
+        # because Capstone and PyVex don't detect calls and returns reliably
+        if state.arch.name != 'RISCV':
+            self._update_stack_frame_list(state)
 
         if state.history.recent_block_count > 1:
             # multiple blocks were executed this step. they should follow the trace *perfectly*
