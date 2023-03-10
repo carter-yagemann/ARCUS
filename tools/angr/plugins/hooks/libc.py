@@ -241,41 +241,138 @@ class libc_getpwnam(angr.SimProcedure):
 
     def run(self, name):
         malloc = angr.SIM_PROCEDURES["libc"]["malloc"]
+        ptr_size = self.state.arch.bytes
 
         if self.PASSWD_PTR is None:
             # allocate strings
+            #
+            # according to the man page, getpwnam is allowed to use a static
+            # allocation and overwrite old requests with new ones
             for ptr in self.CHAR_PTRS:
                 self.CHAR_PTRS[ptr] = self.inline_call(malloc, 4096).ret_expr
                 self.state.memory.store(self.CHAR_PTRS[ptr] + 4095, b"\x00")
 
             # allocate passwd struct
-            ptr_size = self.state.arch.bytes
+            #
+            # again, static allocation is allowed
             passwd_size = (ptr_size * len(self.CHAR_PTRS)) + 8
             self.PASSWD_PTR = self.inline_call(malloc, passwd_size).ret_expr
 
-            # fill in struct values
-            ptr = self.PASSWD_PTR
-            for pw_str in ["pw_name", "pw_paswd"]:
-                self.state.memory.store(
-                    ptr,
-                    self.CHAR_PTRS[pw_str],
-                    size=ptr_size,
-                    endness=self.state.arch.memory_endness,
-                )
-                ptr += ptr_size
-            for pw_sym in ["pw_uid", "pw_gid"]:
-                self.state.memory.store(ptr, self.state.solver.BVS(pw_sym, 32))
-                ptr += 4
-            for pw_str in ["pw_gecos", "pw_dir", "pw_shell"]:
-                self.state.memory.store(
-                    ptr,
-                    self.CHAR_PTRS[pw_str],
-                    size=ptr_size,
-                    endness=self.state.arch.memory_endness,
-                )
-                ptr += ptr_size
+        # fill in struct values
+        #
+        # notice that calling this function multiple times will overwrite old
+        # results, this is correct behavior!
+        ptr = self.PASSWD_PTR
+        for pw_str in ["pw_name", "pw_paswd"]:
+            self.state.memory.store(
+                ptr,
+                self.CHAR_PTRS[pw_str],
+                size=ptr_size,
+                endness=self.state.arch.memory_endness,
+            )
+            ptr += ptr_size
+        for pw_sym in ["pw_uid", "pw_gid"]:
+            self.state.memory.store(ptr, self.state.solver.BVS(pw_sym, 32))
+            ptr += 4
+        for pw_str in ["pw_gecos", "pw_dir", "pw_shell"]:
+            self.state.memory.store(
+                ptr,
+                self.CHAR_PTRS[pw_str],
+                size=ptr_size,
+                endness=self.state.arch.memory_endness,
+            )
+            ptr += ptr_size
 
         return self.PASSWD_PTR
+
+class libc_getpwuid(angr.SimProcedure):
+
+    def run(self, uid):
+        # since we don't check the real shadow file, the result is the same as
+        # calling getpwnam
+        return self.inline_call(libc_getpwnam, 0).ret_expr
+
+class libc_getgrnam(angr.SimProcedure):
+
+    GROUP_PTR = None
+    CHAR_PTRS = {
+        "gr_name": None,
+        "gr_passwd": None,
+    }
+    # NULL-terminated array of pointers to names of group members
+    GR_MEM_PTR = None
+
+    def run(self, name):
+        malloc = angr.SIM_PROCEDURES["libc"]["malloc"]
+        ptr_size = self.state.arch.bytes
+
+        if self.GROUP_PTR is None:
+            # allocate strings
+            #
+            # according to the man page, getgrnam is allowed to use a static
+            # allocation and overwrite old requests with new ones
+            for ptr in self.CHAR_PTRS:
+                self.CHAR_PTRS[ptr] = self.inline_call(malloc, 4096).ret_expr
+                self.state.memory.store(self.CHAR_PTRS[ptr] + 4095, b"\x00")
+
+            # allocate char **gr_mem
+            #
+            # again, static allocation is allowed
+            mem1 = self.inline_call(malloc, 4096).ret_expr
+            self.state.memory.store(mem1 + 4095, b"\x00")
+
+            self.GR_MEM_PTR = self.inline_call(malloc, self.arch.bits).ret_expr
+            self.state.memory.store(
+                self.GR_MEM_PTR,
+                mem1,
+                size=ptr_size,
+                endness=self.state.arch.memory_endness,
+            )
+            # NULL-terminated
+            self.state.memory.store(
+                self.GR_MEM_PTR + ptr_size,
+                0,
+                size=ptr_size,
+                endness=self.state.arch.memory_endness,
+            )
+
+            # allocate group struct
+            #
+            # again, static allocation is allowed
+            group_size = (ptr_size * len(self.CHAR_PTRS)) + ptr_size + 4
+            self.GROUP_PTR = self.inline_call(malloc, group_size).ret_expr
+
+        # fill in struct values
+        #
+        # notice that calling this function multiple times will overwrite old
+        # results, this is correct behavior!
+        ptr = self.GROUP_PTR
+        for gr_str in ["gr_name", "gr_passwd"]:
+            self.state.memory.store(
+                ptr,
+                self.CHAR_PTRS[gr_str],
+                size=ptr_size,
+                endness=self.state.arch.memory_endness,
+            )
+            ptr += ptr_size
+        for gr_sym in ["gr_gid"]:
+            self.state.memory.store(ptr, self.state.solver.BVS(gr_sym, 32))
+            ptr += 4
+        self.state.memory.store(
+            ptr,
+            self.GR_MEM_PTR,
+            size=ptr_size,
+            endness=self.state.arch.memory_endness,
+        )
+
+        return self.GROUP_PTR
+
+class libc_getgrgid(angr.SimProcedure):
+
+    def run(self, gid):
+        # since we don't check the real shadow file, the result is the same as
+        # calling getgrnam
+        return self.inline_call(libc_getgrnam, 0).ret_expr
 
 class libc_gettext(angr.SimProcedure):
 
@@ -776,6 +873,9 @@ libc_hooks = {
     "getline": libc_getline,
     "getlogin": libc_getlogin,
     "getpwnam": libc_getpwnam,
+    "getpwuid": libc_getpwuid,
+    "getgrnam": libc_getgrnam,
+    "getgrgid": libc_getgrgid,
     "gettext": libc_gettext,
     "dgettext": libc_dgettext,
     "dcgettext": libc_dcgettext,
