@@ -277,6 +277,24 @@ class libc_getpwnam(angr.SimProcedure):
 
         return self.PASSWD_PTR
 
+class libc_gettext(angr.SimProcedure):
+
+    def run(self, msgid):
+        # don't do a translation look-up, just return the current string
+        return msgid
+
+class libc_dgettext(angr.SimProcedure):
+
+    def run(self, domainname, msgid):
+        # don't do a translation look-up, just return the current string
+        return msgid
+
+class libc_dcgettext(angr.SimProcedure):
+
+    def run(self, domainname, msgid, category):
+        # don't do a translation look-up, just return the current string
+        return msgid
+
 class libc_mbsrtowcs(angr.SimProcedure):
 
     max_dest_size = 1024
@@ -758,6 +776,9 @@ libc_hooks = {
     "getline": libc_getline,
     "getlogin": libc_getlogin,
     "getpwnam": libc_getpwnam,
+    "gettext": libc_gettext,
+    "dgettext": libc_dgettext,
+    "dcgettext": libc_dcgettext,
     "malloc": angr.SIM_PROCEDURES["libc"]["malloc"],
     "mbsrtowcs": libc_mbsrtowcs,
     "realpath": libc_realpath,
