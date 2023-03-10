@@ -438,6 +438,59 @@ class libc_mbsrtowcs(angr.SimProcedure):
 
         return ret_val
 
+class libc_readdir(angr.SimProcedure):
+
+    DIR_PTR = None
+    DIR_SIZE = 275
+
+    def run(self, dirp):
+        malloc = angr.SIM_PROCEDURES["libc"]["malloc"]
+
+        if self.DIR_PTR is None:
+            # allocate struct dirent
+            self.DIR_PTR = self.inline_call(malloc, self.DIR_SIZE).ret_expr
+
+        # fill in struct fields (note: can be static allocation, so multiple
+        # calls should overwrite old values)
+        ptr = self.DIR_PTR
+
+        self.state.memory.store(
+            ptr,
+            self.state.solver.BVS('d_ino', 64),
+            endness=self.state.arch.memory_endness,
+        )
+        ptr += 8
+
+        self.state.memory.store(
+            ptr,
+            self.state.solver.BVS('d_off', 64),
+            endness=self.state.arch.memory_endness,
+        )
+        ptr += 8
+
+        self.state.memory.store(
+            ptr,
+            self.state.solver.BVS('d_reclen', 16),
+            endness=self.state.arch.memory_endness,
+        )
+        ptr += 2
+
+        self.state.memory.store(ptr, self.state.solver.BVS('d_type', 8))
+        ptr += 1
+
+        for idx in range(255):
+            self.state.memory.store(
+                ptr + idx,
+                self.state.solver.BVS('d_name_%d' % idx, 8)
+            )
+        self.state.memory.store(ptr + 255, b"\x00")
+
+        ret = self.state.solver.BVS("readdir_ret", self.state.arch.bits)
+        self.state.add_constraints(self.state.solver.Or(
+            ret == 0, ret == self.DIR_PTR))
+
+        return ret
+
 class libc_realpath(angr.SimProcedure):
     MAX_PATH = 4096
 
@@ -881,6 +934,7 @@ libc_hooks = {
     "dcgettext": libc_dcgettext,
     "malloc": angr.SIM_PROCEDURES["libc"]["malloc"],
     "mbsrtowcs": libc_mbsrtowcs,
+    "readdir": libc_readdir,
     "realpath": libc_realpath,
     # angr's version is buggy
     "unlink": libc_unlink,
