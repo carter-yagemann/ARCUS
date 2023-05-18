@@ -200,8 +200,10 @@ def find_bad_addr(states, state_idx, arg_idx):
 
     simproc = bug_state.project.hooked_by(bug_state.addr)
     if simproc is None:
-        log.warning("Cannot find simulation procedure for %s" % (
-                bug_state.project.loader.describe_addr(bug_state.addr)))
+        log.warning(
+            "Cannot find simulation procedure for %s"
+            % (bug_state.project.loader.describe_addr(bug_state.addr))
+        )
         return None
 
     # get location of argument
@@ -270,7 +272,9 @@ def find_bad_addr(states, state_idx, arg_idx):
             return None
 
     elif isinstance(loc, angr.calling_conventions.SimStackArg):
-        sp_bv = bug_state.registers.load(bug_state.arch.sp_offset, size=bug_state.arch.bits // 8)
+        sp_bv = bug_state.registers.load(
+            bug_state.arch.sp_offset, size=bug_state.arch.bits // 8
+        )
         return bug_state.solver.eval(sp_bv) + loc.stack_offset
     else:
         log.error("Unknown argument type: %s" % type(loc))
@@ -327,10 +331,23 @@ def analyze_state_sym_str(simgr, trace, state, report):
         blame_state = pred_states[detected_idx - 1]
     else:
         # find state to blame (last one to write to bad address)
-        final_val = state.solver.eval(state.mem[bad_addr].uint64_t.resolved)
+        final_val = state.solver.eval(
+            state.memory.load(
+                bad_addr, size=state.arch.bits // 8, endness=state.arch.memory_endness
+            )
+        )
         blame_state = None
         for state in pred_states[:detected_idx][::-1]:
-            if state.solver.eval(state.mem[bad_addr].uint64_t.resolved) != final_val:
+            if (
+                state.solver.eval(
+                    state.memory.load(
+                        bad_addr,
+                        size=state.arch.bits // 8,
+                        endness=state.arch.memory_endness,
+                    )
+                )
+                != final_val
+            ):
                 blame_state = state
                 break
 

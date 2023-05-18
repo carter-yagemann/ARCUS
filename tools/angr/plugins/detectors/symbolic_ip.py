@@ -27,9 +27,6 @@ import ptcfg
 
 log = logging.getLogger(__name__)
 
-# TODO - Entire plugin is hardcoded for 64-bit code pointers (uint64_t), replace
-#        with arch independent types.
-
 
 def is_plt(ldr, addr):
     """Returns True if addr is the start of a PLT."""
@@ -284,7 +281,9 @@ def blame_load_concrete_val(state, tech, load_addr):
         log.warn("Read corrupted value from read-only memory!")
 
     # iterate over predecessors to find when value at memory address last changed
-    curr_val = state.mem[load_addr].uint64_t.resolved
+    curr_val = state.memory.load(
+        load_addr, size=state.arch.bits // 8, endness=state.arch.memory_endness
+    )
     log.debug("Current value: %s" % curr_val)
     log.debug(
         "Num predecessors: %d" % len([s for s in tech.predecessors if not s is None])
@@ -293,7 +292,11 @@ def blame_load_concrete_val(state, tech, load_addr):
         if prev_state is None:
             continue
 
-        prev_val = prev_state.mem[load_addr].uint64_t.resolved
+        prev_val = prev_state.memory.load(
+            load_addr,
+            size=prev_state.arch.bits // 8,
+            endness=prev_state.arch.memory_endness,
+        )
         if not state.solver.is_true(curr_val == prev_val):
             log.info(
                 "Blaming for incorrect value: %s" % ldr.describe_addr(prev_state.addr)
@@ -314,7 +317,9 @@ def blame_load_unconstrained_val(state, tech, load_addr):
     ldr = state.project.loader
 
     # iterate over predecessors to find when memory lost its unique value
-    curr_val = state.mem[load_addr].uint64_t.resolved
+    curr_val = state.memory.load(
+        load_addr, size=state.arch.bits // 8, endness=state.arch.memory_endness
+    )
     log.debug(
         "Num predecessors: %d" % len([s for s in tech.predecessors if not s is None])
     )
@@ -322,7 +327,11 @@ def blame_load_unconstrained_val(state, tech, load_addr):
         if prev_state is None:
             continue
 
-        prev_val = prev_state.mem[load_addr].uint64_t.resolved
+        prev_val = prev_state.memory.load(
+            load_addr,
+            size=prev_state.arch.bits // 8,
+            endness=prev_state.arch.memory_endness,
+        )
         if not state.solver.is_true(curr_val == prev_val):
             log.info(
                 "Blaming for unconstrained value: %s"
@@ -385,7 +394,11 @@ def analyze_state(simgr, trace, state, report):
             for addr in sorted(cond_mems, reverse=True):
                 log.debug("Considering %#x" % addr)
                 if not diverge_state.solver.symbolic(
-                    diverge_state.mem[addr].uint64_t.resolved
+                    diverge_state.memory.load(
+                        addr,
+                        size=diverge_state.arch.bits // 8,
+                        endness=diverge_state.arch.memory_endness,
+                    )
                 ):
                     blame_state = blame_load_concrete_val(diverge_state, tech, addr)
                 else:
@@ -411,7 +424,11 @@ def analyze_state(simgr, trace, state, report):
             log.error("Failed to derive indirect target memory address: %s" % str(ex))
             return
         if not diverge_state.solver.symbolic(
-            diverge_state.mem[target_mem].uint64_t.resolved
+            diverge_state.memory.load(
+                target_mem,
+                size=diverge_state.arch.bits // 8,
+                endness=diverge_state.arch.memory_endness,
+            )
         ):
             blame_state = blame_load_concrete_val(diverge_state, tech, target_mem)
         else:

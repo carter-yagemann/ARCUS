@@ -89,13 +89,19 @@ def blame_load_concrete_val(state, preds, load_addr):
         log.warn("Read corrupted value from read-only memory!")
 
     # iterate over predecessors to find when value at memory address last changed
-    curr_val = state.mem[load_addr].uint64_t.resolved
+    curr_val = state.memory.load(
+        load_addr, size=state.arch.bits // 8, endness=state.arch.memory_endness
+    )
     log.debug("Current value: %s" % curr_val)
     for prev_state in preds[::-1]:
         if prev_state is None:
             continue
 
-        prev_val = prev_state.mem[load_addr].uint64_t.resolved
+        prev_val = prev_state.memory.load(
+            load_addr,
+            size=prev_state.arch.bits // 8,
+            endness=prev_state.arch.memory_endness,
+        )
         if not state.solver.is_true(curr_val == prev_val):
             return prev_state
 
@@ -113,12 +119,18 @@ def blame_load_unconstrained_val(state, preds, load_addr):
     ldr = state.project.loader
 
     # iterate over predecessors to find when memory lost its unique value
-    curr_val = state.mem[load_addr].uint64_t.resolved
+    curr_val = state.memory.load(
+        load_addr, size=state.arch.bits // 8, endness=state.arch.memory_endness
+    )
     for prev_state in preds[::-1]:
         if prev_state is None:
             continue
 
-        prev_val = prev_state.mem[load_addr].uint64_t.resolved
+        prev_val = prev_state.memory.load(
+            load_addr,
+            size=prev_state.arch.bits // 8,
+            endness=prev_state.arch.memory_endness,
+        )
         if not state.solver.is_true(curr_val == prev_val):
             return prev_state
 
@@ -205,7 +217,9 @@ def analyze_state(simgr, trace, state, report):
         return
 
     # find which state last modified the bad memory
-    last_val = state.mem[bad_mem].uint64_t.resolved
+    last_val = state.memory.load(
+        bad_mem, size=state.arch.bits // 8, endness=state.arch.memory_endness
+    )
     if not state.solver.symbolic(last_val):
         blame_state = blame_load_concrete_val(state, ex.preds, bad_mem)
     else:

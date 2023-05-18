@@ -65,8 +65,7 @@ Most modern Intel Core and Atom processors should work. Some Xeon processors wil
 
 See this [document](docs/tracer-tradeoffs.md) for trade-offs between interfaces.
 This is only required if you want to record your own traces. You can analyze the
-pre-recorded traces in `tools/angr/test/test-data/traces` and the datasets below
-without performing this step.
+pre-recorded traces in `tools/angr/test/test-data/traces` without performing this step.
 
 2. [Install](docs/arcus-setup.md) project specific tools and packages.
 
@@ -82,28 +81,10 @@ without performing this step.
 
 * [Miscellaneous tools](docs/misc-tools.md).
 
-## Datasets
-
-**Disclaimer:** ARCUS and angr have undergone extensive development since the time these 
-evaluations were conducted. As a consequence, it is difficult to provide setup instructions that 
-will perfectly reproduce the results published in prior papers. In hindsight, we should 
-have created containers, but alas.
-
-You can get _pretty similar_ results by using this
-[commit](https://github.com/carter-yagemann/ARCUS/commit/b5873a74fb611b8a9da6941de9f98c816a01d12d)
-with Python 3.7 on Debian Bullseye. Newer versions of ARCUS may contain stale plugins 
-that require updating to correctly handle some of the programs in these datasets. We try our best 
-to keep plugins up-to-date as new angr versions release, but this is not always feasible.
-
-* [ARCUS Paper Evaluation](https://super.gtisc.gatech.edu/arcus-dataset-public.tgz)
-
-* [Bunkerbuster Paper Evaluation](https://super.gtisc.gatech.edu/bunkerbuster-dataset-public.tgz)
-
 ## Unit Tests
 
-If you make contributions to the repository, please try to keep `tools/angr/test/test.py` 
-up-to-date. For non-unit tests, create a new script in `tools/angr/test`. We currently do not 
-have a unified framework for non-unit tests.
+If you make contributions to the repository, please try to keep `tools/angr/test/run_tests.py` 
+up-to-date.
 
 ## Publications
 

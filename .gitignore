@@ -27,8 +27,12 @@ __pycache__
 /tools/pyptrace/build
 /tools/pyptrace/dist
 
+# common virtualenv directory names
 /env
 /venv
 /.env
 /.venv
 /.vscode
+
+# common PyPy directory names
+/pypy
