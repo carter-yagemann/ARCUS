@@ -1,4 +1,4 @@
-angr>=9.2.17,<=9.2.28
+angr==9.2.51
 construct>=2.9.45
 ipython>=7.8.0
 redis>=3.4.1

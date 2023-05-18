@@ -53,7 +53,7 @@ import reporting
 import taint
 import xed
 
-PROGRAM_VERSION = "2.1.3"
+PROGRAM_VERSION = "2.1.4"
 PROGRAM_USAGE = "Usage: %prog [options] tracer_output_directory"
 
 
@@ -335,7 +335,7 @@ def parse_entry_state_json(
     argv = list()
     env = dict()
     if override_max_argv is None:
-        argv_max = 0x2000 * 8  # bits
+        argv_max = 0x500 * 8  # bits
     else:
         argv_max = override_max_argv * 8
 
