@@ -1,6 +1,6 @@
 #BEGIN_LEGAL
 #
-#Copyright (c) 2019 Intel Corporation
+#Copyright (c) 2020 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -16,27 +16,28 @@
 #  
 #END_LEGAL
 import collections
+
 import ild_info
-import sys
+import genutil
 
 def _die(s):
-    sys.stderr.write('ERROR: ')
-    sys.stderr.write(s)
-    sys.stderr.write('\n')
-    sys.exit(1)
+    genutil.die(s)
 
+def get_lookup(agi):
+    """Return a dict[map][opcode]->list"""
+    map_names = ild_info.get_maps(agi)
+    lookup = {}    
+    for insn_map in map_names:
+        lookup[insn_map] = collections.defaultdict(list)
+    return lookup
+    
+    
 class ild_storage_t(object):
     """Storage for table indexed by map and opcode. Storing lists of
       ild_info_t objects."""
 
-    def __init__(self, is_amd=True, info_lookup=None):
-        self.is_amd = is_amd
-        if info_lookup == None:
-            self.lookup = {}
-            for insn_map in ild_info.get_maps(is_amd):
-                self.lookup[insn_map] = collections.defaultdict(list)
-        else:
-            self.lookup = info_lookup
+    def __init__(self, lookup):
+        self.lookup = lookup
     
     #returns by reference
     def get_info_list(self, insn_map, opcode):

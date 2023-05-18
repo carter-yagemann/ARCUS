@@ -1,6 +1,6 @@
-/*BEGIN_LEGAL 
+/* BEGIN_LEGAL 
 
-Copyright (c) 2019 Intel Corporation
+Copyright (c) 2020 Intel Corporation
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -87,6 +87,9 @@ typedef struct {
 
     /// internal, do not use
     xed_bool_t implicit;
+    
+    /// internal, do not use
+    xed_bool_t truncate_eip_eosz16;
 
 } xed_print_info_t;
 

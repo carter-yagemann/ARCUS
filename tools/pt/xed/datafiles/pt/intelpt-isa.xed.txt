@@ -1,6 +1,6 @@
 #BEGIN_LEGAL
 #
-#Copyright (c) 2019 Intel Corporation
+#Copyright (c) 2020 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -21,8 +21,9 @@ INSTRUCTIONS()::
 {
 ICLASS    : PTWRITE
 CPL       : 3
-CATEGORY  : PT
-EXTENSION : PT
+CATEGORY  : PTWRITE
+EXTENSION : PTWRITE
+ISA_SET   : PTWRITE
 PATTERN   : 0x0F 0xAE MOD[0b11] MOD=3 REG[0b100]  RM[nnn] f3_refining_prefix  no66_prefix
 OPERANDS  : REG0=GPRy_B():r
 PATTERN   : 0x0F 0xAE MOD[mm]   MOD!=3 REG[0b100] RM[nnn] f3_refining_prefix no66_prefix MODRM()

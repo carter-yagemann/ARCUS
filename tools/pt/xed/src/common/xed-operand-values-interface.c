@@ -1,6 +1,6 @@
-/*BEGIN_LEGAL 
+/* BEGIN_LEGAL 
 
-Copyright (c) 2019 Intel Corporation
+Copyright (c) 2023 Intel Corporation
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -203,7 +203,11 @@ xed_operand_values_has_lock_prefix(const xed_operand_values_t* p) {
 #if defined(XED_DECODER)
 xed_bool_t
 xed_operand_values_get_atomic(const xed_operand_values_t* p) {
-    return xed_decoded_inst_get_attribute(p,XED_ATTRIBUTE_LOCKED);
+    return xed_decoded_inst_get_attribute(p,XED_ATTRIBUTE_LOCKED)
+#if defined(XED_ATTRIBUTE_ATOMIC_DEFINED)
+        || xed_decoded_inst_get_attribute(p,XED_ATTRIBUTE_ATOMIC)
+#endif
+        ;
 }
 
 
@@ -245,7 +249,7 @@ xed_operand_values_has_modrm_byte(const xed_operand_values_t* p) {
 }
 xed_bool_t 
 xed_operand_values_has_sib_byte(const xed_operand_values_t* p) {
-    return xed3_operand_get_sib(p);
+    return xed3_operand_get_has_sib(p);
 }
 
 xed_bool_t
@@ -336,6 +340,25 @@ xed_operand_values_has_66_prefix(const xed_operand_values_t* p)
     return 0;
 }
 
+xed_bool_t
+xed_operand_values_mandatory_66_prefix(const xed_operand_values_t* p)
+{
+    // For legacy instructions, the x66 prefix is mandatory if the REFINING66()/IGNORE66() prefix is used.
+    // When this prefix is used, the OSZ variable is zeroed; therefore we check both conditions.
+    // For {E,}VEX instructions, x66 is mandatory if it's an opcode extension and part of the pp field.
+    if(xed3_operand_get_vexvalid(p) != 0) // VEX or EVEX 
+    {
+        return (xed_operand_values_get_pp_vex_prefix(p) == 1);
+    }
+    else if (xed_operand_values_has_66_prefix(p) &&
+        xed_operand_values_has_operand_size_prefix(p) == 0) // legacy
+    {
+        return 1;
+    }
+
+    return 0;
+}
+
 xed_bool_t 
 xed_operand_values_has_rexw_prefix(const xed_operand_values_t* p)
 {
@@ -343,6 +366,14 @@ xed_operand_values_has_rexw_prefix(const xed_operand_values_t* p)
         return 1;
     return 0;
 }
+
+#if defined(XED_AVX)
+xed_bits_t
+xed_operand_values_get_pp_vex_prefix(const xed_operand_values_t* p)
+{
+    return vex_prefix_recoding[xed3_operand_get_vex_prefix(p)];
+}
+#endif
 
 xed_bool_t
 xed_operand_values_accesses_memory(const xed_operand_values_t* p)
@@ -413,6 +444,14 @@ xed_bool_t
 xed_operand_values_branch_taken_hint(const xed_operand_values_t* p)
 {
     if (xed3_operand_get_hint(p)==4)
+        return 1;
+    return 0;
+}
+
+xed_bool_t
+xed_operand_values_cet_no_track(const xed_operand_values_t* p)
+{
+    if (xed3_operand_get_hint(p)==5)
         return 1;
     return 0;
 }
@@ -770,6 +809,7 @@ xed_operand_values_set_operand_reg(xed_operand_values_t* p,
     case XED_OPERAND_REG6: xed3_operand_set_reg6(p,reg_name); break;
     case XED_OPERAND_REG7: xed3_operand_set_reg7(p,reg_name); break;
     case XED_OPERAND_REG8: xed3_operand_set_reg8(p,reg_name); break;
+    case XED_OPERAND_REG9: xed3_operand_set_reg9(p,reg_name); break;
     case XED_OPERAND_BASE0: xed3_operand_set_base0(p,reg_name); break;
     case XED_OPERAND_BASE1: xed3_operand_set_base1(p,reg_name); break;
     case XED_OPERAND_INDEX: xed3_operand_set_index(p,reg_name); break;
@@ -1029,10 +1069,15 @@ xed_operand_values_dump(    const xed_operand_values_t* ov,
                           }
                           break;
                       }
-                      default:
-                        blen = xed_strncat(buf,"NOT HANDLING CTYPE ",blen);
-                        blen = xed_strncat(buf, xed_operand_ctype_enum_t2str(ctype),blen);
-                        xed_assert(0);
+                      default: {
+                        xed_bits_t b;
+                        xed3_get_generic_operand(ov,i,&b);
+                        if (b) {   
+                            blen = xed_strncat(buf,"NOT HANDLING CTYPE ",blen);
+                            blen = xed_strncat(buf, xed_operand_ctype_enum_t2str(ctype),blen);
+                            xed_assert(0);
+                        }
+                      }
                     } /* inner switch */
                     /* only print nonzero generic stuff */
                     if (need_to_emit){
@@ -1040,7 +1085,7 @@ xed_operand_values_dump(    const xed_operand_values_t* ov,
                         blen = xed_strncat(buf, xed_operand_enum_t2str(XED_STATIC_CAST(xed_operand_enum_t,i)),blen);
                         if (w > 1){
                             blen = xed_strncat(buf, ":", blen);
-                            blen = xed_strncat(buf+xed_strlen(tmp_buf), tmp_buf,blen);
+                            blen = xed_strncat(buf, tmp_buf,blen);
                         }
                     }
               } /* default block*/

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 #BEGIN_LEGAL
 #
-#Copyright (c) 2019 Intel Corporation
+#Copyright (c) 2020 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -90,7 +90,7 @@ def classify(kys,env):
         env.funky.append(kys)
     
 def dump_classifications(env):
-    for k in list(env.lengths.keys()):
+    for k in env.lengths.keys():
         v = env.lengths[k]
         print("LENGTH {} COUNT {}".format(k,v))
 

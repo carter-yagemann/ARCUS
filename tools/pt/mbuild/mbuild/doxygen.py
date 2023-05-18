@@ -85,12 +85,12 @@ def _find_doxygen(env):
               base.msgb('DOXYGEN',"Could not find cygwin's doxygen," +
                           "trying doxygen from PATH")
         elif env['build_os'] == 'lin':
-           if base.verbose(1):
+           if base.verbose(2):
               base.msgb("CHECKING FOR", doxygen_cmd_intel)
            if  os.path.exists(doxygen_cmd_intel):
               doxygen_cmd = doxygen_cmd_intel
         elif env['build_os'] == 'mac':
-           if base.verbose(1):
+           if base.verbose(2):
               base.msgb("CHECKING FOR", doxygen_cmd_mac)
            if  os.path.exists(doxygen_cmd_mac):
               doxygen_cmd = doxygen_cmd_mac
@@ -99,7 +99,7 @@ def _find_doxygen(env):
         
     doxygen_cmd = env.escape_string(doxygen_cmd)
     doxygen_okay = False
-    if base.verbose(1):
+    if base.verbose(2):
         base.msgb('Checking doxygen version','...')
     if base.check_python_version(2,4):
         try:
@@ -108,7 +108,7 @@ def _find_doxygen(env):
             if retval==0:
                 if len(output) > 0:
                     first_line = output[0].strip()
-                    if base.verbose(1):
+                    if base.verbose(2):
                         base.msgb("Doxygen version", first_line)
                     doxygen_okay = _doxygen_version_okay(first_line, 1,4,6)
             else:
@@ -223,7 +223,7 @@ def _build_doxygen_main(args, env):
     
     cmd   = env['DOXYGEN'] + ' ' + \
             env.escape_string(env['doxygen_config_customized'])
-    if base.verbose(1):
+    if base.verbose(2):
         base.msgb("RUN DOXYGEN", cmd)    
     (retval, output, error_output) = util.run_command(cmd)
 
@@ -292,7 +292,7 @@ def _make_doxygen_reference_manual(env, doxygen_inputs, subs, work_queue,
        phase = "DOXYGEN"
        if not okay:
            base.die("[%s] failed. dying..." % phase)
-       if base.verbose(1):
+       if base.verbose(2):
            base.msgb(phase, "build succeeded")
 
 

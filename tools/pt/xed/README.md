@@ -1,16 +1,12 @@
 # Intel X86 Encoder Decoder  (Intel XED)
 
+![.github/workflows/ci.yml](https://github.com/intelxed/xed/workflows/.github/workflows/ci.yml/badge.svg)
+
 ## Doxygen API manual and source build manual:
 
 https://intelxed.github.io
 
 ## Bugs:
-
-### Intel internal employee users/developers:
-
-http://mjc.intel.com
-       
-### Everyone else:
 
 https://github.com/intelxed/xed/issues/new
        
@@ -24,10 +20,10 @@ cd xed
 ./mfile.py
 ```
 
-then get your libxed.a from the obj directory.
+Then get your libxed.a/libxed.so (Linux) or xed.lib (Windows) from the obj directory.
 Add " --shared" if you want a shared object build.
 Add " install" if you want the headers & libraries put in to a kit in the "kits" directory.
-Add "C:/python27/python " before "./mfile.py" if on windows.
+Add "C:/python3/python " before "./mfile.py" if on windows.
 
 ## How to build the examples:
 

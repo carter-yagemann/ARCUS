@@ -3,7 +3,7 @@
 ################################################################################
 #BEGIN_LEGAL
 #
-#Copyright (c) 2019 Intel Corporation
+#Copyright (c) 2020 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -91,26 +91,6 @@ def key_operand_name(a):
     return a.name
 def key_bitwidth(a):
     return a.bitwidth
-
-def cmp_operands_name(a,b): # FIXME:2017-06-10:PY3 port, no longer used
-    if a.name > b.name:
-        return 1
-    if a.name < b.name:
-        return -1
-    return 0
-
-def cmp_operands(a,b): # FIXME:2017-06-10:PY3 port, no longer used
-    ''' comparing the operands on based on their bit width
-        larger width first.
-        if width are the same compare the names, lower name first '''   
-    
-    w1 = a.bitwidth
-    w2 = b.bitwidth
-    if w1 > w2:
-        return -1 
-    if w1 < w2:
-        return 1
-    return cmp_operands_name(a,b)
 
 def sort_cmp_operands(a):
     b = sorted(a, key=key_operand_name)
@@ -241,8 +221,7 @@ class operands_storage_t(object):
         fo.add_arg('void* %s' % ret_arg)
         
         switch_gen = codegen.c_switch_generator_t('operand',fo)
-        op_names = list(self.operand_fields.keys())
-        op_names.sort()
+        op_names = sorted(self.operand_fields.keys())
         for op in op_names:
             switch_key = "XED_OPERAND_%s" % op
             ctype = self.get_ctype(op)
@@ -270,8 +249,7 @@ class operands_storage_t(object):
         fo.add_arg('xed_uint32_t %s' % in_value)
         
         switch_gen = codegen.c_switch_generator_t('operand',fo)
-        op_names = list(self.operand_fields.keys())
-        op_names.sort()
+        op_names = sorted(self.operand_fields.keys())
         for op in op_names:
             switch_key = "XED_OPERAND_%s" % op
             ctype = self.get_ctype(op)
@@ -290,7 +268,7 @@ class operands_storage_t(object):
         h_fname = get_operand_accessors_fn()
         c_fname = h_fname.replace('.h', '.c') 
         
-        for opname in list(self.operand_fields.keys()):
+        for opname in self.operand_fields.keys():
             getter_fo = self._gen_op_getter_fo(opname)
             setter_fo = self._gen_op_setter_fo(opname)
             fo_list.append(getter_fo)

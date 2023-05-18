@@ -1,9 +1,8 @@
 #!/usr/bin/env python
 # -*- python -*-
-# Mark Charney 
 #BEGIN_LEGAL
 #
-#Copyright (c) 2019 Intel Corporation
+#Copyright (c) 2022 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -40,7 +39,7 @@ from . import msvs
 def _remove_libname(args,env):
     #lib = env.expand('%(LIBNAME)s')
     lib = args[0]
-    msgb("REMOVING", lib)
+    vmsgb(1, "REMOVING", lib)
     util.remove_file(lib)
     return (0,['REMOVED %s\n' % ( lib )])
 
@@ -183,7 +182,7 @@ class env_t(object):
     def __getitem__(self,k):
         """Read the environment dictionary. Not doing any
         substitutions."""
-        #return self.env[k]
+
         try:
             return self.env[k]
         except:
@@ -345,7 +344,7 @@ class env_t(object):
         if self._emitted_startup_msg:
             return
         self._emitted_startup_msg = True
-        if verbose(1):
+        if verbose(2):
             msgb("INVOKED", " ".join(sys.argv))
             msgb("START TIME", self.env['start_time_str'])
             msgb("CURRENT DIRECTORY", os.getcwd())
@@ -437,7 +436,14 @@ class env_t(object):
         self.env['AS'] = ''
         self.env['RANLIB'] = ''
 
-        self.env['uname'] = platform.uname()
+        # python3.9 breaks copy.deepcopy() of platform.uname() return
+        # values so we make our own.
+        self.env['uname'] = ( platform.system(),
+                              platform.node(),
+                              platform.release(),
+                              platform.version(),
+                              platform.machine() )
+            
         self.env['hostname'] = platform.node()
         self.env['system'] = platform.system() # sort of like build_os
         
@@ -701,7 +707,7 @@ class env_t(object):
             action='store',
             help="MSVS version 6=VC98, 7=VS .Net 2003, 8=VS 2005, " + 
             "9=VS2008, 10=VS 2010/DEV10, 11=VS2012/DEV11, 12=VS2013, " +
-            "14=VS2015, 15=VS2017, 16=VS2019. " +
+            "14=VS2015, 15=VS2017, 16=VS2019, 17=VS2022. " +
             "This sets certain flags and idioms for quirks in some compilers.")
         self.parser.add_option(
             '--setup-msvc',
@@ -1017,7 +1023,7 @@ class env_t(object):
                      'Setting jobs to 1 because we could not detect' + 
                      ' the number of CPUs')
                 
-        if verbose(1):
+        if verbose(2):
             # print host_cpu here because it may be overridden for
             # cross compilations
             msgb("HOST_CPU", self.env['host_cpu'])
@@ -1104,11 +1110,13 @@ class env_t(object):
         return False
 
     def mac_ver(self):
+        val = [0]*3
         if self.on_mac():
-           ver = platform.mac_ver()[0]
-           (maj,min,rev) = ver.split('.')
-           return (int(maj),int(min),int(rev))
-        return None
+           version_string = platform.mac_ver()[0]
+           chunks = version_string.split('.')
+           for i,c in enumerate(chunks):
+               val[i]=int(c)
+        return tuple(val)
 
     def check_mac_ver(self, x,y,z):
         """@rtype: bool
@@ -1226,6 +1234,8 @@ class env_t(object):
             return 'x86-64'
         elif name[0:3] == 'x86':
             return 'ia32'
+        elif name in ['aarch64', 'arm64']:
+            return 'aarch64'
         else:
             die("Unknown cpu " + name)
 
@@ -1306,7 +1316,7 @@ class env_t(object):
             die("Compiler family not recognized. Need gnu or ms")
 
         if self.env['use_yasm']:
-            if verbose(1):
+            if verbose(2):
                 msgb("USE YASM")
             build_env.yasm_support(self)
 
@@ -1639,12 +1649,9 @@ class env_t(object):
         self._add_default_builders()
         self._add_default_builder_templates()
 
-    def escape_string(self,s):
-        if self.on_windows():
-            return util.cond_add_quotes(s)
-        else:
-            t = s.replace(' ','\ ')
-            return t
+    def escape_string(self,s): 
+        return util.escape_string(s)
+    
     def _escape_list_of_strings(self,sl):
         n = []
         for s in sl:

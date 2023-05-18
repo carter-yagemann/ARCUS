@@ -1,6 +1,6 @@
 /*BEGIN_LEGAL 
 
-Copyright (c) 2019 Intel Corporation
+nCopyright (c) 2019 Intel Corporation
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ END_LEGAL */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 #include "xed-histogram.h"
 
 typedef xed_uint32_t (*test_func_t)(xed_uint8_t* output_buffer);
@@ -39,15 +40,49 @@ extern char const* test_functions_m32_a32_str[];
 extern const xed_iclass_enum_t test_functions_m32_a32_iclass[];
 #endif
 
-xed_state_t dstate;
+static xed_state_t dstate;
 
-xed_histogram_t histo;
+static xed_histogram_t histo;
 
-static void dump(xed_uint8_t* buf, xed_uint32_t len) {
+static int enable_emit=0;
+static int enable_emit_byte=0;
+static int enable_emit_main=0;
+static int enable_emit_gnu_asm=0;
+static int enable_emit_test_name=0;
+
+static void dump_comment(xed_uint8_t* buf, xed_uint32_t len) {
     xed_uint_t i;
+    printf("// ");
     for(i=0;i<len;i++) {
         printf("%02x ",buf[i]);
     }
+    printf("\n");
+}
+
+static void dump_emit_byte(xed_uint8_t* buf, xed_uint32_t len) {
+    xed_uint_t i;
+    dump_comment(buf,len);
+    if (enable_emit_gnu_asm)
+        printf("  asm(\"");
+    printf(".byte ");
+    for(i=0;i<len;i++) {
+        if (i>0)
+            printf(", ");
+        printf("0x%02x", buf[i]);
+    }
+    if (enable_emit_gnu_asm)
+        printf("\\n\");");
+
+    printf("\n");
+}
+
+static void dump_emit(xed_uint8_t* buf, xed_uint32_t len) {
+    xed_uint_t i;
+    dump_comment(buf,len);
+    for(i=0;i<len;i++) {
+        printf("__emit 0x%02x\n", buf[i]);
+    }
+    printf("\n");
 }
 
 xed_uint64_t total = 0;
@@ -60,6 +95,9 @@ int execute_test(int test_id, test_func_t* base, char const* fn_name, xed_iclass
     xed_uint64_t t1, t2, delta;
     xed_uint_t i;
 
+    if (enable_emit_test_name)
+        printf("//\ttest id %d  iclass: %s (%s)\n",
+               test_id, xed_iclass_enum_t2str(ref_iclass), fn_name);
     for(i=0;i<reps;i++)    {
         t1 = xed_get_time();
         //printf("Calling test function %d\n",test_id);
@@ -78,10 +116,8 @@ int execute_test(int test_id, test_func_t* base, char const* fn_name, xed_iclass
     // that we can do more validation about the iclass and operands.
     
     if (enclen > XED_MAX_INSTRUCTION_BYTES) {
-        printf("\ttest id %d ERROR: %s (%s)\n", test_id, "ENCODE TOO LONG", fn_name);
-        printf("\t");
-        dump(output_buffer,enclen);
-        printf("\n");
+        printf("//\ttest id %d ERROR: %s (%s)\n", test_id, "ENCODE TOO LONG", fn_name);
+        dump_comment(output_buffer,enclen);
         return 1;
     }
     
@@ -93,22 +129,40 @@ int execute_test(int test_id, test_func_t* base, char const* fn_name, xed_iclass
     xed3_operand_set_wbnoinvd(&xedd, 1);
     err = xed_decode(&xedd, output_buffer, enclen);
     if (err == XED_ERROR_NONE) {
-        if (xed_decoded_inst_get_iclass(&xedd) != ref_iclass) {
-            printf("\ttest id %d ICLASS MISMATCH: observed: %s expected: %s (%s)\n", test_id,
-                   xed_iclass_enum_t2str( xed_decoded_inst_get_iclass(&xedd) ),
+        xed_iclass_enum_t observed_iclass = xed_decoded_inst_get_iclass(&xedd);
+        xed_uint_t declen = xed_decoded_inst_get_length(&xedd);
+        if (enclen != xed_decoded_inst_get_length(&xedd)) {
+               printf("//\ttest id %d LENGTH MISMATCH: encode: %d decode: %d iclass: %s (%s)\n", test_id,
+                      enclen, declen,
+                      xed_iclass_enum_t2str( observed_iclass ),
+                      fn_name);
+               dump_comment(output_buffer,enclen);
+               return 1;
+        }
+        else if (observed_iclass == XED_ICLASS_NOP &&
+            ref_iclass == XED_ICLASS_XCHG &&
+            output_buffer[enclen-1] == 0x90) {
+            // allow variants of 0x90 to masquerade as NOPs
+        }
+        else if (observed_iclass != ref_iclass) {
+            printf("//\ttest id %d ICLASS MISMATCH: observed: %s expected: %s (%s)\n", test_id,
+                   xed_iclass_enum_t2str( observed_iclass ),
                    xed_iclass_enum_t2str( ref_iclass ),
                    fn_name);
-            printf("\t");
-            dump(output_buffer,enclen);
-            printf("\n");
+            dump_comment(output_buffer,enclen);
             return 1;
+        }
+
+        if (enable_emit) {
+            dump_emit(output_buffer, enclen);
+        }
+        else if (enable_emit_byte) {
+            dump_emit_byte(output_buffer, enclen);
         }
     }
     else {
-        printf("\ttest id %d ERROR: %s (%s)\n", test_id, xed_error_enum_t2str(err), fn_name);
-        printf("\t");
-        dump(output_buffer,enclen);
-        printf("\n");
+        printf("//\ttest id %d ERROR: %s (%s)\n", test_id, xed_error_enum_t2str(err), fn_name);
+        dump_comment(output_buffer,enclen);
         return 1;
     }
 
@@ -127,7 +181,7 @@ int test_all(test_func_t* base, const char** str_table, const xed_iclass_enum_t*
         char const* fn_name = str_table[test_id];
         const xed_iclass_enum_t ref_iclass = iclass_table[test_id];
         if (execute_test(test_id, base, fn_name, ref_iclass)) {
-            printf("test %d failed\n", test_id);
+            printf("//test %d failed\n", test_id);
             errors++;
         }
         p++;
@@ -137,12 +191,12 @@ int test_all(test_func_t* base, const char** str_table, const xed_iclass_enum_t*
     delta = t2-t1;
 
 
-    printf("Tests:   %6d\n", test_id);
-    printf("Repeats: %6d\n", reps);
-    printf("Errors:  %6d\n", errors);
-    printf("Cycles: " XED_FMT_LU "\n", delta);
-    printf("Cycles/(enc+dec) : %7.1lf\n", 1.0*delta/(reps*test_id));
-    printf("Cycles/encode    : %7.1lf\n", 1.0*total/(reps*test_id));
+    printf("//Tests:   %6d\n", test_id);
+    printf("//Repeats: %6d\n", reps);
+    printf("//Errors:  %6d\n", errors);
+    printf("//Cycles: " XED_FMT_LU "\n", delta);
+    printf("//Cycles/(enc+dec) : %7.1lf\n", 1.0*delta/(reps*test_id));
+    printf("//Cycles/encode    : %7.1lf\n", 1.0*total/(reps*test_id));
     return errors;
 }
 
@@ -181,14 +235,37 @@ int main(int argc, char** argv) {
 
 
     m = i;
-    printf("Total tests %d\n",m);
+    printf("//Total tests %d\n",m);
     for(i=1;i<argc;i++) {
-        if (strcmp(argv[i],"--histo")==0) {
+        if (strcmp(argv[i],"--reps")==0) {
+            assert( i+1 < argc );
+            reps = atoi(argv[i+1]);
+            i = i + 1;
+        }
+        else if (strcmp(argv[i],"--histo")==0) {
             enable_histogram = 1;
+        }
+        else if (strcmp(argv[i],"--emit")==0) {
+            enable_emit = 1;
+        }
+        else if (strcmp(argv[i],"--byte")==0) {
+            enable_emit_byte = 1;
+        }
+        else if (strcmp(argv[i],"--main")==0) {
+            enable_emit_main = 1;
+        }
+        else if (strcmp(argv[i],"--gnuasm")==0) {
+            enable_emit_gnu_asm = 1;
+            enable_emit_byte = 1;
+        }
+        else if (strcmp(argv[i],"--info")==0) {
+            enable_emit_test_name = 1;
+            enable_emit_byte = 1;
         }
         else if ( strcmp(argv[i],"-h")==0 ||
                   strcmp(argv[i],"--help")==0 )  {
-            fprintf(stderr,"%s [-h|--help] [--histo] [test_id ...]\n", argv[0]);
+            fprintf(stderr,"%s [-h|--help] [--histo] [--info] [--byte|--emit] [--main] [--gnuasm] [--reps N] [test_id ...]\n",
+                    argv[0]);
             exit(0);
         }
         else {
@@ -202,17 +279,37 @@ int main(int argc, char** argv) {
             char const* fn_name = str_table[test_id];
             xed_iclass_enum_t ref_iclass = iclass_table[test_id];
             if (execute_test(test_id, base, fn_name, ref_iclass)) {
-                printf("test id %d failed\n", test_id);
+                printf("//test id %d failed\n", test_id);
                 errors++;
             }
             else {
-                printf("test id %d success\n", test_id);
+                printf("//test id %d success\n", test_id);
             }
         }
     }
+
+    if (enable_emit_byte && enable_emit) {
+        printf("Cannot specify --byte and --emit in the same run\n");
+        exit(1);
+    }
+    if (enable_emit_main) {
+        if (enable_emit)
+            printf("//Compile this with -fasm-blocks using icc\n\n");
+        if (enable_emit_gnu_asm)
+            printf("//Compile this with gcc\n\n");
+        printf("int main(int argc, char** argv) {\n");
+        if (enable_emit)
+            printf("  __asm {\n");
+    }
     if (specific_tests==0) {
-        printf("Testing all...\n");
+        printf("//Testing all...\n");
         errors = test_all(base, str_table, iclass_table);
+    }
+    if (enable_emit_main) {
+        if (enable_emit)
+            printf("   }\n"); // end __asm block
+        printf("   return 0;\n");
+        printf(" }\n");
     }
     if (enable_histogram)
         xed_histogram_dump(&histo, 1);

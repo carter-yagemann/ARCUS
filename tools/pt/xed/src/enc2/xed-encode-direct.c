@@ -240,6 +240,29 @@ void enc_vvvv_reg_ymm(xed_enc2_req_t* r,
     set_vvvv(r, ~(offset & 15));
 }
 
+#if defined(XED_REG_TREG_FIRST_DEFINED)
+void enc_vvvv_reg_tmm(xed_enc2_req_t* r,
+                      xed_reg_enum_t dst) {
+    xed_uint_t offset =  dst-XED_REG_TREG_FIRST;
+    set_vvvv(r, 8|(~(offset & 7)));
+}
+
+void enc_modrm_reg_tmm(xed_enc2_req_t* r,
+                         xed_reg_enum_t dst) {
+    xed_uint_t offset =  dst-XED_REG_TREG_FIRST;
+    set_reg(r, offset & 7);
+    //set_rexr(r,0); // zero init optimization
+}
+
+void enc_modrm_rm_tmm(xed_enc2_req_t* r,
+                      xed_reg_enum_t dst) {
+    xed_uint_t offset =  dst-XED_REG_TREG_FIRST;
+    set_rm(r, offset & 7);
+    //set_rexb(r,0); // zero init optimization
+}
+
+#endif
+
 void enc_vvvv_reg_gpr32(xed_enc2_req_t* r,
                       xed_reg_enum_t dst) {
     xed_uint_t offset =  dst-XED_REG_GPR32_FIRST;
@@ -431,6 +454,19 @@ void enc_imm8_reg_ymm(xed_enc2_req_t* r,  // _SE imm8 reg
                       xed_reg_enum_t dst) {
     xed_uint_t offset =  dst-XED_REG_YMM_FIRST;
     set_imm8_reg(r, offset<<4);
+}
+
+void enc_imm8_reg_xmm_and_imm(xed_enc2_req_t* r, // _SE imm8 reg
+                              xed_reg_enum_t dst,
+                              xed_uint_t imm) { 
+    xed_uint_t offset =  dst-XED_REG_XMM_FIRST;
+    set_imm8_reg(r, (offset<<4)|imm);
+}
+void enc_imm8_reg_ymm_and_imm(xed_enc2_req_t* r,  // _SE imm8 reg
+                              xed_reg_enum_t dst,
+                              xed_uint_t imm) {
+    xed_uint_t offset =  dst-XED_REG_YMM_FIRST;
+    set_imm8_reg(r, (offset<<4)|imm);
 }
 
 // CRs and DRs, SEG regs

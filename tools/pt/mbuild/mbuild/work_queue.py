@@ -1,8 +1,7 @@
 # -*- python -*-
-# Mark Charney 
 #BEGIN_LEGAL
 #
-#Copyright (c) 2019 Intel Corporation
+#Copyright (c) 2022 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -339,7 +338,7 @@ class command_t(object):
    def dump(self, tab_output=False, show_output=True):
       s = []
       nl = '\n'
-      if verbose(1):
+      if verbose(2):
          pass
       elif self.failed():
          pass
@@ -640,7 +639,7 @@ class work_queue_t(object):
       for i in range(self.max_parallelism):
          t = command_t()
          t.terminator = True
-         if verbose(3):
+         if verbose(4):
             msgb("SENT TERMINATOR", str(i))
          self._start_a_job(t)
 
@@ -648,7 +647,7 @@ class work_queue_t(object):
       """Use this when not running threads in daemon-mode"""
       for t in self.threads:
          t.join()
-         if verbose(3):
+         if verbose(4):
             msgb("WORKER THREAD TERMINATED")
       self.threads = []
 
@@ -753,7 +752,7 @@ class work_queue_t(object):
              self.last_finished = self.finished
              self.last_running = self.running
              
-             msg(s % (self.running,
+             vmsg(1, s % (self.running,
                       self.pending,
                       self.finished,
                       self.errors,
@@ -779,7 +778,7 @@ class work_queue_t(object):
          cmd = ready.popleft()
          # FIXME: small concern that this could be slow
          self.pending_commands.remove(cmd)
-         if verbose(2):
+         if verbose(3):
             msgb("LAUNCHING", cmd.dump_cmd())
          self._start_a_job(cmd)
          self.pending -= 1
@@ -933,7 +932,7 @@ class work_queue_t(object):
          if started:
              c = self._wait_for_jobs()
          if c:
-            if verbose(3):
+            if verbose(4):
                msgb("JOB COMPLETED")
             if c.failed():
                self.errors += 1
@@ -952,7 +951,7 @@ class work_queue_t(object):
             c._complete()
             # Command objects can depend on each other
             # directly. Enable execution of dependent commands.
-            if verbose(3):
+            if verbose(4):
                msgb("ADD CMD-AFTERS")
             self.add(c._check_afters())
             # Or we might find new commands from the file DAG.
@@ -964,7 +963,7 @@ class work_queue_t(object):
                uprint(c.dump(show_output=show_output))
             elif c.targets:
                 for x in c.targets:
-                    uprint(u'\tBUILT: {}'.format(x))
+                    vmsg(1, u'\tBUILT: {}'.format(x))
          if self._done():
             break;
       return okay
@@ -988,7 +987,7 @@ class work_queue_t(object):
             _worker_one_task(self.out_queue, self.back_queue)
             c = self._wait_for_jobs()
             if c:
-               if verbose(3):
+               if verbose(4):
                   msgb("JOB COMPLETED")
                if c.failed():
                   okay = False
@@ -1002,7 +1001,7 @@ class work_queue_t(object):
                   c._complete()
                   # Command objects can depende on each other
                   # directly. Enable execution of dependent commands.
-                  if verbose(3):
+                  if verbose(4):
                      msgb("ADD CMD-AFTERS")
                   self.add(c._check_afters())
                   # Or we might find new commands from the file DAG.

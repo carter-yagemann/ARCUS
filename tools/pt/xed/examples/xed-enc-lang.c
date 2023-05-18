@@ -1,6 +1,6 @@
-/*BEGIN_LEGAL 
+/* BEGIN_LEGAL 
 
-Copyright (c) 2019 Intel Corporation
+Copyright (c) 2022 Intel Corporation
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -46,14 +46,16 @@ void slash_split(char const* const src,
     xed_str_list_t* sv = tokenize(src, "/");
     xed_str_list_t* p = sv;
     xed_uint_t i=0;
+    *first = 0;
+    *second = 0;
     for(; p ; i++, p=p->next)
     {
         if (i==0) {
             *first = p->s;
-            *second = 0;
         }
-        else if (i==1)
+        else if (i==1) {
             *second = p->s;
+        }
     }
 }
 
@@ -210,12 +212,14 @@ static void mem_bis_parser_init(mem_bis_parser_t* self, char* s)
     self->base = "INVALID";
     self->indx = "INVALID";
     self->scale = "1";
+    self->disp = "";
     self->segment_reg = XED_REG_INVALID;
     self->base_reg = XED_REG_INVALID;
     self->index_reg = XED_REG_INVALID;
     self->disp_val = 0;
     self->disp_width_bits = 0;
     self->mem_len = 0;
+    self->scale_val = 1;
 
     upcase(s);
     // split on colon first
@@ -263,7 +267,7 @@ static void mem_bis_parser_init(mem_bis_parser_t* self, char* s)
     if (!skip(astr[0]))
         self->base = astr[0];
 
-    if (n_addr_tokens > 2)
+    if (n_addr_tokens >= 2)
         if (!skip(astr[1]))
             self->indx = astr[1];
 
@@ -323,6 +327,13 @@ static void find_vl(xed_reg_enum_t reg, xed_int_t* vl)
 #endif
 }
 
+static inline void find_64bit_eow(xed_reg_enum_t reg, xed_int_t* eow)
+{
+    // set the effective operand width for 64bit registers. 
+    xed_reg_class_enum_t rc = xed_gpr_reg_class(reg);
+    if (rc == XED_REG_CLASS_GPR64 && *eow < 64)
+        *eow = 64;
+}
 
 xed_encoder_request_t
 parse_encode_request(ascii_encode_request_t areq)
@@ -339,7 +350,9 @@ parse_encode_request(ascii_encode_request_t areq)
     xed_uint_t operand_index = 0;
     xed_iclass_enum_t iclass = XED_ICLASS_INVALID;
     xed_int_t vl = -1;
-    xed_int_t uvl = -1;
+    xed_int_t eow = -1;
+    xed_int_t uvl = -1;  // take VL from cmd
+    xed_int_t ueow = -1; // take effective operand width from cmd
     
     
     
@@ -376,7 +389,8 @@ parse_encode_request(ascii_encode_request_t areq)
 
     for ( ; p ; token_index++, p=p->next ) {
         slash_split(p->s, &cfirst, &csecond);
-        assert(cfirst);
+        if(cfirst == 0)
+            break;
         upcase(cfirst);
         if (CLIENT_VERBOSE3)
             printf( "[%s][%s][%s]\n", p->s,
@@ -392,13 +406,13 @@ parse_encode_request(ascii_encode_request_t areq)
     if (csecond)
     {
         if (strcmp(csecond,"8")==0) 
-            xed_encoder_request_set_effective_operand_width(&req, 8);
+            ueow = 8;
         else if (strcmp(csecond,"16")==0) 
-            xed_encoder_request_set_effective_operand_width(&req, 16);
+            ueow = 16;
         else if (strcmp(csecond, "32")==0) 
-            xed_encoder_request_set_effective_operand_width(&req, 32);
+            ueow = 32;
         else if (strcmp(csecond,"64")==0)
-            xed_encoder_request_set_effective_operand_width(&req, 64);
+            ueow = 64;
         
         else if (strcmp(csecond,"128")==0)
             uvl = 0;
@@ -406,6 +420,10 @@ parse_encode_request(ascii_encode_request_t areq)
             uvl = 1;
         else if (strcmp(csecond,"512")==0)
             uvl = 2;
+        else {
+            fprintf(stderr,"[XED CLIENT ERROR] Bad operand width/vl: %s\n", csecond);
+            exit(1);
+        }
     }
 
     assert(cfirst != 0);
@@ -434,6 +452,9 @@ parse_encode_request(ascii_encode_request_t areq)
         char* cres_reg=0;
         char* csecond_x=0; //FIXME: not used
         slash_split(p->s, &cres_reg, &csecond_x);
+        if (cres_reg == 0)
+            continue;
+
         upcase(cres_reg);
         // prune the AGEN or MEM(base,index,scale[,displacement]) text from
         // cres_reg
@@ -443,7 +464,6 @@ parse_encode_request(ascii_encode_request_t areq)
         if (mem_bis.valid) {
             xed_reg_class_enum_t rc = XED_REG_CLASS_INVALID;
             xed_reg_class_enum_t rci = XED_REG_CLASS_INVALID;
-            
 
             if (mem_bis.mem) {
                 if (memop == 0) {
@@ -622,10 +642,16 @@ parse_encode_request(ascii_encode_request_t areq)
         xed_encoder_request_set_operand_order(&req, operand_index, r);
 
         find_vl(reg, &vl);
-        
+        // Set the effective operand width for 64bit GPRs.
+        // For 64bit instructions, the default GPR EOSZ (effective operand size) is 32bits,
+        // We need to set it to 64bit in case we find 64bit register (on 64bit mode).
+        if (xed_operand_values_get_long_mode(&req))
+            find_64bit_eow(reg, &eow);
+
         regnum++;
     } // for loop
 
+    // Set Vector Length if needed
     if (uvl == -1)
     {
         // no user VL setting, so use our observation-based guess.
@@ -640,6 +666,24 @@ parse_encode_request(ascii_encode_request_t areq)
         // based on observed values. But we test for that above so they'll
         // get the feedback.
         xed3_operand_set_vl(&req,(xed_uint_t)uvl);
+    }
+
+    // Set Effective Operand Width if needed
+    if (xed3_operand_get_vl(XED_CAST(xed_decoded_inst_t*, &req)) == 0) 
+    {  // No need to set EOSZ if VL is defined
+        if (ueow == -1)
+        {
+            // no user eow, so use our observation-based guess.
+            if (eow >= 0) 
+                xed_encoder_request_set_effective_operand_width(&req, XED_CAST(xed_uint_t, eow));
+        }
+        else
+        {
+            if (eow >= 0 && ueow < eow)
+                xedex_derror("User specified EOW is smaller than largest observed register.");
+            // go with the user value
+            xed_encoder_request_set_effective_operand_width(&req, XED_CAST(xed_uint_t, ueow));
+        }
     }
     return req;
 }

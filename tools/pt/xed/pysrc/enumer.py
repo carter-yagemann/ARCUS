@@ -1,9 +1,8 @@
 #!/usr/bin/env python
 # -*- python -*-
-# Mark Charney <mark.charney@intel.com>
 #BEGIN_LEGAL
 #
-#Copyright (c) 2019 Intel Corporation
+#Copyright (c) 2022 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -325,6 +324,7 @@ class enumer_t(object):
         self.hf.close()
 
     def _emit_header_file(self):
+        self._emit_defines()
         self._emit_typedef()
         if self.string_convert >= 0:
             self._emit_convert_protos()
@@ -348,7 +348,11 @@ class enumer_t(object):
             self._emit_ostream()
             self._emit_operators()
         self._emit_comment()
-        
+
+    def _emit_defines(self):
+        for v in self.values + self.duplicates:
+            self.hf.emit_eol('#define {}{}_DEFINED 1'.format(self.prefix, v.name))
+            
     def _emit_typedef(self):
         xmax = len(self.values) + len(self.duplicates)
         self.hf.emit_eol("typedef enum {")

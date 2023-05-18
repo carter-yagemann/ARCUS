@@ -1,6 +1,6 @@
-/*BEGIN_LEGAL 
+/* BEGIN_LEGAL 
 
-Copyright (c) 2019 Intel Corporation
+Copyright (c) 2022 Intel Corporation
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -27,17 +27,15 @@ xed_get_chip_features(xed_chip_features_t* p, xed_chip_enum_t chip)
     {
         if (chip < XED_CHIP_LAST)
         {
-            p->f[0] = xed_chip_features[chip][0];
-            p->f[1] = xed_chip_features[chip][1];
-            p->f[2] = xed_chip_features[chip][2];
-            p->f[3] = xed_chip_features[chip][3];
+            xed_uint_t i;
+            for(i=0;i<XED_FEATURE_VECTOR_MAX;i++)
+                p->f[i] = xed_chip_features[chip][i];
         }
         else
         {
-            p->f[0] = 0;
-            p->f[1] = 0;
-            p->f[2] = 0;
-            p->f[3] = 0;
+            xed_uint_t i;
+            for(i=0;i<XED_FEATURE_VECTOR_MAX;i++)
+                p->f[i] = 0;
         }
     }
 }
@@ -64,6 +62,7 @@ xed_modify_chip_features(xed_chip_features_t* p,
     {
         const unsigned int f = XED_CAST(unsigned int,isa_set);
         const unsigned int n = f / 64;
+        xed_assert(n < XED_FEATURE_VECTOR_MAX);
         set_bit(p->f+n, f-(64*n), present);
    }
 }
@@ -75,6 +74,7 @@ xed_test_chip_features(xed_chip_features_t* p,
     const xed_uint64_t one = 1;
     const unsigned int n = XED_CAST(unsigned int,isa_set) / 64;
     const unsigned int r = XED_CAST(unsigned int,isa_set) - (64*n);
+    xed_assert(n < XED_FEATURE_VECTOR_MAX);
     if (p->f[n] & (one<<r))
         return 1;
     return 0;

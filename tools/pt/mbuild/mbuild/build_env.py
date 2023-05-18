@@ -2,7 +2,7 @@
 # -*- python -*-
 #BEGIN_LEGAL
 #
-#Copyright (c) 2019 Intel Corporation
+#Copyright (c) 2022 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -145,7 +145,7 @@ def set_env_gnu(env):
         env['ARCHIVER'] = ( 'compiler', { 'gnu': 'ar',    # or GAR??
                                           'icc' : 'xiar',
                                           'iclang' : 'xiar',
-                                          'clang':'ar' })
+                                          'clang':'llvm-ar' })
     if env['RANLIB_CMD'] == '':
         env['RANLIB_CMD'] = 'ranlib'
 
@@ -258,7 +258,7 @@ def find_ms_toolchain(env):
     if env['toolchain'] == '':
         if incoming_setup: 
             # relying on user-setup env (say MSVS cmd.exe or vcvars-equiv bat file)
-            if os.environ['VisualStudioVersion']  in ['15.0','16.0']:
+            if os.environ['VisualStudioVersion']  in ['15.0','16.0','17.0']:
                 env['msvs_version'] = str(int(float(os.environ['VisualStudioVersion'])))
                 msvs.set_msvc_compilers(env, os.environ['VCToolsInstallDir'])
         if env['compiler']=='ms':

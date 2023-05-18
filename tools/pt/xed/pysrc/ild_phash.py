@@ -1,6 +1,6 @@
 #BEGIN_LEGAL
 #
-#Copyright (c) 2019 Intel Corporation
+#Copyright (c) 2020 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -16,9 +16,10 @@
 #  
 #END_LEGAL
 import math
+import collections
+
 import genutil
 import ildutil
-import collections
 import codegen
 import hashmul
 import hashfks
@@ -257,7 +258,7 @@ class phash_t(object):
         lines.append('m=%d' % self.hash_f.get_table_size())
         lines.append('%s' % self.hash_f)
         lines.append('tuple x -> value')
-        for tuple_val in list(self.tuple_dict.keys()):
+        for tuple_val in self.tuple_dict.keys():
             x = self.t2x[tuple_val]
             value = self.tuple_dict[tuple_val]
             line = '%s %s -> %s' % (tuple_val,x, str(value))
@@ -461,7 +462,7 @@ class l2_phash_t(phash_t):
         lines = ['-----------2-LEVEL-PHASH-------------']
         lines.append('m=%d' % self.hash_f.get_table_size())
         lines.append('%s' % self.hash_f)
-        for tuple_val in list(self.cdict.tuple2rule.keys()):
+        for tuple_val in self.cdict.tuple2rule.keys():
             lines.append('-------------------------------------')
             lines.append('tuple x h(x) ->  l1_phash')
             x = self.cdict.tuple2int[tuple_val]

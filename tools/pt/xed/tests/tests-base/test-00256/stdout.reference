@@ -8,6 +8,8 @@ stack-address-width 32
 iform-enum-name BLENDVPS_XMMdq_XMMdq
 iform-enum-name-dispatch (zero based) 1
 iclass-max-iform-dispatch 2
+Nominal opcode position 3
+Nominal opcode 0x14
 Operands
 #   TYPE               DETAILS        VIS  RW       OC2 BITS BYTES NELEM ELEMSZ   ELEMTYPE   REGCLASS
 #   ====               =======        ===  ==       === ==== ===== ===== ======   ========   ========
@@ -17,10 +19,10 @@ Operands
 Memory Operands
   MemopBytes = 0
 ATTRIBUTES: REQUIRES_ALIGNMENT 
-ANY 66 PREFIX
+MANDATORY 66 PREFIX
 EXCEPTION TYPE: SSE_TYPE_4
 SSE
-Vector length: 128 
+Vector length: 128
 Number of legacy prefixes: 1 
 ISA SET: [SSE4]
 0	CPUID BIT NAME: [SSE4]

@@ -1,6 +1,6 @@
 #BEGIN_LEGAL
 #
-#Copyright (c) 2019 Intel Corporation
+#Copyright (c) 2020 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -64,6 +64,7 @@ class action_t(object):
 
     
     def __init__(self, arg_action):
+        # field bindings (FB) are OD=value
         self.type = None #  'FB', 'emit', 'nt', 'error', 'nothing', 'return'
         self.field_name = None
         self.value = None
@@ -315,7 +316,7 @@ class action_t(object):
                 return ['    ' + code]
             else:
                 genutil.die("Unknown emit_type %s" % self.emit_type)
-        else:
+        else:  # EMIT
             emit_util_function = encutil.enc_strings['emit_util_function']
             obj_name = encutil.enc_strings['obj_str']
             nbits = self.nbits

@@ -2,7 +2,7 @@
 # -*- python -*-
 #BEGIN_LEGAL
 #
-#Copyright (c) 2019 Intel Corporation
+#Copyright (c) 2023 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -53,8 +53,8 @@ def ex_compile_and_link(env, dag, src, objs):
 
 def mkenv():
     """External entry point: create the environment"""
-    if sys.version_info[0] == 3 and sys.version_info[1] < 4:        
-        _fatal("Need python version 3.4 or later.")
+    if sys.version_info[0] == 3 and sys.version_info[1] < 6:        
+        _fatal("Need python version 3.6 or later.")
     elif sys.version_info[0] == 2 and sys.version_info[1] < 7:        
         _fatal("Need python version 2.7 or later.")
     # create an environment, parse args
@@ -246,8 +246,15 @@ def init(env):
     xbc.init(env)
     if nchk(env,'xed_lib_dir'):
         env['xed_lib_dir'] = '../lib'
+
+
     if nchk(env,'xed_enc2_libs'):
-        env['xed_enc2_libs'] = mbuild.glob(env['xed_lib_dir'],'*xed-*enc2-*')
+        env['xed_enc2_libs'] = ( mbuild.glob(env['xed_lib_dir'],'*xed-chk-enc2-*') + 
+                                 mbuild.glob(env['xed_lib_dir'],'*xed-enc2-*')      )
+    if nchk(env,'xed_enc2_libs'):
+        # do not build enc2 examples if libraries are missing
+        env['enc2'] = False
+        
     if nchk(env,'xed_inc_dir'):
         env['xed_inc_dir'] = ['../include']
     if nchk(env,'xed_dir'):
@@ -258,7 +265,7 @@ def init(env):
 
 def _wk_show_errors_only():
     #True means show errors only when building.
-    if mbuild.verbose(1):
+    if mbuild.verbose(2):
         return False # show output
     return True # show errors only.
 
@@ -339,7 +346,6 @@ def build_examples(env, work_queue):
     if env['decoder']:
 
         if env.on_linux() or env.on_freebsd() or env.on_netbsd():
-            xed_cmdline_files.append('xed-disas-elf.c')
             xed_cmdline_files.append('xed-disas-filter.c')
             xed_cmdline_files.append('xed-nm-symtab.c')
             
@@ -349,6 +355,7 @@ def build_examples(env, work_queue):
         elif env.on_windows():
             xed_cmdline_files.append('xed-disas-pecoff.cpp')
             if ( env['dbghelp'] and 
+                 env['compiler'] == 'ms' and
                  env['msvs_version'] not in ['6','7'] ):
                 env.add_define("XED_DBGHELP")
                 xed_cmdline_files.append('udhelp.cpp')
@@ -365,13 +372,23 @@ def build_examples(env, work_queue):
         
     if env.on_linux():
         xbc.cond_add_elf_dwarf(cenv)
-
+        
+    if env.on_linux() or env.on_freebsd() or env.on_netbsd():
+        src_elf = env.src_dir_join('xed-disas-elf.c')
+        if env['use_elf_dwarf_precompiled']:
+            cenv2 = copy.deepcopy(cenv)
+            # need to remove -pedantic because of redundant typedef Elf in dwarf header file
+            cenv2.remove_from_var('CCFLAGS','-pedantic')
+            xed_cmdline_obj += cenv2.compile(examples_dag, [src_elf])
+        else:
+            xed_cmdline_files.append(src_elf)
+            
     xed_cmdline_obj += cenv.compile(examples_dag, xed_cmdline_files)
-
     xed_cmdline = ex_compile_and_link(cenv, examples_dag,
                                       env.src_dir_join('xed.c'),
                                       xed_cmdline_obj + [link_libxed] +
                                       extra_libs)
+
     mbuild.msgb("CMDLINE", xed_cmdline)
     example_exes.append(xed_cmdline)
 
@@ -418,7 +435,7 @@ def build_examples(env, work_queue):
                                                 example,
                                                 cc_shared_objs + [ link_libxed ]))
     # compile & link ild_examples
-    if os.path.exists(env['link_libild']):
+    if os.path.exists(env.expand_string(env['link_libild'])):
         for example in env.src_dir_join(ild_examples):
             example_exes.append(ex_compile_and_link(env_c,
                                                     examples_dag,
@@ -437,9 +454,8 @@ def build_examples(env, work_queue):
                                                   examples_dag,
                                                   example,
                                                   env['xed_enc2_libs'] + [link_libxed]  ))
-        
-    if mbuild.verbose(3):
-        mbuild.msgb("ALL EXAMPLES", "\n\t".join(example_exes))
+
+    mbuild.vmsgb(4, "ALL EXAMPLES", "\n\t".join(example_exes))
 
     examples_to_build   = example_exes
     env['example_exes'] = example_exes
@@ -453,8 +469,7 @@ def build_examples(env, work_queue):
                             show_errors_only=_wk_show_errors_only())
     if not okay:
         xbc.cdie( "XED EXAMPLES build failed")
-    if mbuild.verbose(2):
-        mbuild.msgb("XED EXAMPLES", "build succeeded")
+    mbuild.vmsgb(3, "XED EXAMPLES", "build succeeded")
     return 0
 
 def verify_args(env):

@@ -1,8 +1,7 @@
 # -*- python -*-
-# Mark Charney 
 #BEGIN_LEGAL
 #
-#Copyright (c) 2016 Intel Corporation
+#Copyright (c) 2022 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -48,7 +47,7 @@ def mbuild_compute_path(hname, search_path):
     for p in search_path:
         tname = util.join(p,hname)
         tname = os.path.realpath(tname)
-        #mbuild_base.msgb("TESTING", tname)
+        #base.msgb("TESTING", tname)
         if os.path.exists(tname):
             return tname
     return None
@@ -92,6 +91,12 @@ def mbuild_scan(fn, search_path):
                 hname =  hgroup.group('hdr')
                 full_name = mbuild_compute_path(hname, aug_search_path)
                 if full_name:
+                    if full_name == fn:
+                        # self loop. compilation will fail unless C-preprocessor has
+                        # guards against self-include. We'll assume that and ignore
+                        # this  file.
+                        base.msgb("IGNORING CYCLIC SELF-INCLUDE", fn)
+                        continue
                     hr = mbuild_header_record_t(full_name)
                 else:
                     hr = mbuild_header_record_t(hname, found=False)

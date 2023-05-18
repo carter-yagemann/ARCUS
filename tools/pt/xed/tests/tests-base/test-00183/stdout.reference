@@ -9,6 +9,8 @@ stack-address-width 32
 iform-enum-name FCMOVB_ST0_X87
 iform-enum-name-dispatch (zero based) 0
 iclass-max-iform-dispatch 1
+Nominal opcode position 0
+Nominal opcode 0xda
 Operands
 #   TYPE               DETAILS        VIS  RW       OC2 BITS BYTES NELEM ELEMSZ   ELEMTYPE   REGCLASS
 #   ====               =======        ===  ==       === ==== ===== ===== ======   ========   ========
@@ -25,3 +27,7 @@ FLAGS:
   undefined:                   fc0 fc2 fc3  mask=0xd0000000
 ATTRIBUTES: NOTSX 
 ISA SET: [FCMOV]
+0	CPUID BIT NAME: [CMOV]
+	Leaf 0x00000001, subleaf 0x00000000, EDX[15]
+1	CPUID BIT NAME: [FPU]
+	Leaf 0x00000001, subleaf 0x00000000, EDX[0]

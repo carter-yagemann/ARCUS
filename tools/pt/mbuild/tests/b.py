@@ -2,7 +2,7 @@
 # -*- python -*-
 #BEGIN_LEGAL
 #
-#Copyright (c) 2016 Intel Corporation
+#Copyright (c) 2022 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@
 #  
 #END_LEGAL
 
-from __future__ import print_function
 import sys
 import find
 import mbuild
@@ -30,7 +29,7 @@ if 'clean' in env['targets']:
     mbuild.remove_tree(env['build_dir'])
     sys.exit(0)    
 if not env.on_linux():
-    print ("This is a linux only test"   )
+    print("This is a linux only test")
     sys.exit(0)    
 
 mbuild.cmkdir(env['build_dir'])

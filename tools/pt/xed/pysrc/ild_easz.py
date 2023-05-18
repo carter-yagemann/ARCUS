@@ -1,6 +1,6 @@
 #BEGIN_LEGAL
 #
-#Copyright (c) 2019 Intel Corporation
+#Copyright (c) 2021 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 #END_LEGAL
 
 import re
+
 import ild_nt
 import mbuild
 import ild_codegen
@@ -25,13 +26,13 @@ import genutil
 import ildutil
 import ild_info
 
-_easz_token = 'EASZ'
+_easz_token           = 'EASZ'
 _easz_binding_pattern = re.compile(r'EASZ=(?P<rhs>[0-9]+)')
 
 #FIXME: we can get default NT by looking at the spine
-_easz_default_nt = 'ASZ_NONTERM'
+_easz_default_nt      = 'ASZ_NONTERM'
 
-_easz_lookup_def_str = 'XED_ILD_EASZ_LOOKUP'
+_easz_lookup_def_str  = 'XED_ILD_EASZ_LOOKUP'
 
 _easz_defines = {
                  'XED_ILD_EASZ_0' : 0,
@@ -50,7 +51,6 @@ _easz_header_fn = 'xed-ild-easz.h'
 
 def get_getter_fn(ptrn_list):
     if len(ptrn_list) == 0:
-        #l1_fn = '(%s)0' % (ildutil.ild_getter_typename)
         genutil.die("P2341: SHOULD NOT REACH HERE")
     first = ptrn_list[0]
     for cur in ptrn_list[1:]:
@@ -165,13 +165,14 @@ def work(agi, united_lookup, easz_nts, ild_gendir, debug):
             return
         nt_seq_arrays[tuple(nt_seq)] = array
     #init function calls all single init functions for the created tables
-    init_f = ild_nt.gen_init_function(list(nt_seq_arrays.values()),
+    nt_seq_values = [v for (k,v) in sorted(nt_seq_arrays.items())]
+    init_f = ild_nt.gen_init_function(nt_seq_values,
                                        'xed_ild_easz_init')
-    ild_nt.dump_lu_arrays(agi, list(nt_seq_arrays.values()), _easz_c_fn, 
+    ild_nt.dump_lu_arrays(agi, nt_seq_values, _easz_c_fn, 
                           mbuild.join('include-private', _easz_header_fn),
                           init_f)
     getter_fos = []
-    for names in list(nt_seq_arrays.keys()):
+    for names in nt_seq_arrays.keys():
         arr = nt_seq_arrays[names]
         getter_fo = ild_codegen.gen_derived_operand_getter(agi, _easz_token,
                                                            arr, list(names))

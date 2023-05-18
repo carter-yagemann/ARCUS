@@ -1,3 +1,20 @@
+#BEGIN_LEGAL
+#
+#Copyright (c) 2023 Intel Corporation
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#  
+#END_LEGAL
 ENC                  ; BUILDDIR/xed-ex3 MOVLPD XMM1 MEM8:EBX,EAX,4,00
 ENC                  ; BUILDDIR/xed-ex3 ADD EAX EAX
 ENC                  ; BUILDDIR/xed-ex3 ADD EAX EBX
@@ -48,7 +65,7 @@ DEC                  ; BUILDDIR/xed -d 0f ad c3
 DEC ENC              ; BUILDDIR/xed -de f30f7edf
 DEC ENC              ; BUILDDIR/xed -de 660fd6fb
 DEC ENC              ; BUILDDIR/xed -64 -de 66450f7e07
-DEC ENC              ; BUILDDIR/xed -64 -de 664d0f7e07
+DEC ENC              ; BUILDDIR/xed -64 -de 66480f7ec0
 ENC                  ; BUILDDIR/xed-ex3 -64 ADD/64 RAX MEM8:RIP,-,-,11223344
 DEC ENC              ; BUILDDIR/xed -64 -de 48030544332211
 DEC ENC              ; BUILDDIR/xed -64 -de 6748030544332211
@@ -303,9 +320,9 @@ DEC ENC AVX          ; BUILDDIR/xed -64 -de  C4E2E9910408
 DEC ENC AVX          ; BUILDDIR/xed -64 -de  C4E2ED910408
 DEC XOP              ; BUILDDIR/xed-ex-ild2 -64  8f e9 78 81 ca
 DEC XOP              ; BUILDDIR/xed-ex-ild2 -64 -chip WESTMERE  8f e9 78 81 ca
-DEC ENC              ; BUILDDIR/xed -64 -de  0f1aff
-DEC ENC              ; BUILDDIR/xed -64 -de  0f1bff
-DEC ENC              ; BUILDDIR/xed -64 -de  f30f1bff
+DEC                  ; BUILDDIR/xed -64 -d  0f1aff
+DEC                  ; BUILDDIR/xed -64 -d  0f1bff
+DEC                  ; BUILDDIR/xed -64 -d  f30f1bff
 DEC AVX AMD          ; BUILDDIR/xed -32 -d c4 c3 bd 79 f2 45
 DEC AVX AMD          ; BUILDDIR/xed -64 -d c4 c3 bd 79 f2 45
 DEC AVX AMD          ; BUILDDIR/xed -32 -d c4 c3 b9 79 f2 45
@@ -322,8 +339,8 @@ DEC AVX XOP          ; BUILDDIR/xed -64 -d c4 03 71 49 fe 0f
 DEC AVX XOP          ; BUILDDIR/xed -64 -d c4 83 f1 48 fe 0f
 DEC AVX XOP          ; BUILDDIR/xed -64 -d c4 03 f1 49 7e 0f 00
 DEC AVX XOP          ; BUILDDIR/xed -64 -d c4 03 71 49 7e 7f ff
-DEC AVX              ; BUILDDIR/xed -64 -d c4 dc 9b c3 72 d7 68 3e
-DEC AVX              ; BUILDDIR/xed -64 -d 4d c4 12 bd 79 f2 45
+DEC AVX DISABLED     ; BUILDDIR/xed -64 -d c4 dc 9b c3 72 d7 68 3e
+DEC AVX DISABLED     ; BUILDDIR/xed -64 -d 4d c4 12 bd 79 f2 45
 DEC                  ; BUILDDIR/xed -64 -d a0 11 22 33 44 55 66 77 88
 DEC                  ; BUILDDIR/xed -64 -d 65 66 41 0F
 DEC AVX              ; BUILDDIR/xed -d c4 e2 f1 92 44 40 11

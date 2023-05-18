@@ -1,6 +1,6 @@
-/*BEGIN_LEGAL 
+/* BEGIN_LEGAL 
 
-Copyright (c) 2019 Intel Corporation
+Copyright (c) 2022 Intel Corporation
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -57,7 +57,11 @@ void print_misc(xed_decoded_inst_t* xedd) {
         /* this 66 prefix is not part of the opcode */
         printf("66-OSZ PREFIX\n");
     }
-    if (xed_operand_values_has_66_prefix(ov)) {
+    if (xed_operand_values_mandatory_66_prefix(ov)) {
+        /* this 66 prefix is mandatory */
+        printf("MANDATORY 66 PREFIX\n");
+    }
+    else if (xed_operand_values_has_66_prefix(ov)) {
         /* this is any 66 prefix including the above */
         printf("ANY 66 PREFIX\n");
     }
@@ -72,9 +76,12 @@ void print_misc(xed_decoded_inst_t* xedd) {
     if (xed_decoded_inst_is_broadcast(xedd))
         printf("BROADCAST\n");
     
-    if ( xed_classify_sse(xedd) || xed_classify_avx(xedd) || xed_classify_avx512(xedd) )
+    if (xed_classify_sse(xedd) || xed_classify_avx(xedd) || xed_classify_avx512(xedd) || 
+        xed_classify_amx(xedd))
     {
-        if (xed_classify_avx512_maskop(xedd))
+        if (xed_classify_amx(xedd))
+            printf("AMX\n");
+        else if (xed_classify_avx512_maskop(xedd))
             printf("AVX512 KMASK-OP\n");
         else {
             xed_bool_t sse = 0;
@@ -93,7 +100,12 @@ void print_misc(xed_decoded_inst_t* xedd) {
                 // xed_decoded_inst_vector_length_bits is only for VEX/EVEX instr.
                 // This will print 128 vl for FXSAVE and LD/ST MXCSR which is unfortunate.
                 xed_uint_t vl_bits = sse ? 128 : xed_decoded_inst_vector_length_bits(xedd);
-                printf("Vector length: %u \n", vl_bits);
+                printf("Vector length: %u\n", vl_bits);
+            }
+
+            if (xed_classify_avx512(xedd)) {
+                xed_uint_t vec_elements  = xed_decoded_inst_avx512_dest_elements(xedd);
+                printf( "AVX512 vector elements: %u\n", vec_elements);
             }
         }
     }
@@ -128,6 +140,24 @@ void print_misc(xed_decoded_inst_t* xedd) {
         }
     }
 
+    if (xed3_operand_get_sae(xedd))
+    {
+        static char const* rounding_modes[5] = { "", "rne-sae", "rd-sae", "ru-sae", "rz-sae"};
+        int t = xed3_operand_get_roundc(xedd);
+        printf("suppress-all-exceptions (SAE) set\n");
+        if (t>0 && t<5) 
+            printf("rounding mode override = %s\n", rounding_modes[t]);
+    }
+
+}
+
+void print_branch_hints(xed_decoded_inst_t* xedd) {
+    if (xed_operand_values_branch_not_taken_hint(xedd)) 
+        printf("HINT: NOT TAKEN\n");
+    else if (xed_operand_values_branch_taken_hint(xedd)) 
+        printf("HINT: TAKEN\n");
+    else if (xed_operand_values_cet_no_track(xedd)) 
+        printf("CET NO-TRACK\n");
 }
 
 void print_attributes(xed_decoded_inst_t* xedd) {
@@ -373,6 +403,7 @@ void print_operands(xed_decoded_inst_t* xedd) {
           case XED_OPERAND_REG6:
           case XED_OPERAND_REG7:
           case XED_OPERAND_REG8:
+          case XED_OPERAND_REG9:
           case XED_OPERAND_BASE0:
           case XED_OPERAND_BASE1:
             {
@@ -436,6 +467,9 @@ int main(int argc, char** argv) {
     char const* decode_text=0;
     unsigned int len;
     xed_error_enum_t xed_error;
+    xed_uint_t operands_index = 0;
+    xed_operand_enum_t operands[XED_MAX_INPUT_OPERNADS] = {XED_OPERAND_INVALID};
+    xed_uint32_t operands_value[XED_MAX_INPUT_OPERNADS] = {0};
         
 #if defined(XED_MPX)
     unsigned int mpx_mode=0;
@@ -482,11 +516,27 @@ int main(int argc, char** argv) {
             first_argv++;
         }
         else if (strcmp(argv[i], "-chip") == 0) {
-            assert(i+1 < argcu);
+            assert(i+1 < argcu);    
             chip = str2xed_chip_enum_t(argv[i+1]);
             printf("Setting chip to %s\n", xed_chip_enum_t2str(chip));
             assert(chip != XED_CHIP_INVALID);
             first_argv+=2;
+        }
+        else if (strcmp(argv[i], "-set") == 0) {
+            assert(i+2 < argcu);    // needs 2 args
+            if (operands_index >= XED_MAX_INPUT_OPERNADS) {
+                printf("ERROR: too many -set operands, max is %d\n", XED_MAX_INPUT_OPERNADS);
+                exit(1);
+            }
+
+            operands[operands_index] = str2xed_operand_enum_t(argv[i+1]);
+            if (operands[operands_index] == XED_OPERAND_INVALID){
+                printf("ERROR: operand %s doesn't exist\n", argv[i+1]);
+                exit(1);
+            }
+            operands_value[operands_index] = XED_STATIC_CAST(xed_uint8_t, xed_atoi_general(argv[i+2],1000));
+            operands_index++;
+            first_argv+=3;
         }
     }
 
@@ -500,11 +550,14 @@ int main(int argc, char** argv) {
 #if defined(XED_CET)
     xed3_operand_set_cet(&xedd, cet_mode);
 #endif
+    // set the value of operands referenced after '-set'
+    for (i = 0; i < operands_index; i++)    
+        xed3_set_generic_operand(&xedd, operands[i], operands_value[i]);
 
     // convert ascii hex to hex bytes
     for(i=first_argv; i< argcu;i++) 
         decode_text = xedex_append_string(decode_text,argv[i]);
-
+    
     len = (unsigned int) strlen(decode_text);
     if ((len & 1) == 1) { 
         printf("Must supply even number of nibbles per substring\n");
@@ -550,7 +603,6 @@ int main(int argc, char** argv) {
         exit(1);
     }
         
-
     printf("iclass %s\t",
            xed_iclass_enum_t2str(xed_decoded_inst_get_iclass(&xedd)));
     printf("category %s\t" ,
@@ -579,7 +631,11 @@ int main(int argc, char** argv) {
     printf("iclass-max-iform-dispatch %u\n",
            xed_iform_max_per_iclass(xed_decoded_inst_get_iclass(&xedd)));
 
-
+    printf("Nominal opcode position %u\n",
+           xed3_operand_get_pos_nominal_opcode(&xedd));
+    printf("Nominal opcode 0x%02x\n",
+           xed3_operand_get_nominal_opcode(&xedd));
+    
     // operands
     print_operands(&xedd);
     
@@ -595,5 +651,7 @@ int main(int argc, char** argv) {
 
     // misc
     print_misc(&xedd);
+    print_branch_hints(&xedd);
+    
     return 0;
 }

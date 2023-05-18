@@ -2,7 +2,7 @@
 # -*- python -*-
 #BEGIN_LEGAL
 #
-#Copyright (c) 2019 Intel Corporation
+#Copyright (c) 2020 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -88,10 +88,10 @@ def copy_system_libraries(env, kitdir, files, extra_ld_library_paths=[]):
               (retval, lines, stderr) = mbuild.run_command(
                                               "ldd {}".format( binary_executable),
                                               osenv=osenv) 
-              for line in lines:
-                  line = line.rstrip()
-                  print("\t{}".format(line))
               if retval != 0: # error handling
+                  for line in lines:
+                      line = line.rstrip()
+                      print("\t{}".format(line))
                   if len(lines) >= 1:
                       if lines[0].find("not a dynamic executable") != -1:
                           continue

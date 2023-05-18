@@ -2,7 +2,7 @@
 # -*- python -*-
 #BEGIN_LEGAL
 #
-#Copyright (c) 2019 Intel Corporation
+#Copyright (c) 2023 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -75,7 +75,7 @@ def find_mbuild_import():
     # (enumer,codegen) can find mbuild.
     
     if 'PYTHONPATH' in os.environ:
-        sep = ':'
+        sep = os.pathsep
         os.environ['PYTHONPATH'] =  mbuild_install_path + sep +  \
                                     os.environ['PYTHONPATH']
     else:
@@ -85,10 +85,10 @@ def find_mbuild_import():
     
 def work():
     if sys.version_info[0] == 3:
-        if sys.version_info[1] < 4:        
-            fatal("Need python version 3.4 or later.")
+        if sys.version_info[1] < 6:        
+            fatal("Need python version 3.6 or later.")
     else:
-        fatal("Need python version 3.4 or later.")
+        fatal("Need python version 3.6 or later.")
         
     try:
         find_mbuild_import()
@@ -96,13 +96,10 @@ def work():
         fatal("mbuild import failed")
     import xed_mbuild
     import xed_build_common
-    if 0:
+    try:
         retval = xed_mbuild.execute()
-    else:
-        try:
-            retval = xed_mbuild.execute()
-        except Exception as e:
-            xed_build_common.handle_exception_and_die(e)
+    except Exception as e:
+        xed_build_common.handle_exception_and_die(e)
     return retval
     
 if __name__ == "__main__":

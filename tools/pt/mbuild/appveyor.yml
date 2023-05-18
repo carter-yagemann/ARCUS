@@ -1,5 +1,0 @@
-build: off
-
-test_script:
-    - pip install .
-    - python tests/2.py

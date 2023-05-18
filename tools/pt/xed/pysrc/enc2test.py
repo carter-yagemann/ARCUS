@@ -45,6 +45,7 @@ gpr64 = "RAX RCX RDX RBX RSI RDI RBP RSP R8 R9 R10 R11 R12 R13 R14 R15".split()
 gpr64_index = "RAX RCX RDX RBX RSI RDI RBP R8 R9 R10 R11 R12 R13 R14 R15".split()
 
 gpr32_not64 = "EAX ECX EDX EBX ESI EDI EBP ESP".split()
+gpr32_not64 = "EAX ECX EDX EBX ESI EDI EBP ESP".split() 
 gpr32_index_not64 = "EAX ECX EDX EBX ESI EDI EBP".split()
 
 gpr16_not64 = "AX CX DX BX SI DI BP SP".split()
@@ -73,6 +74,8 @@ zmm_evex_m64 = [ 'ZMM{}'.format(i) for i in range(0,32)]
 xmm_not64 = [ 'XMM{}'.format(i) for i in range(0,8)]
 ymm_not64 = [ 'YMM{}'.format(i) for i in range(0,8)]
 zmm_not64 = [ 'ZMM{}'.format(i) for i in range(0,8)]
+
+tmm = [ 'TMM{}'.format(i) for i in range(0,8)]
 
 seg = 'ES CS SS DS FS GS'.split()
 seg_no_cs = 'ES SS DS FS GS'.split()
@@ -108,6 +111,7 @@ def set_test_gen_counters(env):
         
         'xmm':  xmm_vex_m64 if env.mode==64 else xmm_not64,
         'ymm':  ymm_vex_m64 if env.mode==64 else ymm_not64,
+        'tmm':  tmm if env.mode==64 else [],
         
         'xmm_evex':  xmm_evex_m64 if env.mode==64 else xmm_not64,
         'ymm_evex':  ymm_evex_m64 if env.mode==64 else ymm_not64,
@@ -231,6 +235,9 @@ def  get_zmm(env, ii):
         return gen_reg_simd_unified(env,'zmm_evex', True)
     return gen_reg(env,'zmm_evex')
 
+def  get_tmm(env, ii):
+    return gen_reg(env,'tmm')
+
 def  get_kreg(env, ii):
     return gen_reg(env,'kreg')
 def  get_kreg_not0(env, ii):
@@ -310,6 +317,7 @@ arginfo2value_creator = {
      'xmm': get_xmm,
      'ymm': get_ymm,
      'zmm': get_zmm,
+     'tmm': get_tmm,
      'kreg': get_kreg,
      'kreg!0': get_kreg_not0,
      'x87': get_x87,

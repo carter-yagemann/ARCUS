@@ -1,5 +1,6 @@
 #BEGIN_LEGAL
-#Copyright (c) 2019 Intel Corporation
+#
+#Copyright (c) 2022 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -12,6 +13,7 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+#  
 #END_LEGAL
 //
 // This file does not contain any code
@@ -26,7 +28,6 @@
 @else
 @mainpage *INTERNAL* XED Build Guide
 @endif
-by Mark Charney
 
 2019-05-28
 
@@ -74,8 +75,8 @@ git clone https://github.com/intelxed/mbuild.git mbuild
 @endcode
 @else
 @code
-git clone ssh://git@gitlab.devtools.intel.com:29418/xed-group/xed.git xed
-git clone ssh://git@gitlab.devtools.intel.com:29418/xed-group/mbuild.git mbuild
+git clone {xed repository URL} xed
+git clone {mbuild repository URL} mbuild
 @endcode
 @endif
 
@@ -145,8 +146,8 @@ C:/Python37/python ../xed/mfile.py examples install zip
 @endcode
 @else
 @code
-git clone ssh://git@gitlab.devtools.intel.com:29418/xed-group/xed.git xed
-git clone ssh://git@gitlab.devtools.intel.com:29418/xed-group/mbuild.git mbuild
+git clone {xed repository URL} xed
+git clone {mbuild repository URL} mbuild
 mkdir test
 cd test
 C:/Python37/python ../xed/mfile.py examples install zip
@@ -167,8 +168,8 @@ python ../xed/mfile.py examples install zip
 @endcode
 @else
 @code
-git clone ssh://git@gitlab.devtools.intel.com:29418/xed-group/xed.git xed
-git clone ssh://git@gitlab.devtools.intel.com:29418/xed-group/mbuild.git mbuild
+git clone {xed repository URL} xed
+git clone {mbuild repository URL} mbuild
 mkdir test
 cd test
 python ../xed/mfile.py examples install zip
@@ -363,7 +364,6 @@ Options:
                         which the     config file is located
   --default-isa-extf=DEFAULT_ISA
                         Override the default ISA files.cfg file
-  --knc                 Include KNC support
   --no-avx              Do not include AVX
   --no-xsaveopt         Do not include XSAVEOPT
   --no-ivbavx           Do not include AVX for IVB.
@@ -399,7 +399,6 @@ Options:
   --python=PYTHONARG    Use a specific version of python
                         for subprocesses.
   --elf-dwarf, --dwarf  Use libelf/libdwarf. (Linux only)
-  --dev                 Developer knob. Updates VERSION file
   --elf-dwarf-precompiled
                         Use precompiled libelf/libdwarf from  the XED source
                         distribution. This is the currently required if you

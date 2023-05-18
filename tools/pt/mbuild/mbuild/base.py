@@ -1,9 +1,8 @@
 #!/usr/bin/env python
 # -*- python -*-
-# Mark Charney 
 #BEGIN_LEGAL
 #
-#Copyright (c) 2019 Intel Corporation
+#Copyright (c) 2022 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -87,11 +86,16 @@ def msgb(s,t='',pad=''):
   """a bracketed  string s  sent to stdout, followed by a string t"""
   msg(bracket(s,t), pad=pad)
 
+def vmsg(v,s,pad=''):
+  """If verbosity v is sufficient, emit s to stdout with a newline"""
+  # someone could pass unicode as pad...
+  if verbose(v):
+    msg(s,pad=pad)
+
 def vmsgb(v,s,t='',pad=''):
   """If verbosity v is sufficient, emit a bracketed string s sent to
   stdout, followed by a string t"""
-  if verbose(v):
-    msg(bracket(s,t),pad=pad)
+  vmsg(v,bracket(s,t),pad=pad)
 
 def cond_die(v, cmd, msg):
   """Conditionally die, if v is not zero. Print the msg and the cmd.
@@ -213,6 +217,13 @@ def on_windows():
   global _on_windows
   return _on_windows
 
+def on_mac(): 
+  """
+  @rtype: bool
+  @return: True iff on mac
+  """
+  global _on_mac
+  return _on_mac
 
 ######  
 

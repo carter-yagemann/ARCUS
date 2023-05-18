@@ -1,6 +1,6 @@
-/*BEGIN_LEGAL 
+/* BEGIN_LEGAL 
 
-Copyright (c) 2019 Intel Corporation
+Copyright (c) 2021 Intel Corporation
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -68,6 +68,11 @@ xed_disas_hex(xed_disas_info_t* fi)
     unsigned int i = 0;
     xed_uint8_t b = 0;
     FILE* f = 0;
+
+    if ((fi->input_file_name == 0) || (fi->input_file_name[0] == 0)) {
+        fprintf(stderr, "ERROR: illegal input_file_name\n");
+        exit(1);
+    }
 
     // read file once to get length
     f = open_file(fi->input_file_name, "r");

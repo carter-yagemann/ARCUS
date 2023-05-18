@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 #BEGIN_LEGAL
 #
-#Copyright (c) 2019 Intel Corporation
+#Copyright (c) 2020 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -52,7 +52,7 @@ def test_hlist():
     d[a] = 1
     d[b] = 2
     d[c] = 3
-    for k in list(d.keys()):
+    for k in d.keys():
         print(str(k))
 
 if __name__ == '__main__':

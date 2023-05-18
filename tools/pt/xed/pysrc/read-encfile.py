@@ -3,7 +3,7 @@
 # -*- python -*-
 #BEGIN_LEGAL
 #
-#Copyright (c) 2019 Intel Corporation
+#Copyright (c) 2023 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -34,6 +34,8 @@
 
 
 
+import importlib.util
+from pathlib import Path
 import re
 import sys
 import os
@@ -80,7 +82,8 @@ try:
     import slash_expand
     import operand_storage
     import nt_func_gen
-
+    import map_info_rdr
+    import chipmodel
 except:
    sys.stderr.write("\nERROR(read-encfile.py): Could not find " + 
                     "the xed directory for python imports.\n\n")
@@ -90,6 +93,8 @@ import actions
 import ins_emit
 import encutil
 from patterns import *
+
+EXT_MODULE = None
 
 storage_fields = {}
 def outreg():
@@ -118,8 +123,12 @@ def remove_file(fn):
        make_writable(fn)
        os.unlink(fn)
 
+    
+    
+
+       
 class blot_t(object):
-    """A blot_t is   a fragment of a decoder pattern"""
+    """A blot_t is  make a fragment of a decoder pattern"""
     def __init__(self,type=None):
         self.type = type  # 'bits', 'letters', 'nt', "od" (operand decider)
         self.nt = None    # name of a nonterminal
@@ -260,8 +269,6 @@ class operand_t(object):
                 self.vis = 'ECOND'
             else:
                 die("unhandled default visibility: %s for %s" % (default_vis, self.var))
-
-
             
     def make_condition(self):
         """
@@ -368,13 +375,14 @@ class condition_t(object):
     n is a repeat count.  Can also be an 'otherwise' clause that is
     the final action for a nonterminal if no other rule applies.
     """
-    def __init__(self,s,lencode=None):
+    def __init__(self, s, lencode=None, chip_check=None):
         #_vmsgb("examining %s" % s)
         self.string = s
         self.bits = None # bound bits
         self.rvalue = None
         self.equals = None
         self.lencode = lencode # for memory operands
+        self.chip_check = chip_check
         
         b = bit_expand_pattern.search(s)
         if b:
@@ -435,7 +443,6 @@ class condition_t(object):
                     
             #msgerr("NON BINDING  %s" % (s)) # FIXME: what reaches here?
 
-
     def contains(self, s):
         if self.field_name == s:
             return True
@@ -469,7 +476,9 @@ class condition_t(object):
         
     def __str__(self):
         s = [ self.field_name ]
-        if self.memory_condition(): # MEM_WIDTH
+        if self.chip_check:
+            s.append(" (CHIPCHECK {})".format(self.chip_check))
+        elif self.memory_condition(): # MEM_WIDTH
             s.append(" (MEMOP %s)" % self.lencode)
         if self.bits:
             s.append( '[%s]' % (self.bits))
@@ -479,6 +488,9 @@ class condition_t(object):
             s.append('!=')
         s.append(str(self.rvalue))
         return ''.join(s)
+    
+    def is_chip_check(self): 
+        return self.chip_check != None
     
     def memory_condition(self): # MEM_WIDTH
         if self.lencode != None:
@@ -499,7 +511,9 @@ class condition_t(object):
         op_accessor = operand_storage.get_op_getter_full_func(self.field_name,
                                                         encutil.enc_strings)
         
-        if self.memory_condition(): # MEM_WIDTH
+        if self.is_chip_check(): 
+            s = 'xed_encoder_request_chip_check(xes,{})'.format(self.chip_check)
+        elif self.memory_condition(): # MEM_WIDTH
             s = 'xed_encoder_request__memop_compatible(xes,XED_OPERAND_WIDTH_%s)' % (self.lencode.upper())
         elif self.rvalue.nonterminal():
             s = 'xed_encode_ntluf_%s(xes,%s)' % (self.rvalue.value,op_accessor)
@@ -528,9 +542,7 @@ class condition_t(object):
         
         
 class conditions_t(object):
-    """Two lists of condition_t's. One gets ANDed together and one gets
-    ORed together. The OR-output gets ANDed with the rest of the AND
-    terms."""
+    """list of condition_t objects that get ANDed together""" 
     def __init__(self):
         self.and_conditions = []
     def contains(self,s):
@@ -559,9 +571,6 @@ class conditions_t(object):
             s.append(' ')
         return ''.join(s)
 
-
-        
-    
     def _captures_from_list(self, clist):
         """
         @type clist: list of condition_t
@@ -584,23 +593,6 @@ class conditions_t(object):
         captures = self._captures_from_list(self.and_conditions) 
         return captures
 
-    def field_names_from_list(self,clist):
-        """Return a tuple of list of field names and list of  NTS"""
-        field_names = []
-        nt_names = []
-        for cond in clist:
-            if cond.field_name:
-                field_names.append(cond.field_name)
-            if cond.rvalue and cond.rvalue.nonterminal():
-                nt_names.append(cond.rvalue.value)
-                
-        return (field_names, nt_names)
-
-    def get_field_names(self):
-        """Return a tuple of list of field names and list of  NTS"""
-        and_field_names = self.field_names_from_list(self.and_conditions)
-        return ( and_field_names[0] , and_field_names[1])
-    
     def emit_code(self):
         if len(self.and_conditions) == 1:
             if self.and_conditions[0].is_otherwise():
@@ -648,9 +640,12 @@ class conditions_t(object):
         return [ ''.join(s) ]
     
 
-
-
 class iform_builder_t(object):
+    '''Remember nonterminal names. Emit a structure/type with a u32 for
+       each NT.  These x_WHATEVER fields are filled in during the
+       value-binding phase of encoding. They hold the result of
+       NT-table evaluation. For instructions, those become the encoder
+       iform numbers. But for everything else it is a misnomer.'''
     def __init__(self):
         self.iforms = {}         
     def remember_iforms(self,ntname):
@@ -792,8 +787,6 @@ class rule_t(object):
             return True
         return False
     
-    
-
     def get_nt_in_cond_list(self):
         #returns the condition with nt, if exists
         nts = []
@@ -821,6 +814,9 @@ class rule_t(object):
         # 1.
         lines.extend( self.conditions.emit_code() )
         lines.append( "if (conditions_satisfied) {")
+        real_opcodes = group.get_ith_field(ith_rule, 'real_opcode')
+        isa_sets     = group.get_ith_field(ith_rule, 'isa_set')
+        lines.append( " // real_opcode {} isa_set {}".format(real_opcodes, isa_sets))
         lines.append( "    okay=1;")
         
         # 2.
@@ -930,7 +926,7 @@ class rule_t(object):
         has_otherwise_rule = self.has_otherwise_rule()
         
         #complicated_nt are nonterminals that can not be auto generated using 
-        #hash function and look uptables due to their complexity
+        #hash function and lookup tables due to their complexity
         #so we generete them in the old if statement structure 
         complicated_nt = nt_func_gen.get_complicated_nt()        
         
@@ -1071,28 +1067,71 @@ class rule_t(object):
                 
 class iform_t(object):
     """One form of an instruction"""
-    def __init__(self, iclass, enc_conditions, enc_actions, modal_patterns, uname=None):
+    def __init__(self, map_info,
+                 iclass, enc_conditions, enc_actions, modal_patterns, uname=None,
+                 real_opcode=True,
+                 isa_set=None):
         self.iclass = iclass
         self.uname = uname
         self.enc_conditions = enc_conditions # [ operand_t ]
         self.enc_actions = enc_actions  # [ blot_t ]
         self.modal_patterns = modal_patterns # [ string ]
+        self.real_opcode = real_opcode
+        self.isa_set = isa_set
 
-        #the emit phase action pattern
-        self.emit_actions = None
+        # the emit phase action pattern is a comma separated string of
+        # strings describing emit activity, created by ins_emit.py.
+        self.emit_actions = None 
         
         #the FB actions pattern
         self.fb_ptrn = None
-        
-        self._fixup_vex_conditions()
-        self.rule = self.make_rule()
-        
-    def _fixup_vex_conditions(self):
-        """if action has VEXVALID=1, add modal_pattern MUST_USE_AVX512=0. 
-           The modal_patterns become conditions later on."""
+
+        self.encspace=0 # legacy 
         for act in self.enc_actions:
-            if act.field_name == 'VEXVALID' and act.value == 1:
-                self.modal_patterns.append( "MUST_USE_EVEX=0" )
+            if act.field_name == 'VEXVALID':
+                self.encspace=act.value
+                break
+        
+        # Use extension module constructor, if exists
+        if EXT_MODULE: EXT_MODULE.ext_iform_t.extend_init(self)
+        self._fixup_vex_conditions()
+        self._find_legacy_map(map_info)
+        self.rule = self.make_rule()
+
+    def _find_legacy_map(self, map_info):
+        """Set self.legacy_map to the map_info_t record that best matches"""
+        if self.encspace == 0:
+            s = []
+            self.legacy_map = None
+            for act in self.enc_actions:
+                if act.type == 'bits':
+                    s.append(act.value)
+            if s:
+                found = False
+                default_map = None
+                for m in map_info:
+                    if m.space == 'legacy':
+                        if m.legacy_escape == 'N/A':  # 1B map (map 0)
+                            default_map = m
+                        elif m.legacy_escape_int == s[0]:
+                            if m.legacy_opcode == 'N/A':   # 2B maps (map-1 like)
+                                found = True
+                                self.legacy_map = m
+                                break
+                            elif len(s)>=2 and m.legacy_opcode_int == s[1]:   # 3B maps
+                                self.legacy_map = m
+                                found = True
+                                break
+                if not found:
+                    self.legacy_map = default_map
+            if not self.legacy_map:
+                genutil.die("Could not set legacy map.")
+            
+    def _fixup_vex_conditions(self):
+        """if action has VEXVALID=1, add modal_pattern MUST_USE_EVEX=0. 
+           The modal_patterns become conditions later on."""
+        if self.encspace == 1: # VEX
+            self.modal_patterns.append("MUST_USE_EVEX=0")
     
     def make_operand_name_list(self):
         """Make an ordered list of operand storage field names that
@@ -1251,15 +1290,6 @@ class iform_t(object):
 def key_rule_tuple(x):
     (a1,a2) = x
     return a1
-
-def rule_tuple_sort(a,b): # FIXME:2017-06-10:PY3 port, no longer used
-    (a1,a2) = a
-    (b1,b2) = b
-    if a1 > b1:
-        return 1
-    elif a1 < b1:
-        return -1
-    return 0
 
 class nonterminal_t(object):
     def __init__(self, name, rettype=None):
@@ -1493,6 +1523,8 @@ class encoder_input_files_t(object):
         self.encoder_input_files = options.enc_patterns
         self.state_bits_file = options.input_state
         self.instructions_file = options.isa_input_file
+        self.map_info_file = options.map_descriptions_input_fn
+        self.chip_model_info_file = options.chip_models_input_fn
 
         # dict of operand_order_t indexed by special keys stored in iform.operand_order_key
         self.all_operand_name_list_dict = None
@@ -1519,18 +1551,25 @@ class encoder_configuration_t(object):
     #
     #    and finally, some operands get dropped entirely.
     
-    def __init__(self, encoder_input_files, amd_enabled=True):
+    def __init__(self, encoder_input_files, chip='ALL', amd_enabled=True):
         self.amd_enabled = amd_enabled
         self.files = encoder_input_files
         self.gendir = self.files.gendir
         self.xeddir = self.files.xeddir
-        
+
+        def _call_chip_model(fn):
+            chips, isa_set_db = chipmodel.read_database(fn)
+            chipmodel.add_all_chip(isa_set_db)
+            return isa_set_db
+        self.isa_set_db = _call_chip_model(encoder_input_files.chip_model_info_file)
+        self.chip = chip
         
         global storage_fields
         lines = open(self.files.storage_fields_file,'r')
         operands_storage = operand_storage.operands_storage_t(lines) 
         storage_fields = operands_storage.get_operands()
 
+        self.map_info = map_info_rdr.read_file(self.files.map_info_file)
         self.state_bits = None
         
         self.sequences = {}
@@ -1688,22 +1727,31 @@ class encoder_configuration_t(object):
                 continue
             line = slash_expand.expand_all_slashes(line)
 
-            p =  ntluf_pattern.match(line)
+            p = ntluf_pattern.match(line)
             if p:
                 nt_name =  p.group('ntname')
                 ret_type = p.group('rettype')
-                # create a new nonterminal to use
-                nt = nonterminal_t(nt_name, ret_type)
-                ntlufs[nt_name] = nt
+                if nt_name in ntlufs:
+                    # reuse an existing NTLUF, extending it.
+                    # FIXME: confirm same ret_type
+                    nt = ntlufs[nt_name]
+                else:
+                    # create a new nonterminal to use
+
+                    nt = nonterminal_t(nt_name, ret_type)
+                    ntlufs[nt_name] = nt
                 continue
             
             p = nt_pattern.match(line)
             if p:
                 nt_name =  p.group('ntname')
-                
-                # create a new nonterminal to use
-                nt = nonterminal_t(nt_name)
-                nts[nt_name] = nt
+                if nt_name in nts:
+                    # reuse an existing NTLUF, extending it.
+                    nt = nts[nt_name]
+                else:
+                    # create a new nonterminal to use
+                    nt = nonterminal_t(nt_name)
+                    nts[nt_name] = nt
                 continue
             
             p = decode_rule_pattern.match(line)
@@ -2005,7 +2053,24 @@ class encoder_configuration_t(object):
             die("Could not process decode pattern %s" % s)
         
         return (decode_patterns, field_bindings)
+
+    def force_vl_encoder_output(self, iclass, operand_str, pattern_str):
+        """Return true if we should treat VL as an encoder_output (EO)"""
+        if 'VEXVALID=1' in pattern_str or 'VEXVALID=2' in pattern_str:
+            if ':zd0' in operand_str:
+                return True
+            if 'XMM' in operand_str or 'YMM' in operand_str or 'ZMM' in operand_str:
+                return False
+            if ':vv' in operand_str:
+                return False
+            if 'VL=' in pattern_str:
+                #print("SETTING FORCE_VL_ENCODER_OUTPUT FOR {}".format(iclass))
+                #print("\t PATTERN:  {}".format(pattern_str))
+                #print("\t OPERANDS: {}".format(operand_str))
+                return True
+        return False
             
+        
     def parse_one_decode_rule(self, iclass, operand_str, pattern_str):
         """Read the decoder rule from the main ISA file and package it
         up for encoding. Flipping things around as necessary.
@@ -2053,19 +2118,29 @@ class encoder_configuration_t(object):
             p_short = rhs_pattern.sub('', p)  # grab the lhs
 
             # special cases
-            if (p_short in storage_fields and 
-                     storage_fields[p_short].encoder_input):
-                if voperand():
-                    msgb("MODAL PATTERN", p_short)
-                modal_patterns.append(p)
-                continue
+
+            # VL is generally an encoder input, except in some cases
+            # (VZERO*, BMI, KMASKS, etc.)
+            do_encoder_input_check = True
+            if p_short in ['VL'] and self.force_vl_encoder_output(iclass, operand_str, pattern_str):
+                do_encoder_input_check = False
+                
+            if do_encoder_input_check:
+                if p_short in storage_fields and storage_fields[p_short].encoder_input:
+                    if voperand():
+                        msgb("MODAL PATTERN", p_short)
+                    modal_patterns.append(p)
+                    continue
 
             if p_short in storage_fields and p == 'BCRC=1':
                 # FIXME: 2016-01-28: MJC: HACK TO ENCODE ROUNDC/SAE CONSTRAINTS
                 if 'SAE' in pattern_str:
                     modal_patterns.append("SAE!=0")
-                elif 'AVX512_ROUND' in pattern_str:
+                elif '_ROUND()' in pattern_str:
                     modal_patterns.append("ROUNDC!=0")
+                elif 'FIX_ROUND_LEN' in pattern_str:
+                    # Catches SAE and ROUNDC ignored instructions
+                    modal_patterns.append("VL_IGN!=0")
             
             # The pattern_list is a list of blot_t's covering the
             # pattern.  The extra_bindings_list is a list of
@@ -2174,7 +2249,9 @@ class encoder_configuration_t(object):
         for a in modal_patterns:
             msg("\t" +  str(a))
     
-    def finalize_decode_conversion(self,iclass, operands, ipattern, uname=None):
+    def finalize_decode_conversion(self,iclass, operands, ipattern, uname=None,
+                                   real_opcode=True,
+                                   isa_set=None):
         if ipattern  == None:
             die("No ipattern for iclass %s and operands: %s" % 
                 (str(iclass), operands ))
@@ -2182,13 +2259,15 @@ class encoder_configuration_t(object):
             die("No iclass for " + operands)
         # the encode conditions are the decode operands (as [ operand_t ])
         # the encode actions are the decode patterns    (as [ blot_t ])
+        # the modal_patterns are things that should become encode conditions
         (conditions, actions, modal_patterns) = \
                       self.parse_one_decode_rule(iclass, operands, ipattern)
         if vfinalize():
             self.print_iclass_info(iclass, operands, ipattern, conditions, 
                                    actions, modal_patterns)
         # FIXME do something with the operand/conditions and patterns/actions
-        iform = iform_t(iclass, conditions, actions, modal_patterns, uname)
+        iform = iform_t(self.map_info, iclass, conditions, actions, modal_patterns, uname,
+                        real_opcode, isa_set)
 
         if uname == 'NOP0F1F':
             # We have many fat NOPS, 0F1F is the preferred one so we
@@ -2202,8 +2281,6 @@ class encoder_configuration_t(object):
             else:
                 iform.priority = 2
         elif 'VEXVALID=3' in ipattern: # XOP
-            iform.priority = 3
-        elif 'VEXVALID=4' in ipattern: # KNC
             iform.priority = 3
         else:  # EVERYTHING ELSE
             iform.priority = 1
@@ -2229,6 +2306,10 @@ class encoder_configuration_t(object):
         unamed = None
         ipattern = None
         started = False
+        real_opcode = True
+        extension = None # used  if no isa_set found/present
+        isa_set = None
+        
         while len(lines) > 0:
             line = lines.pop(0)
             line = comment_pattern.sub("",line)
@@ -2270,6 +2351,10 @@ class encoder_configuration_t(object):
                 started = True
                 iclass = None
                 uname = None
+                real_opcode = True
+                extension = None # used  if no isa_set found/present
+                isa_set = None
+
                 continue
             
             if right_curly_pattern.match(line):
@@ -2288,6 +2373,20 @@ class encoder_configuration_t(object):
             if un:
                 uname = un.group('uname')
                 continue
+
+            realop = real_opcode_pattern.match(line)
+            if realop:
+                realop_str = realop.group('yesno')
+                if realop_str != 'Y':
+                    real_opcode=False
+                
+            extp = extension_pattern.match(line)
+            if extp:
+                extension = extp.group('ext')
+                
+            isasetp = isa_set_pattern.match(line)
+            if isasetp:
+                isa_set = isasetp.group('isaset')
             
             ip = ipattern_pattern.match(line)
             if ip:
@@ -2295,15 +2394,21 @@ class encoder_configuration_t(object):
                 continue
             
             if no_operand_pattern.match(line):
+                if not isa_set:
+                    isa_set = extension
                 self.finalize_decode_conversion(iclass,'', 
-                                                ipattern, uname)
+                                                ipattern, uname,
+                                                real_opcode, isa_set)
                 continue
 
             op = operand_pattern.match(line)
             if op:
                 operands = op.group('operands')
+                if not isa_set:
+                    isa_set = extension
                 self.finalize_decode_conversion(iclass, operands, 
-                                                ipattern, uname)
+                                                ipattern, uname,
+                                                real_opcode, isa_set)
                 continue
 
         return
@@ -2325,7 +2430,7 @@ class encoder_configuration_t(object):
                 _vmsgb("DELETING IFORMS", "%s %d -> %d" % (ic,x1,x2))
             self.iarray[ic]=l
     
-        for k in list(self.deleted_instructions.keys()):
+        for k in self.deleted_instructions.keys():
             if k in self.iarray:
                 _vmsgb("DELETING", k)
                 del self.iarray[k] 
@@ -2380,11 +2485,11 @@ class encoder_configuration_t(object):
         self.decoder_ntlufs.update(ntlufs)
 
     def make_isa_encode_group(self, group_index, ins_group):
-        """Make the function object for encoding one group.  The generated
-        function tests operand order and type, then more detailed
-        conditions. Once conditions_satisfied is true, we attempt to
-        do more detailed bindings operations for the nonterminals in
-        the pattern.
+        """Make the function object for encoding one (ins_emit.py) ins_group_t
+        group.  The generated function tests operand order and type,
+        then more detailed conditions. Once conditions_satisfied is
+        true, we attempt to do more detailed bindings operations for
+        the nonterminals in the pattern.
 
         @rtype: function_object_t
         @returns: an encoder function object that encodes group
@@ -2396,32 +2501,46 @@ class encoder_configuration_t(object):
         fo = function_object_t(fname,'xed_bool_t')
         fo.add_arg("%s* xes" % xed_encoder_request)
         fo.add_code_eol( "xed_bool_t okay=1")
-        fo.add_code_eol( "xed_bool_t conditions_satisfied=0" )
         fo.add_code_eol( "xed_ptrn_func_ptr_t fb_ptrn_function" )
-        
-        iform_ids_table = ins_group.get_iform_ids_table()
+
+        #import pdb; pdb.set_trace()
+
+        ins_group.sort() # call before emitting group code
+
+        # iform initialization table
+        iform_ids_table = ins_group.gen_iform_ids_table()  # table initialization data
         iclasses_number = len(ins_group.get_iclasses())
         iforms_number = len(ins_group.iforms)
         table_type = 'static const xed_uint16_t '
         table_decl = 'iform_ids[%d][%d] = {' % (iclasses_number,
                                                 iforms_number)
-        table = table_type + table_decl  
-        fo.add_code(table)
+        fo.add_code(table_type + table_decl)
         for line in iform_ids_table:
             fo.add_code(line)
         fo.add_code_eol('}')
+
+        # isa-set initialization table set 1/0 values to help limit
+        # encode to producing the isa-sets present on the specified
+        # self.chip.  The all_ones and all_zeros are Very frequently
+        # useful optimizations to reduce code size and speed up
+        # checking.
+        isa_set_table, all_ones, all_zeros = ins_group.gen_iform_isa_set_table( self.isa_set_db[self.chip] )
+        if  all_ones==False and all_zeros==False:
+            table_type = 'static const xed_bool_t '
+            table_decl = 'isa_set[{}][{}] = {{'.format(iclasses_number, iforms_number)
+            fo.add_code(table_type + table_decl)
+            for line in isa_set_table:
+                fo.add_code(line)
+            fo.add_code_eol('}')
         
         get_iclass_index = 'xed_encoder_get_iclasses_index_in_group'
         obj_name = encutil.enc_strings['obj_str']
         code = 'xed_uint8_t iclass_index = %s(%s)' % (get_iclass_index,obj_name)
         fo.add_code_eol(code)
-        # FIXME: 2014-04-17: copy to sorted_iforms still sorts ins_group.iforms
-        sorted_iforms = ins_group.iforms
-        sorted_iforms.sort(key=ins_emit.key_iform_by_bind_ptrn)
-        sorted_iforms.sort(key=ins_emit.key_rule_length)
-        sorted_iforms.sort(key=ins_emit.key_priority)
-        
-        for i,iform in enumerate(sorted_iforms):
+        pad4 = ' '*4
+        pad8 = ' '*8
+
+        for i,iform in enumerate(ins_group.iforms):
             # FIXME:2007-07-05 emit the iform.operand_order check of
             # the xed_encode_order[][] array
 
@@ -2441,12 +2560,21 @@ class encoder_configuration_t(object):
             # encode. 2014-04-15: xed_encode_order_limit[] does not
             # currently show up in the generated code so the above
             # fixme is moot.
+
+            
+            # This "if" is for encoder chip checking. if ENCODE_FORCE
+            # is set, we let everything encode.  Otherwise we use the
+            # isa_set array set using the specified --encoder-chip at
+            # comple time.
+            if  all_ones:
+                fo.add_code('if (1) { // ALL ONES')
+            elif all_zeros:
+                fo.add_code('if (xed3_operand_get_encode_force(xes)) { // ALL ZEROS')
+            else:
+                fo.add_code('if (xed3_operand_get_encode_force(xes) || isa_set[iclass_index][{}]) {{ // MIXED'.format(i))
                 
-
-
             try:
-                operand_order =\
-                        self.all_operand_name_list_dict[iform.operand_order_key]
+                operand_order = self.all_operand_name_list_dict[iform.operand_order_key]
             except:
                 operand_order = None
             cond1 = None
@@ -2462,19 +2590,19 @@ class encoder_configuration_t(object):
                 cond1 = "xes->_n_operand_order == %d" % (nopnd)
                 if nopnd==0:
                     optimized = True
-                    fo.add_code("if (%s) {" % (cond1))
+                    fo.add_code(pad4 +  "if (%s) {" % (cond1))
                 elif nopnd ==1:
                     optimized = True
                     cond2 = "xes->_operand_order[0] == XED_OPERAND_%s"
                     cond2 = cond2 % (operand_order.lst[0])
-                    fo.add_code("if (%s && %s) {" % (cond1,cond2))
+                    fo.add_code(pad4 + "if (%s && %s) {" % (cond1,cond2))
                 elif nopnd ==2:
                     optimized = True
                     cond2 = "xes->_operand_order[0] == XED_OPERAND_%s" 
                     cond2 = cond2 % (operand_order.lst[0])
                     cond3 = "xes->_operand_order[1] == XED_OPERAND_%s"
                     cond3 = cond3 % (operand_order.lst[1])
-                    fo.add_code("if (%s && %s && %s) {" % (cond1,cond2,cond3))
+                    fo.add_code(pad4 + "if (%s && %s && %s) {" % (cond1,cond2,cond3))
 
             memcmp_type = 'xed_uint8_t' 
             if not optimized:
@@ -2482,19 +2610,20 @@ class encoder_configuration_t(object):
                     cond1 = "xed_encode_order_limit[%d]==xes->_n_operand_order"
                     cond1 = cond1 % (iform.operand_order)
                 if nopnd == None:
-                    cond2 = "memcmp(xed_encode_order[%d], "+\
-                            "xes->_operand_order, "+\
-                            "sizeof(%s)*xed_encode_order_limit[%d])==0"
+                    cond2 = ("memcmp(xed_encode_order[%d], " +
+                            "xes->_operand_order, " +
+                            "sizeof(%s)*xed_encode_order_limit[%d])==0")
                     cond2 = cond2 % (iform.operand_order, memcmp_type, 
                                      iform.operand_order)
                 else:
-                    cond2 = "memcmp(xed_encode_order[%d], "+\
-                            "xes->_operand_order, sizeof(%s)*%d)==0"
+                    cond2 = ("memcmp(xed_encode_order[%d], " +
+                            "xes->_operand_order, sizeof(%s)*%d)==0")
                     cond2 = cond2 % (iform.operand_order, memcmp_type, nopnd)
 
-                fo.add_code("if (%s && %s) {" % (cond1, cond2))
+                fo.add_code(pad4 + "if (%s && %s) {" % (cond1, cond2))
             if viform():
                 msgb("IFORM", str(iform))
+
             
             # For binding, this emits code that sets
             # conditions_satisfied based on some long expression and
@@ -2502,14 +2631,15 @@ class encoder_configuration_t(object):
             # emitting, it checks the iform and emits bits.
             captures = None
             lines = iform.rule.emit_isa_rule(i,ins_group)
-            fo.add_lines(lines)
+            fo.add_code_eol(pad8 + "xed_bool_t conditions_satisfied=0" )
+            for  line in lines:
+                fo.add_code(pad8 + line)
             
-            fo.add_code('  }')
-
+            fo.add_code(pad4 + '} // initial conditions')
+            fo.add_code('} // xed_enc_chip_check ')
         
         fo.add_code_eol('return 0')
         fo.add_code_eol("(void) okay")
-        fo.add_code_eol("(void) conditions_satisfied")
         fo.add_code_eol("(void) xes")
         return fo
     
@@ -2702,7 +2832,7 @@ class encoder_configuration_t(object):
 
         # writes self.sequences and self.nonterminals
         self.read_encoder_files()
-        # writes self.deocoder_nonterminals and self.decoder_ntlufs
+        # writes self.decoder_nonterminals and self.decoder_ntlufs
         self.read_decoder_files()
 
         if vdumpinput():
@@ -2756,7 +2886,7 @@ class encoder_configuration_t(object):
             encoder_inputs_by_iclass[iclass] = encoder_field_inputs
             encoder_nts_by_iclass[iclass] = encoder_nts
 
-        for iclass in list(encoder_inputs_by_iclass.keys()):
+        for iclass in encoder_inputs_by_iclass.keys():
             fld_set = encoder_inputs_by_iclass[iclass]
             nt_set  = encoder_nts_by_iclass[iclass]
             if vinputs():
@@ -2988,18 +3118,15 @@ class encoder_configuration_t(object):
         fe.close()
         output_file_emitters.append(fe)
         
-        
-        
-        
     def emit_encoder_iform_table(self):
         filename = 'xed-encoder-iforms-init.c'
         fe = xed_file_emitter_t(self.xeddir, self.gendir, 
                                 filename, shell_file=False)
         fe.add_header('xed-ild.h')
+        fe.add_header('xed-ild-enum.h')        
         fe.start()
         
-        ptrn = "/*(%4d)%20s*/  {%4d, %4d, %4s," +\
-                " XED_STATIC_CAST(xed_uint8_t,%15s), %4d}"
+        ptrn = ("/*(%4d)%20s*/  {%4d, %4d, %4s, %4d}")
         iform_definitions = []
         for iform in self.all_iforms:#iforms:
             iform_init = ptrn % (iform.rule.iform_id,
@@ -3007,20 +3134,15 @@ class encoder_configuration_t(object):
                                  iform.bind_func_index,
                                  iform.emit_func_index,
                                  hex(iform.nominal_opcode),
-                                 iform.map,
                                  iform.fb_index)
             iform_definitions.append(iform_init)
         
         self._emit_functions_lu_table(fe, 'xed_encoder_iform_t', 
                                       iform_definitions, 'xed_encode_iform_db', 
                                       'XED_ENCODE_MAX_IFORMS')
-        
-        
-        
         fe.close()
         output_file_emitters.append(fe)
             
-        
     def emit_group_encode_functions(self):
         filename_prefix = 'xed-enc-groups'
         
@@ -3040,7 +3162,10 @@ def setup_arg_parser():
     arg_parser.add_option('--xeddir',
                       action='store', dest='xeddir', default='.',
                       help='Directory for generated files')
-
+    arg_parser.add_option('--xedext-dir',
+                      action='store', dest='xedext_dir', default='',
+                      help='Directory for extension')
+    
     arg_parser.add_option('--input-fields',
                       action='store', dest='input_fields', default='',
                       help='Operand storage description  input file')
@@ -3059,21 +3184,62 @@ def setup_arg_parser():
     arg_parser.add_option('--isa',
                       action='store', dest='isa_input_file', default='',
                       help='Read structured input file containing the ISA INSTRUCTIONS() nonterminal')
+    arg_parser.add_option('--map-descriptions',
+                          action='store',
+                          dest='map_descriptions_input_fn',
+                          default='',
+                          help='map descriptions input file')
     arg_parser.add_option('--no-amd',
                       action='store_false', dest='amd_enabled', default=True,
                       help='Omit AMD instructions')
     arg_parser.add_option('--verbosity', '-v',
                       action='append', dest='verbosity', default=[],
                       help='list of verbosity tokens, repeatable.')
-    return arg_parser
+    arg_parser.add_option('--chip-models',
+                          action='store', 
+                          dest='chip_models_input_fn', 
+                          default='',
+                          help='Chip models input file name')
+    arg_parser.add_option('--chip',
+                          action='store', 
+                          dest='chip', 
+                          default='ALL',
+                          help='''Name of the target chip. Default is ALL.  Setting the target chip
+                                limits what encode will produce to
+                                only those instructions valid for that
+                                chip.''')
+    
+    options, args = arg_parser.parse_args()
+
+    if options.xedext_dir: 
+        extdir_path = Path(options.xedext_dir).resolve()
+        if extdir_path.exists(): 
+            # Catch read-encfile.py extension
+            try:
+                global EXT_MODULE
+                fname = Path(__file__).name
+                ext_file = 'ext-' + fname
+                ext_module = 'ext-' + Path(__file__).stem
+
+                ext_path = extdir_path.joinpath('pysrc', ext_file).resolve(strict=True)
+                spec = importlib.util.spec_from_file_location(ext_module, ext_path)
+                EXT_MODULE = importlib.util.module_from_spec(spec)
+                sys.modules[ext_module] = EXT_MODULE
+                spec.loader.exec_module(EXT_MODULE)
+                mbuild.msgb(f'PYSRC: Extending "{fname}" with "{ext_file}"')
+            except:
+                die('(read-encfile.py) couldn\'t find an expected extension module')
+        else:
+            warn(f'Provided --xedext-dir does not exists: "{options.xedext_dir}"')
+
+    return options, args
 
 
 if __name__ == '__main__':
-    arg_parser = setup_arg_parser()
-    (options, args ) = arg_parser.parse_args()
+    (options, args) = setup_arg_parser()
     set_verbosity_options(options.verbosity)
     enc_inputs = encoder_input_files_t(options)
-    enc = encoder_configuration_t(enc_inputs, options.amd_enabled)
+    enc = encoder_configuration_t(enc_inputs, options.chip, options.amd_enabled)
     enc.run()
     enc.look_for_encoder_inputs()      # exploratory stuff
     enc.emit_encode_defines()  # final stuff after all tables are sized

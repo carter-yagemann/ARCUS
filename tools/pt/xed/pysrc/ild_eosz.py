@@ -1,6 +1,6 @@
 #BEGIN_LEGAL
 #
-#Copyright (c) 2019 Intel Corporation
+#Copyright (c) 2021 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 #END_LEGAL
 
 import re
+
 import ild_nt
 import mbuild
 import ild_info
@@ -25,20 +26,13 @@ import ildutil
 import operand_storage
 import ild_codegen
 
-
-_eosz_token = 'EOSZ'
+_eosz_token           = 'EOSZ'
 _eosz_binding_pattern = re.compile(r'EOSZ=(?P<rhs>[0-9]+)')
-
 #FIXME: we can get default NT by looking at the spine
-_eosz_default_nt = 'OSZ_NONTERM'
+_eosz_default_nt      = 'OSZ_NONTERM'
+_eosz_c_fn            = 'xed-ild-eosz.c'
+_eosz_header_fn       = 'xed-ild-eosz.h'
 
-
-
-_eosz_c_fn = 'xed-ild-eosz.c'
-_eosz_header_fn = 'xed-ild-eosz.h'
-
-
-harcoded_res_functions = {}
 
 #FIXME: I hope there are no conflicts on EOSZ in map,opcodes which
 #patterns have EOSZ as an operand decider.
@@ -77,7 +71,6 @@ def _resolve_conflicts(agi, info_list, nt_dict):  # NOT USED
 #FIXME: use info_list instead?
 def get_getter_fn(ptrn_list):
     if len(ptrn_list) == 0:
-        #l1_fn = '(%s)0' % (ildutil.ild_getter_typename)
         genutil.die("P2342: SHOULD NOT REACH HERE")
 
     first = ptrn_list[0]
@@ -190,7 +183,7 @@ def work(agi, united_lookup, eosz_nts, ild_gendir, debug):
         if not array:
             return None
         nt_arrays.append(array)
-    ild_nt.dump_lu_arrays(agi, nt_arrays, 'ild_oesz_debug.txt',
+    ild_nt.dump_lu_arrays(agi, nt_arrays, 'ild_eosz_debug.txt',
                           'ild_eosz_debug_header.txt')
     
     #get all sequences of NTs that set EOSZ 
@@ -206,17 +199,18 @@ def work(agi, united_lookup, eosz_nts, ild_gendir, debug):
             return None
         nt_seq_arrays[tuple(nt_seq)] = array
     #init function calls all single init functions for the created tables
-    init_f = ild_nt.gen_init_function(list(nt_seq_arrays.values()), 
+    nt_seq_values = [v for (k,v) in sorted(nt_seq_arrays.items())]
+    init_f = ild_nt.gen_init_function(nt_seq_values, 
                                       'xed_ild_eosz_init')
     #dump init and lookup functions for EOSZ sequences
-    ild_nt.dump_lu_arrays(agi, list(nt_seq_arrays.values()), _eosz_c_fn,
+    ild_nt.dump_lu_arrays(agi, nt_seq_values, _eosz_c_fn,
                           mbuild.join('include-private', _eosz_header_fn),
                           init_f)
     #generate EOSZ getter functions - they get xed_decoded_inst_t*
     #and return EOSZ value (corresponding to EOSZ NT sequence 
     #that they represent) 
     getter_fos = []
-    for names in list(nt_seq_arrays.keys()):
+    for names in nt_seq_arrays.keys():
         arr = nt_seq_arrays[names]
         getter_fo = ild_codegen.gen_derived_operand_getter(agi, _eosz_token,
                                                            arr, list(names))

@@ -1,6 +1,6 @@
-/*BEGIN_LEGAL 
+/* BEGIN_LEGAL 
 
-Copyright (c) 2019 Intel Corporation
+Copyright (c) 2022 Intel Corporation
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -199,6 +199,11 @@ XED_DLL_EXPORT xed_bool_t
 xed_operand_values_has_66_prefix(const xed_operand_values_t* p);
 
 /// @ingroup OPERANDS    
+/// This is exclusive to cases whereby the 66 prefix is mandatory.
+XED_DLL_EXPORT xed_bool_t 
+xed_operand_values_mandatory_66_prefix(const xed_operand_values_t* p);
+
+/// @ingroup OPERANDS    
 /// This instruction has a REX prefix with the W bit set.
 XED_DLL_EXPORT xed_bool_t 
 xed_operand_values_has_rexw_prefix(const xed_operand_values_t* p);
@@ -222,6 +227,11 @@ xed_operand_values_get_long_mode(const xed_operand_values_t* p);
 /// @ingroup OPERANDS    
 XED_DLL_EXPORT xed_bool_t
 xed_operand_values_get_real_mode(const xed_operand_values_t* p);
+
+/// @ingroup OPERANDS
+/// Return the [VEX,EVEX].PP encoding value (2 bits)
+XED_DLL_EXPORT xed_bits_t
+xed_operand_values_get_pp_vex_prefix(const xed_operand_values_t* p);
 
 /// @name Memory Addressing
 //@{
@@ -274,12 +284,21 @@ XED_DLL_EXPORT xed_bool_t
 xed_operand_values_has_sib_byte(const xed_operand_values_t* p);
 //@}
 
-/// @ingroup OPERANDS    
+
+/// @ingroup OPERANDS
+/// Returns  true if 0x2E prefix on Jcc
 XED_DLL_EXPORT xed_bool_t
 xed_operand_values_branch_not_taken_hint(const xed_operand_values_t* p);
-/// @ingroup OPERANDS    
+
+/// @ingroup OPERANDS
+/// Returns  true if 0x3E prefix on Jcc
 XED_DLL_EXPORT xed_bool_t
 xed_operand_values_branch_taken_hint(const xed_operand_values_t* p);
+
+/// @ingroup OPERANDS
+/// Returns true for indirect call/jmp with 0x3E prefix (if the legacy prefix rules are obeyed)
+XED_DLL_EXPORT xed_bool_t
+xed_operand_values_cet_no_track(const xed_operand_values_t* p);
 
 /// @ingroup OPERANDS    
 XED_DLL_EXPORT xed_bool_t

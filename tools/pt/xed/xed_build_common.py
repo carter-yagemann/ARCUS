@@ -2,7 +2,7 @@
 # -*- python -*-
 #BEGIN_LEGAL
 #
-#Copyright (c) 2019 Intel Corporation
+#Copyright (c) 2022 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -56,7 +56,7 @@ def cexit(r=0):
 
 def write_file(fn, stream):
     """Write stream to fn"""
-    mbuild.msgb("WRITING", fn)
+    mbuild.vmsgb(1, "WRITING", fn)
     f = open(fn,'w')
     f.writelines(stream)
     f.close()
@@ -66,13 +66,13 @@ def add_to_flags(env,s):
     env.add_to_var('CXXFLAGS',s)
 
 def compile_with_pin_crt_lin_mac_common_cplusplus(env):
-    env.add_to_var('LINKFLAGS','-lstlport-dynamic')
+    env.add_to_var('LINKFLAGS','-lc++abi')
+    env.add_to_var('LINKFLAGS','-lc++')
     env.add_to_var('CXXFLAGS','-fno-exceptions')
     env.add_to_var('CXXFLAGS', '-fno-rtti')
     
 def _compile_with_pin_crt_lin_mac_common(env):    
-    env.add_system_include_dir('%(pin_root)s/extras/stlport/include')
-    env.add_system_include_dir('%(pin_root)s/extras/libstdc++/include')
+    env.add_system_include_dir('%(pin_root)s/extras/cxx/include')
     env.add_system_include_dir('%(pin_root)s/extras/crt/include')
     env.add_system_include_dir(
         '%(pin_root)s/extras/crt/include/arch-%(bionic_arch)s')
@@ -189,6 +189,11 @@ def  _gcc_version_string(env):
     vstr = mbuild.get_gcc_version(gcc)
     return vstr
 
+def  _clang_version_string(env):
+    gcc = env.expand('%(CC)s')
+    vstr = mbuild.get_clang_version(gcc)
+    return vstr
+
 def  _greater_than_gcc(env,amaj,amin,aver):
     vstr = _gcc_version_string(env)
     try:
@@ -217,7 +222,6 @@ def set_env_gnu(env):
     #env['LIBS'] += ' -lgcov'
     
     flags += ' -Wall'
-    flags += ' -Wformat-security'
     # the windows compiler finds this stuff so flag it on other platforms
     flags += ' -Wunused' 
     
@@ -248,9 +252,14 @@ def set_env_gnu(env):
     #if env.on_mac():
     #    flags += ' -fno-common'
 
-    if env['build_os'] == 'win':
+    if env['build_os'] == 'win' or _greater_than_gcc(env,4,9,0):
+        flags += ' -Wformat-security'
+        flags += ' -Wformat'
+    else:
         # gcc3.4.4 on windows has problems with %x for xed_int32_t.
-        flags += ' -Wno-format' 
+        # gcc4.9.2 works well.
+        flags += ' -Wno-format'
+        flags += ' -Wno-format-security'
 
     if env['compiler'] != 'icc':
         # c99 is required for c++ style comments.
@@ -264,9 +273,6 @@ def set_env_gnu(env):
             # -fvisibility=hidden only works on gcc>4. If not gcc,
             # assume it works. Really only a problem for older icc
             # compilers.
-            if env['compiler'] == 'gcc':
-                vstr = _gcc_version_string(env)
-                mbuild.msgb("GCC VERSION", vstr)
             if env['compiler'] != 'gcc' or _greater_than_gcc(env,4,0,0):
                 hidden = ' -fvisibility=hidden' 
                 env['LINKFLAGS'] += hidden
@@ -283,8 +289,10 @@ def set_env_gnu(env):
 
     env['CXXFLAGS'] += flags
 
+
 def set_env_clang(env):
    set_env_gnu(env)
+   env['CXXFLAGS'] += ' -Wno-unused-function'
         
 def set_env_ms(env):
     """Set up the MSVS environment for compilation"""
@@ -333,6 +341,7 @@ def set_env_ms(env):
     #flags += ' /Zm200'
     env['CCFLAGS'] += flags
     env['CXXFLAGS'] += cxxflags + " " + flags
+
 
 def intel_compiler_disables(env):
     """Return a comma separated string of compile warning number disables
@@ -406,15 +415,23 @@ def init_once(env):
 def init(env):
     # we make the python command contingent upon the mfile itself to catch
     # build changes.
+    
+    if 'init' in env and env['init']:
+        return
+    env['init']=True
+    
     env['mfile'] = env.src_dir_join('mfile.py')
     env['arch'] = get_arch(env)
     
     if env['compiler'] == 'gnu':
         set_env_gnu(env)
+        mbuild.msgb("GNU/GCC VERSION", _gcc_version_string(env))
     elif env['compiler'] == 'clang':
         set_env_clang(env)
+        mbuild.msgb("CLANG VERSION", _clang_version_string(env))
     elif env['compiler'] == 'ms':
         set_env_ms(env)
+        mbuild.msgb("MS VERSION", env['msvs_version'])
     elif env['compiler'] == 'icc':
         set_env_icc(env)
     elif env['compiler'] == 'icl':
@@ -526,8 +543,8 @@ def dump_lines(s,lines):
 
 
 def prep(env):
-    mbuild.msgb("PYTHON VERSION", "%d.%d.%d" %
-                (mbuild.get_python_version_tuple()))
+    mbuild.vmsgb(1, "PYTHON VERSION", "%d.%d.%d" %
+                 (mbuild.get_python_version_tuple()))
 
 
 ###########################################################################
@@ -542,20 +559,22 @@ def _use_elf_dwarf(env):
    env.add_define('XED_DWARF')
    env['LIBS'] += ' -ldwarf'
 
+
 def _add_elf_dwarf_precompiled(env):
    """Do not call this directly. See cond_add_elf_dwarf.  Set up to
    use our precompiled libelf/libdwarf. """
+   
+   env.add_include_dir('%(xedext_dir)s/external/include')
+   env.add_include_dir('%(xedext_dir)s/external/include/libelf')
 
-   # not using src_dir here because examples have different src_dir
-   env.add_include_dir('%(xed_dir)s/external/include')
-   env.add_include_dir('%(xed_dir)s/external/include/libelf')
-
-   env['extern_lib_dir']  = '%(xed_dir)s/external/lin/lib%(arch)s'
+   env.add_define('XED_PRECOMPILED_ELF_DWARF')
+   
+   env['extern_lib_dir']  = '%(xedext_dir)s/external/lin/lib%(arch)s'
 
    env['libdwarf'] = '%(extern_lib_dir)s/libdwarf.so'
    env['libelf']   = env.expand('%(extern_lib_dir)s/libelf.so.0.8.13')
    env['libelf_symlink'] = 'libelf.so.0'
-   env['libelf_license'] = env.expand('%(extern_lib_dir)s/EXTLICENSE.txt')
+   env['libelf_license'] = env.expand('%(xedext_dir)s/external/EXTLICENSE.txt')
    if env.on_freebsd():
       env['LINKFLAGS'] += " -Wl,-z,origin"
 
@@ -587,11 +606,11 @@ def cond_add_elf_dwarf(env):
    # set up the preprocessor define and linker requirements.
    _use_elf_dwarf(env)
 
-   if not env['use_elf_dwarf_precompiled']:
-      # presumably the user is supplying their own & setting rpaths, etc.
-      return
-   mbuild.msgb("ADDING ELF/DWARF PRECOMPILED")
-   _add_elf_dwarf_precompiled(env)
+   if env['use_elf_dwarf_precompiled']:
+      mbuild.msgb("ADDING ELF/DWARF PRECOMPILED")
+      _add_elf_dwarf_precompiled(env)
+   else:
+      env.add_include_dir('/usr/include/libdwarf')
 
 #    
 ###########################################################################

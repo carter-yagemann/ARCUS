@@ -1,6 +1,6 @@
-/*BEGIN_LEGAL 
+/* BEGIN_LEGAL 
 
-Copyright (c) 2019 Intel Corporation
+Copyright (c) 2021 Intel Corporation
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -51,6 +51,10 @@ typedef struct {
     
     /// lowercase hexadecimal
     xed_bool_t lowercase_hex;
+    
+    /// Show negative memory displacements as
+    /// positive numbers.
+    xed_bool_t positive_memory_displacements;
 
 } xed_format_options_t;
 

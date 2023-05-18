@@ -1,6 +1,6 @@
-/*BEGIN_LEGAL 
+/* BEGIN_LEGAL 
 
-Copyright (c) 2019 Intel Corporation
+Copyright (c) 2021 Intel Corporation
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -46,6 +46,7 @@ xed_decoded_inst_zero_keep_mode_from_operands(
     xed_operand_values_init_keep_mode(p, operands);
     p->_decoded_length = 0;
     p->_inst = 0;
+    p->u.user_data = 0;
 }
 
 XED_DLL_EXPORT void

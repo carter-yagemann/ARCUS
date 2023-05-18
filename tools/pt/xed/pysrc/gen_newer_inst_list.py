@@ -2,7 +2,7 @@
 # -*- python -*-
 #BEGIN_LEGAL
 #
-#Copyright (c) 2019 Intel Corporation
+#Copyright (c) 2020 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -40,10 +40,7 @@ def work(args):  # main function
     gen_setup.msge("READING XED DB")
     (chips, chip_db) = chipmodel.read_database(args.chip_filename)
 
-    xeddb = read_xed_db.xed_reader_t(args.state_bits_filename,
-                                     args.instructions_filename,
-                                     args.widths_filename,
-                                     args.element_types_filename)
+    xeddb = gen_setup.read_db(args)
 
     # base chip instr
     bi = chip_list(args.basechip, xeddb, chip_db)

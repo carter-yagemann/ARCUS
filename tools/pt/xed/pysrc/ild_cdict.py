@@ -1,6 +1,6 @@
 #BEGIN_LEGAL
 #
-#Copyright (c) 2019 Intel Corporation
+#Copyright (c) 2022 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -15,12 +15,14 @@
 #  limitations under the License.
 #  
 #END_LEGAL
+import math
+import copy
+import collections
+
 import genutil
 import ildutil
 import ild_info
-import collections
 import opnds
-import math
 import ild_phash
 import ild_codegen
 import ild_eosz
@@ -28,7 +30,6 @@ import ild_easz
 import ild_nt
 import actions_codegen
 import actions
-import copy
 import verbosity
 import tup2int
 import operand_storage
@@ -65,7 +66,7 @@ def _set_state_space_from_ii(agi, ii, state_space):
     for (name, binding) in list(ii.prebindings.items()):
 
         bitnum = len(binding.bit_info_list)
-        #dirty hack: we don't want big prebidnings to explode
+        #dirty hack: we don't want big prebindings to explode
         #our dictionaries
         #FIXME: this assumes that all constraints used for
         #pattern dispatching (all constraints explicitly mentioned
@@ -104,15 +105,16 @@ def _set_space_from_operands(agi, operands, state_space):
                 state_space[op.name][op_val] = True
 
 def get_all_constraints_state_space(agi):
-    """
-    Returns a 2D dictionary state_space:
+    """Returns a 2D dictionary state_space.
+
     state_space[OPNAME][OPVAL] == True if there is an operand with
     name OPNAME and value OPVAL.
-    In other words dictionary contains all legal values for
-    operands in grammar.
+
+    The dictionary contains all legal values for operands in grammar.
+
     Only operands that appear as operand deciders, prebindings, or
-    instruction operands are added to the returned dictionary.
-    """
+    instruction operands are added to the returned dictionary.    """
+    
     state_space = collections.defaultdict(dict)
     for g in agi.generator_list:
         for ii in g.parser_output.instructions:
@@ -131,7 +133,7 @@ def get_all_constraints_state_space(agi):
     # the ild relies on this operand so we add it manually
     if 'VEXVALID' not in state_space:
         state_space['VEXVALID'][0] = True 
-    else: # KNC/AVX/EVEX builds...
+    else: # AVX/EVEX builds...
         # 2014-10-10: when I got rid of the NTs for decoding the
         # VEX/EVEX/XOP prefixes, I ended up losing the only NTs that
         # mention ZEROING=1 and VLBAD (VL=3). So we add them here.
@@ -240,7 +242,6 @@ _rm_token_4 = 'RM4'
 def _is_binary_RM_4(cnames, ptrn_list):
     # ptrn_list is a list of ild.pattern_t.  Returns True if all
     # patterns have just RM=4 as a constraint.
-
     if _rm_token not in cnames:
         return False
     for ptrn in ptrn_list:
@@ -256,31 +257,24 @@ def _is_binary_RM_4(cnames, ptrn_list):
                 return False
         else: # some pattern does not have and RM constraint
             return False
-        
     # all have one constraint of RM=4.                
     return True
 
 def _replace_RM_with_RM4(cnames, ptrn_list):
+    # When we call this we know that all the patterns in the pattern
+    # list have RM=4 either from (a) RM[0b100] or (b) RM=4
+    # constraints.  The RM[0b100] is captured in prebindings (and the
+    # constraints, which is how we got here) and 3 raw 1, 0, 0 bits
+    # are present in the pattern.  This function does remove the RM
+    # from the cnames, but it doesn't really do anything to the
+    # ipattern.  So there is no need to search ipattern again
+    
     # ptrn_list is a list of ild.pattern_t
-    #
-    # This looks for RM=4 in the pattern. It will not find "RM[0b100]"
-    # so the patterns should NOT use that for specifying RM=4
-    # requirements.  
-    #
-    # FIXME:2016-01-29: MJC I have a concern that other instructions
-    # with RM[...] constraints might be being mishandled. Need to test.
     cnames.remove(_rm_token)
     cnames.add(_rm_token_4)
     for ptrn in ptrn_list:
-        found = False
-        for bt in ptrn.ii.ipattern.bits:
-            if bt.token == _rm_token:
-                if bt.test == 'eq':
-                    found = True
-                    ptrn.constraints[_rm_token_4] = {1:True}
-                    break
-        if not found:
-            ptrn.constraints[_rm_token_4] = {0:True, 1:True}
+        #print("B-ICLASS: {}".format(ptrn.ii.iclass))
+        ptrn.constraints[_rm_token_4] = {1:True}
 
 _mask_token = 'MASK'
 _mask_token_n0 = 'MASK_NOT0'
@@ -402,8 +396,8 @@ def _get_united_cdict(ptrn_list, state_space, vexvalid, all_ops_widths):
     @param state_space: all legal values for xed operands:
                         state_space['REXW'][1] = True,
                         state_space['REXW'][0]=True
-    @param vexvalid: VEXVALID value we want to filter by. vevxavlid==0
-                    will include only patterns with vexvalid==0 constraint
+    @param vexvalid: VEXVALID value we want to filter by. vevxavlid=='0'
+                    will include only patterns with vexvalid=='0' constraint
                     value.
     @param all_ops_widths: dict of operands to their bit widths. 
 
@@ -411,16 +405,20 @@ def _get_united_cdict(ptrn_list, state_space, vexvalid, all_ops_widths):
 
     This gets called with all the patterns for a specific map &
     opcode, but for all encoding spaces. So first we filter based on
-    encoding space (vexvalid).
-
-    """
+    encoding space (vexvalid).    """
     global mod3_repl, vd7_repl, rm4_repl, masknot0_repl, mask0_repl
     cnames = []
 
+    # FIXME: 2019-10-30: patterns now know their vexvalid value and
+    # encspace, and the maps are split by encspace as well, so we can
+    # avoid the following filtering by vexvalid.
+    
     #filter by encoding space (vexvalid)
     ptrns = []
+    ivv = int(vexvalid)
     for ptrn in ptrn_list:
-        if vexvalid in list(ptrn.special_constraints['VEXVALID'].keys()):
+        #FIXME: 2019-10-30: if vexvalid in list(ptrn.special_constraints['VEXVALID'].keys()):
+        if ivv == ptrn.vv:
             ptrns.append(ptrn)
 
     if len(ptrns) == 0:
@@ -550,10 +548,12 @@ class constraint_dict_t(object):
          
          #dict of all operands -> bit width.
          self.op_widths = {}
+
+         self.action_codegen = None
          
          #dict mapping tuples to rules. 
          #tuples are the constraint values (without the constraint names).
-         self.tuple2rule = {}
+         self.tuple2rule = {}  # ild.pattern_t
          if self.state_space:
              self.tuple2rule = self._initialize_tuple2rule(self.cnames, {})
 
@@ -575,7 +575,7 @@ class constraint_dict_t(object):
         
         res = constraint_dict_t(cnames=cnstr_names)
         for cdict in dict_list:
-            for key in list(cdict.tuple2rule.keys()):
+            for key in cdict.tuple2rule.keys():
                 if key in res.tuple2rule:  # keys are tuples of constraint values
                     msg = []
                     msg.append("key: %s" % (key,))
@@ -616,7 +616,7 @@ class constraint_dict_t(object):
             return self._initialize_tuple2rule(cnames[1:], tuple2rule)
 
         new_tuple2rule = {}
-        for key_tuple in list(tuple2rule.keys()):
+        for key_tuple in tuple2rule.keys():
             for val in vals:
                 new_key = key_tuple + (val,)
                 new_tuple2rule[new_key] = self.rule
@@ -674,8 +674,8 @@ class constraint_dict_t(object):
         
         ptrn_list = list(self.tuple2rule.values())
         if cname in list(_token_2_module.keys()):
-            nt_module = _token_2_module[cname]
-            getter_fn = nt_module.get_getter_fn(ptrn_list)
+            nt_module = _token_2_module[cname] # name of python module!
+            getter_fn = nt_module.get_getter_fn(ptrn_list) # indirect module refs!
             if not getter_fn: # -> error
                     msg = 'Failed to resolve %s getter fn for '
                     msg += 'MAP:%s OPCODE:%s'
@@ -698,20 +698,40 @@ class constraint_dict_t(object):
             rows.append('HUGE!')
         elif size >= 50:
             rows.append('BIG!')
-        legend = " ".join(self.cnames)
-        legend += ' \t-> VALUE'
+        legend = "{} -> VALUE".format(" ".join(self.cnames))
         rows.append(legend)
         if len(self.tuple2rule) == 0:
             rows.append("_ \t-> %s" % self.rule)
+
+        # print all the decision values first with iclass, if any
         for key in sorted(self.tuple2rule.keys()):
-            val = self.tuple2rule[key]
-            rows.append("%s \t-> %s" % (key, str(val)))
+            val = self.tuple2rule[key] # ild.pattern_t
+            s = []
+            for cname, tval in zip(self.cnames,key):
+                s.append("{}:{}".format(cname,tval))
+            iclass = 'n/a'
+            if hasattr(val,'iclass'):
+                iclass = val.iclass
+            rows.append("{} -> {}".format(", ".join(s), iclass))
+            
+        rows.append("\n\n")
+        
+        # now print them again with their detailed information
+        for key in sorted(self.tuple2rule.keys()):
+            val = self.tuple2rule[key]  # ild.pattern_t
+            s = []
+            for cname, tval in zip(self.cnames,key):
+                s.append("{}:{}".format(cname,tval))
+            rows.append("{} \t-> {}".format(", ".join(s), str(val)))
         return "\n".join(rows)
+    
 
 
-
-def get_constraints_lu_table(ptrns_by_map_opcode, is_amd, state_space,
-                              vexvalid, all_ops_widths):
+def get_constraints_lu_table(agi,
+                             ptrns_by_map_opcode,
+                             state_space,
+                             vexvalid,
+                             all_ops_widths):
     """
     returns a tuple (cdict_by_map_opcode,cnames)
     cnames is a set of all constraint names used in patterns.
@@ -721,7 +741,7 @@ def get_constraints_lu_table(ptrns_by_map_opcode, is_amd, state_space,
     bin. These cdict objects can later be used for generating hash functions
     from constraint values to patterns (inums).
     """
-    maps = ild_info.get_maps(is_amd)
+    maps = ild_info.get_maps(agi)
     cdict_by_map_opcode = collections.defaultdict(dict)
     cnames = set()
     for insn_map in maps:
@@ -735,11 +755,14 @@ def get_constraints_lu_table(ptrns_by_map_opcode, is_amd, state_space,
                 cnames = cnames.union(set(cdict.cnames))
     return cdict_by_map_opcode,cnames
 
-def gen_ph_fos(agi, cdict_by_map_opcode, is_amd, log_fn,
-               ptrn_dict, vv):
+def gen_ph_fos(agi,
+               cdict_by_map_opcode,
+               log_fn,
+               ptrn_dict,
+               vv):
     """
-    Returns a tuple (phash_lu_table, phash_fo_list, op_lu_list)
-    * phash_lu_table:  is a traditional 2D dict by map, opcode to a
+    Returns a tuple (phash_lu, phash_fo_list, op_lu_list)
+    * phash_lu:  is a traditional 2D dict by (map, opcode) to a
       hash function name.
     * phash_fo_list: is a list of all phash function objects created
       (we might have fos that are not in lookup table - when we have
@@ -748,7 +771,7 @@ def gen_ph_fos(agi, cdict_by_map_opcode, is_amd, log_fn,
 
     Also writes log file for debugging.
     """
-    maps = ild_info.get_maps(is_amd)
+    maps = ild_info.get_maps(agi)
     log_f = open(log_fn, 'w')
     cnames = set() # only for logging
     stats = {
@@ -766,7 +789,8 @@ def gen_ph_fos(agi, cdict_by_map_opcode, is_amd, log_fn,
     op_lu_map = {} # fn name -> fn obj
     phash_lu = {}  # map, opcode -> fn name
     for insn_map in maps:
-        phash_lu [insn_map] = {}
+        phash_lu[insn_map] = {}
+        zeros = 0
         for opcode in range(0, 256):
             opcode = hex(opcode)
             cdict = cdict_by_map_opcode[insn_map][opcode]
@@ -774,8 +798,8 @@ def gen_ph_fos(agi, cdict_by_map_opcode, is_amd, log_fn,
                 stats['0. #map-opcodes'] += 1
                 stats['1. #entries'] += len(cdict.tuple2rule)
                 cnames = cnames.union(set(cdict.cnames))
-                _log(log_f,'MAP:%s OPCODE:%s:\n%s\n' % (insn_map, opcode,
-                                                        cdict))
+                _log(log_f,'XYZ VV: {} MAP:{} OPCODE:{}:\n{}\n'.format(
+                    vv, insn_map, opcode, cdict))
 
                 phash = ild_phash.gen_hash(cdict)
                 if phash:
@@ -806,9 +830,13 @@ def gen_ph_fos(agi, cdict_by_map_opcode, is_amd, log_fn,
                     ildutil.ild_err(msg % (insn_map, opcode))
             else:
                 phash_lu[insn_map][opcode] = '(xed3_find_func_t)0'
+                zeros = zeros + 1
+        if zeros == 256: # all zero... shortcut to avoid scanning maps for "all-zeros"
+            _log(log_f, "ZEROING phash_lu for map {} vv {}\n".format(insn_map, vv))
+            phash_lu[insn_map] = None
     _log(log_f,"cnames: %s\n" %cnames)
     for key in sorted(stats.keys()):
         _log(log_f,"%s %s\n" % (key,stats[key]))
     log_f.close()
-    return phash_lu,lu_fo_list,list(op_lu_map.values())
+    return phash_lu, lu_fo_list, list(op_lu_map.values())
 

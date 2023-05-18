@@ -2,7 +2,7 @@
 # -*- python -*-
 #BEGIN_LEGAL
 #
-#Copyright (c) 2019 Intel Corporation
+#Copyright (c) 2023 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@ import genutil
 import opnd_types
 import opnds
 import cpuid_rdr
+import map_info_rdr
 
 def die(s):
     sys.stdout.write("ERROR: {0}\n".format(s))
@@ -37,7 +38,36 @@ def msgb(b,s=''):
 class inst_t(object):
     def __init__(self):
         pass
+    def __str__(self):
+        s = []
+        for fld in sorted(self.__dict__.keys()):
+            s.append("{}: {}".format(fld,getattr(self,fld)))
+        return "\n".join(s) + '\n'
 
+
+    def get_eosz_list(self):
+        if self.space == 'legacy':
+            if hasattr(self,'attributes'):
+                if 'BYTEOP' in self.attributes:
+                    return [8]
+            if hasattr(self,'eosz'):
+                if self.eosz == 'oszall':
+                    return [16,32,64]
+                if self.eosz == 'osznot16':
+                    return [32,64]
+                if self.eosz == 'osznot64':
+                    return [16,32]
+                if self.eosz == 'o16':
+                    return [16]
+                if self.eosz == 'o32':
+                    return [32]
+                if self.eosz == 'o64':
+                    return [64]
+                die("Could not handle eosz {}".format(self.eosz))
+            die("Did not find eosz for {}".format(self.iclass))
+        else: #  vex, evex, xop
+            return None
+            
 
 class width_info_t(object):
     def __init__(self, name, dtype, widths):
@@ -129,6 +159,8 @@ def _set_eosz(v):
                     eosz = 'o64'
                 elif v.rexw_prefix == '1':
                     eosz = 'o64'
+                elif 'FORCE64' in v.pattern:
+                    eosz = 'o64'
                 elif v.osz_required and 'IMMUNE66' not in v.pattern:
                     eosz = 'o16'
                 else:
@@ -151,13 +183,17 @@ class xed_reader_t(object):
                  instructions_filename,
                  widths_filename,
                  element_types_filename,
-                 cpuid_filename=''):
+                 cpuid_filename='',
+                 map_descriptions_filename=''):
 
         self.xtypes = self._gen_xtypes(element_types_filename) 
         self.width_type_dict, self.width_info_dict = self._gen_widths(widths_filename)
         
         self.state_bits = self._parse_state_bits(state_bits_filename)
         
+        self.map_info = []
+        if map_descriptions_filename:
+            self.map_info = map_info_rdr.read_file(map_descriptions_filename)
         
         self.deleted_unames = {}
         self.deleted_instructions = {}
@@ -168,13 +204,17 @@ class xed_reader_t(object):
         self._parse_operands()
         self._generate_operands()
         self._generate_memop_rw_field()
+        self._generate_missing_iforms()
         self._summarize_operands()
         self._summarize_vsib()
+        self._summarize_sibmem()
         
         self.cpuid_map = {}
         if cpuid_filename:
             self.cpuid_map = cpuid_rdr.read_file(cpuid_filename)
             self._add_cpuid()
+            
+            
         self._add_vl()
         self._add_broadcasting()
         self._evex_disp8_scaling()
@@ -266,10 +306,7 @@ class xed_reader_t(object):
             elif op.name in ['IMM0','IMM1']:
                 s = 'IMM'
             elif op.type == 'nt_lookup_fn':
-                s = op.lookupfn_name
-                s = re.sub(r'[()]*','',s)
-                s = re.sub(r'_[RBN].*','',s)
-                s = re.sub(r'FINAL_.*','',s)
+                s = op.lookupfn_name_base
             elif op.type == 'reg':
                 s = op.bits
                 s = re.sub(r'XED_REG_','',s)
@@ -278,7 +315,7 @@ class xed_reader_t(object):
                     continue
                 s = op.name
             else:
-                msgb("UNHANDLED","{}".format(op))
+                msbg("UNHANDLED","{}".format(op))
                 
             if s:
                 if op.visibility in ['IMPLICIT','SUPPRESSED']:
@@ -287,8 +324,6 @@ class xed_reader_t(object):
                     expl_operand_list.append(s)
 
         return expl_operand_list, impl_operand_list
-        
-
     
     def _generate_operands(self):
         for v in self.recs:
@@ -300,6 +335,59 @@ class xed_reader_t(object):
                 v.explicit_operands = ['none']
             if not v.implicit_operands:
                 v.implicit_operands = ['none']
+
+    def _generate_one_iform(self,v):
+        # This must match the logic from generator.py's compute_iform()
+        tokens = []
+        for op in v.parsed_operands:
+            if op.visibility in ['IMPLICIT', 'EXPLICIT', 'DEFAULT']:
+                s = None
+                if op.name in ['MEM0','MEM1']:
+                    s = 'MEM'
+                    if op.oc2:
+                        s += op.oc2
+                elif op.name in ['IMM0','IMM1']:
+                    s = 'IMM'
+                    if op.oc2:
+                        s += op.oc2
+                    
+                elif op.type == 'nt_lookup_fn':
+                    #msgb("NTLUF: {}".format(op.lookupfn_name))
+                    s = op.lookupfn_name_base
+                    if op.oc2 and s not in ['X87']:
+                        if op.oc2 == 'v' and s[-1] == 'v': 
+                            pass # avoid duplicate v's
+                        else:
+                            s += op.oc2
+                            
+                elif op.type == 'reg':
+                    s = op.bits.upper()
+                    #msgb("REG: {}".format(s))
+                    s = re.sub(r'XED_REG_','',s)
+                    if op.oc2 and op.oc2 not in ['f80']:
+                        s += op.oc2
+                                
+                elif op.type == 'imm_const':
+                    if op.name in ['BCAST','SCALE']:
+                        continue
+                    s = op.name
+                    if op.oc2:
+                        s += op.oc2
+                else:
+                    msgb("IFORM SKIPPING ","{} for {}".format(op, v.iclass))
+                if s:
+                    tokens.append(s)
+                    
+        iform = v.iclass
+        if tokens:
+            iform += '_' + "_".join(tokens)
+        return iform
+
+        
+    def _generate_missing_iforms(self):
+        for v in self.recs:
+            if v.iform == '' or  not hasattr(v,'iform'):
+                v.iform = self._generate_one_iform(v)
                 
     def _generate_memop_rw_field(self):
         for v in self.recs:
@@ -323,7 +411,7 @@ class xed_reader_t(object):
 
 
     def _evex_disp8_scaling(self):
-        disp8_pattern  = re.compile(r'DISP8_(?P<tupletype>[A-Z0-9]+)')
+        disp8_pattern  = re.compile(r'DISP8_(?P<tupletype>[A-Z0-9_]+)')
         esize_pattern  = re.compile(r'ESIZE_(?P<esize>[0-9]+)_BITS')
         for v in self.recs:
             v.avx512_tuple = None
@@ -332,25 +420,26 @@ class xed_reader_t(object):
                 t = disp8_pattern.search(v.attributes)
                 if t:
                     v.avx512_tuple = t.group('tupletype')
-                    e = esize_pattern.search(v.pattern)
-                    if e:
-                        v.element_size = int(e.group('esize'))
-                    else:
-                        die("Need an element size")
-                    v.memop_width_code = _get_mempop_width_code(v)
-                    
-                    # if the oc2=vv), we get two widths depend on
-                    # broadcasting. Either the width is (a) vl(full),
-                    # vl/2(half), vl/4 (quarter) OR (b) the element
-                    # size for broadcasting.
-                    if v.memop_width_code == 'vv':
-                        divisor = { 'FULL':1, 'HALF':2,'QUARTER':4}
-                        # we might override this value if using broadcasting
-                        v.memop_width = int(v.vl) // divisor[v.avx512_tuple]
-                    else:
-                        wi = self.width_info_dict[v.memop_width_code]
-                        # we can use any width for these since they are not OSZ scalable.
-                        v.memop_width = int(wi.widths[32])
+                    if v.avx512_tuple != 'NO_SCALE':
+                        e = esize_pattern.search(v.pattern)
+                        if e:
+                            v.element_size = int(e.group('esize'))
+                        else:
+                            die("Need an element size")
+                        v.memop_width_code = _get_mempop_width_code(v)
+
+                        # if the oc2=vv), we get two widths depend on
+                        # broadcasting. Either the width is (a) vl(full),
+                        # vl/2(half), vl/4 (quarter) OR (b) the element
+                        # size for broadcasting.
+                        if v.memop_width_code == 'vv':
+                            divisor = { 'FULL':1, 'HALF':2,'QUARTER':4}
+                            # we might override this value if using broadcasting
+                            v.memop_width = int(v.vl) // divisor[v.avx512_tuple]
+                        else:
+                            wi = self.width_info_dict[v.memop_width_code]
+                            # we can use any width for these since they are not OSZ scalable.
+                            v.memop_width = int(wi.widths[32])
     
     def _add_vl(self):
         def _get_vl(iclass,space,pattern):
@@ -388,6 +477,7 @@ class xed_reader_t(object):
             v.has_imm8 = False
             v.has_immz = False #  16/32b imm. (32b in 64b EOSZ)
             v.has_imm8_2 = False
+            v.has_imm32 = False
             v.imm_sz = '0'
             for op in v.parsed_operands:
                 if _op_imm8(op):
@@ -399,6 +489,7 @@ class xed_reader_t(object):
                 elif _op_immv(op):
                     v.imm_sz = 'v'                    
                 elif _op_immd(op):
+                    v.has_imm32 = True
                     v.imm_sz = '4'
                 elif _op_immw(op):
                     v.imm_sz = '2'
@@ -420,6 +511,13 @@ class xed_reader_t(object):
             elif 'VMODRM_YMM()' in v.pattern:
                 v.avx_vsib = 'ymm'
 
+    def _summarize_sibmem(self):
+        for v in self.recs:
+            v.sibmem = False
+            for op in v.parsed_operands:
+                if op.name == 'MEM0' and op.oc2 == 'ptr':
+                    v.sibmem=True
+                    break
 
     def _parse_operands(self):
         '''set v.parsed_operands with list of operand_info_t objects (see opnds.py).'''
@@ -441,11 +539,34 @@ class xed_reader_t(object):
                 v.real_opcode='Y'
 
 
+    def _find_legacy_map_opcode(self, pattern):
+        """return (map, opcode:str). map is either an integer or the string AMD for 3dNow"""
+        opcode, mapno = pattern[0], 0 # assume legacy map 0 behavior
+        # records are ordered so that shortest legacy map is last
+        # otherwise this won't work.
+        for mi in self.map_info:
+            if mi.is_legacy():
+                if pattern[0] == mi.legacy_escape:
+                    if mi.legacy_opcode == 'N/A':
+                        mapno = int(mi.map_id)
+                        opcode = pattern[mi.opcpos]
+                        break
+                    elif mi.legacy_opcode == pattern[1]:
+                        if mi.map_name == 'amd-3dnow':
+                            mapno = 'AMD3DNOW'
+                        #elif mi.map_id == 'AMD3DNOW':
+                        #    mapno = mi.map_id
+                        else:
+                            mapno = int(mi.map_id)
+                        opcode = pattern[mi.opcpos] 
+                        break
+        
+        return mapno,opcode
                 
     def _find_opcodes(self):
         '''augment the records with information found by parsing the pattern'''
 
-        map_pattern = re.compile(r'MAP=(?P<map>[0-6])')
+        map_pattern = re.compile(r'MAP=(?P<map>[0-9]+)')
         vex_prefix  = re.compile(r'VEX_PREFIX=(?P<prefix>[0-9])')
         rep_prefix  = re.compile(r'REP=(?P<prefix>[0-3])')
         osz_prefix  = re.compile(r' OSZ=(?P<prefix>[01])')
@@ -474,33 +595,21 @@ class xed_reader_t(object):
             p0 = pattern[0]
             v.map = 0
             v.space = 'legacy'
-            if p0 in  ['0x0F']:
-                if pattern[1] == '0x38':
-                    v.map = 2
-                    opcode = pattern[2]
-                elif pattern[1] == '0x3A':
-                    v.map = 3
-                    opcode = pattern[2]
-                else:
-                    v.map = 1
-                    opcode = pattern[1]
-            elif p0 == 'VEXVALID=1':
+            if p0 == 'VEXVALID=1':
                 v.space = 'vex'
                 opcode = pattern[1]
             elif p0 == 'VEXVALID=2':
                 v.space = 'evex'
                 opcode = pattern[1]
-            elif p0 == 'VEXVALID=4': #KNC
-                v.space = 'evex.u0'
-                opcode = pattern[1]
             elif p0 == 'VEXVALID=3':
                 v.space = 'xop'
                 opcode = pattern[1]
-            else:
-                opcode = p0
+            else: # legacy maps and AMD 3dNow (if enabled)
+                v.map, opcode = self._find_legacy_map_opcode(pattern)
+
             v.opcode = opcode
             v.partial_opcode = False
-
+            
             v.amd_3dnow_opcode = None
             # conditional test avoids prefetches and FEMMS.
             if v.extension == '3DNOW' and v.category == '3DNOW':
@@ -600,6 +709,7 @@ class xed_reader_t(object):
                 easz = 'a32'
             elif 'EASZ=3' in v.pattern:
                 easz =  'a64'
+                v.mode_restriction = 2
             elif 'EASZ!=1' in v.pattern:
                 easz = 'asznot16'
             v.easz = easz
@@ -805,18 +915,20 @@ class xed_reader_t(object):
                 value = value.strip()
                 if value.startswith(':'):
                     die("Double colon error {}".format(line))
+                if key == 'PATTERN':
+                    # Since some patterns/operand sequences have
+                    # iforms and others do not, we can avoid tripping
+                    # ourselves up by always adding an iform when we
+                    # see the PATTERN token. And if do we see an IFORM
+                    # token, we can replace the last one in the list.
+                    d['IFORM'].append('')
                 if key == 'IFORM':
-                    # fill in missing iforms with empty strings
-                    x = len(d['PATTERN']) - 1
-                    y = len(d['IFORM'])
-                    # if we have more patterns than iforms, add some
-                    # blank iforms
-                    while y < x:
-                        d['IFORM'].append('')
-                        y = y + 1
-
-                d[key].append(value)
-
+                    # Replace the last one in the list which was added
+                    # when we encountered the PATTERN token.
+                    d[key][-1] = value
+                else:
+                    # for normal tokens we just append them
+                    d[key].append(value)
             else:
                 die("Unexpected: [{0}]".format(line))
         sys.stderr.write("\n")

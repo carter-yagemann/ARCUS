@@ -1,6 +1,6 @@
-/*BEGIN_LEGAL 
+/* BEGIN_LEGAL 
 
-Copyright (c) 2019 Intel Corporation
+Copyright (c) 2020 Intel Corporation
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ END_LEGAL */
 
 
 #include "xed-ild.h"
+#include "xed-ild-enum.h"
 #include "xed3-phash.h"
 
 /* returns the index for xed_inst_table */

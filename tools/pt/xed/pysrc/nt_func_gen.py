@@ -2,7 +2,7 @@
 # -*- python -*-
 #BEGIN_LEGAL
 #
-#Copyright (c) 2019 Intel Corporation
+#Copyright (c) 2020 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -11,35 +11,38 @@
 #      http://www.apache.org/licenses/LICENSE-2.0
 #
 #  Unless required by applicable law or agreed to in writing, software
-#  distrtibuted under the License is distributed on an "AS IS" BASIS,
+#  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #  
 #END_LEGAL
 
-import refine_regs
-import genutil
+# encoder generator support
+
 import os
 import copy
+
+import refine_regs
+import genutil
 import constraint_vec_gen
 import func_gen
 import actions
-
 
 _xed_reg_invalid = 'XED_REG_INVALID'
 # those operand are very wide but the real values they may have are few
 # specifying here the valid values for the operands and the number bits
 # needed to represent each one  
-_valid_width = {'BRDISP_WIDTH':[8, 16, 32],
-                'DISP_WIDTH':[0, 8, 16, 32, 64],
-                'IMM_WIDTH':[8, 16, 32, 64],
+_valid_width = {'BRDISP_WIDTH' :[8, 16, 32],
+                'DISP_WIDTH'   :[0, 8, 16, 32, 64],
+                'IMM_WIDTH'    :[8, 16, 32, 64],
                 }
-_width_bits = {'BRDISP_WIDTH':6,
-                'DISP_WIDTH':7,
-                'IMM_WIDTH':7,
+_width_bits = {'BRDISP_WIDTH' :6,
+                'DISP_WIDTH'  :7,
+                'IMM_WIDTH'   :7,
                }
 
+#FIXME:2020-04-18 (not used, see below variable references)
 _vexpfx_vals = [0xc4, 0xc5, 0x62]
 _vexpfx_bits = 8
 
@@ -330,6 +333,7 @@ class nt_function_gen_t(object):
                         #this field is in use by the encoder
                         continue    
                 elif 'VEXPFX_OP' == field:
+                    # FIXME: 2020-04-18 NOT USED -- remove...
                     op_space[field] = _vexpfx_vals
                     op_width[field] = _vexpfx_bits
                 elif field in ['DISP','BRDISP','UIMM0']:

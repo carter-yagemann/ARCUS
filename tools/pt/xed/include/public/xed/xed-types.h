@@ -1,6 +1,6 @@
-/*BEGIN_LEGAL 
+/* BEGIN_LEGAL 
 
-Copyright (c) 2019 Intel Corporation
+Copyright (c) 2022 Intel Corporation
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -26,7 +26,7 @@ END_LEGAL */
 
 #include "xed-common-hdrs.h"
 
-#if defined(__GNUC__) || defined(__ICC)
+#if defined(__GNUC__) || defined(__ICC) || defined(__clang__)
 #  include <stdint.h>
 #  define xed_uint8_t   uint8_t 
 #  define xed_uint16_t  uint16_t

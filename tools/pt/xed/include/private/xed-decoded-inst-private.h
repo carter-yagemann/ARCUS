@@ -1,6 +1,6 @@
-/*BEGIN_LEGAL 
+/* BEGIN_LEGAL 
 
-Copyright (c) 2019 Intel Corporation
+Copyright (c) 2022 Intel Corporation
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -73,5 +73,42 @@ xed_phash_invalid_const(const xed_decoded_inst_t* d) {
     (void) d; 
 }
 
+static XED_INLINE void xed_ild_set_has_modrm(xed_decoded_inst_t* d, xed_uint8_t v) {
+    d->u.ild_data.s.has_modrm = v;
+}
+static XED_INLINE xed_uint8_t xed_ild_get_has_modrm(xed_decoded_inst_t const* d) {
+    return d->u.ild_data.s.has_modrm;
+}
+
+static XED_INLINE void xed_ild_set_has_disp(xed_decoded_inst_t* d, xed_uint8_t v) {
+    d->u.ild_data.s.has_disp = v;
+}
+static XED_INLINE xed_uint8_t xed_ild_get_has_disp(xed_decoded_inst_t const* d) {
+    return d->u.ild_data.s.has_disp;
+}
+
+static XED_INLINE void xed_ild_set_has_imm(xed_decoded_inst_t* d, xed_uint8_t v) {
+    d->u.ild_data.s.has_imm = v;
+}
+static XED_INLINE xed_uint8_t xed_ild_get_has_imm(xed_decoded_inst_t const* d) {
+    return d->u.ild_data.s.has_imm;
+}
+
+
+/*
+VEX_PREFIX operand to PP encoding conversion:
+VNP -> VEX_PREFIX=0 -> PP=0
+V66 -> VEX_PREFIX=1 -> PP=1
+VF2 -> VEX_PREFIX=2 -> PP=3
+VF3 -> VEX_PREFIX=3 -> PP=2
+
+VEX_PREFIX use 2 as F2 and 3 as F3 so table is required
+We only need to swap index 2 and 3 - one table is enough
+*/
+static const xed_uint8_t vex_prefix_recoding[] = { 0,1,3,2 };
+
+static XED_INLINE void xed_ild_set_pp_vex_prefix(xed_decoded_inst_t* d, xed_bits_t pp) {
+    xed3_operand_set_vex_prefix(d, vex_prefix_recoding[pp]);
+}
 
 #endif

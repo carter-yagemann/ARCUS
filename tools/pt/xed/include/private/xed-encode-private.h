@@ -1,6 +1,6 @@
-/*BEGIN_LEGAL 
+/* BEGIN_LEGAL 
 
-Copyright (c) 2019 Intel Corporation
+Copyright (c) 2023 Intel Corporation
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -115,8 +115,6 @@ xed_encoder_get_encoder_iform(const xed_encoder_request_t* r){
     return xed_encode_iform_db + iform_index;
 }
 
-void
-xed_encoder_request_emit_legacy_map(xed_encoder_request_t* q);
 
 void
 xed_encoder_request_emit_bytes(xed_encoder_request_t* q,
@@ -149,11 +147,7 @@ xed_encoder_get_nominal_opcode(const xed_encoder_request_t* p){
     const xed_encoder_iform_t* enc_iform =  xed_encoder_get_encoder_iform(p);
     return enc_iform->_nom_opcode;
 }
-static XED_INLINE xed_uint8_t
-xed_encoder_get_map(const xed_encoder_request_t* p){
-    const xed_encoder_iform_t* enc_iform =  xed_encoder_get_encoder_iform(p);
-    return enc_iform->_legacy_map;
-}
+
 
 static XED_INLINE xed_uint16_t
 xed_encoder_get_fb_values_index(const xed_encoder_request_t* p){
@@ -178,7 +172,10 @@ xed_encoder_get_group_encoding_function(xed_iclass_enum_t iclass){
 static XED_INLINE xed_uint8_t
 xed_encoder_get_iclasses_index_in_group(const xed_encoder_request_t* p){
     xed_iclass_enum_t iclass = xed_encoder_request_get_iclass(p);
-    return xed_enc_iclass2index_in_group[iclass];
+    if (iclass < XED_ICLASS_LAST)
+        return xed_enc_iclass2index_in_group[iclass];
+    xed_assert(iclass < XED_ICLASS_LAST);
+    return 0;
 }
 
 

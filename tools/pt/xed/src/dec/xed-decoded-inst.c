@@ -1,6 +1,6 @@
-/*BEGIN_LEGAL 
+/* BEGIN_LEGAL 
 
-Copyright (c) 2019 Intel Corporation
+Copyright (c) 2023 Intel Corporation
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -39,6 +39,7 @@ xed_reg_enum_t xed_decoded_inst_get_reg(const xed_decoded_inst_t* p,
       case XED_OPERAND_REG6:  return xed3_operand_get_reg6(p);
       case XED_OPERAND_REG7:  return xed3_operand_get_reg7(p);
       case XED_OPERAND_REG8:  return xed3_operand_get_reg8(p);
+      case XED_OPERAND_REG9:  return xed3_operand_get_reg9(p);
       case XED_OPERAND_BASE0: return xed3_operand_get_base0(p);
       case XED_OPERAND_BASE1: return xed3_operand_get_base1(p);
       case XED_OPERAND_SEG0:  return xed3_operand_get_seg0(p);
@@ -368,6 +369,7 @@ xed_decoded_inst_get_find_memop(const xed_decoded_inst_t* p,
         const xed_operand_t* o = xed_inst_operand(inst,i);
         const xed_operand_enum_t op_name = xed_operand_name(o);
         if ((memop_idx == 0 && op_name == XED_OPERAND_MEM0) ||
+            (memop_idx == 0 && op_name == XED_OPERAND_AGEN) ||
             (memop_idx == 1 && op_name == XED_OPERAND_MEM1))   {
             return i;
         }
@@ -491,7 +493,10 @@ xed_decoded_inst_operand_length_bits_register(
     mode = xed_decoded_inst_get_machine_mode_bits(p);
     if (mode == 64) 
         idx = 1;
-    return xed_reg_width_bits[r][idx];
+    if (r < XED_REG_LAST) 
+        return xed_reg_width_bits[r][idx];
+    xed_assert(r < XED_REG_LAST);
+    return 0;
 }
 
 
@@ -614,10 +619,6 @@ xed_decoded_inst_operand_element_size_bits(
     else if (xed_operand_template_is_register(o)) {
         return xed_decoded_inst_operand_length_bits_register(p, operand_index);
     }
-    else { 
-        // catch all
-        xed_assert(0);
-    }
     return element_size;
 }
 
@@ -647,11 +648,6 @@ xed_decoded_inst_operand_element_type(const xed_decoded_inst_t* p,
            type codes. It is not 100% accurate */
         if (dtype == XED_OPERAND_ELEMENT_TYPE_INVALID) 
             return XED_OPERAND_ELEMENT_TYPE_INT;
-#if defined(XED_SUPPORTS_KNC)
-        else if (dtype == XED_OPERAND_ELEMENT_TYPE_VARIABLE) 
-            dtype = XED_STATIC_CAST(xed_operand_element_type_enum_t,
-                                    xed3_operand_get_type(p));
-#endif
     }
     return dtype;
 }
@@ -879,18 +875,18 @@ xed_decoded_inst_get_nprefixes(const xed_decoded_inst_t* p) {
 }
 
 xed_bool_t xed_decoded_inst_masking(const xed_decoded_inst_t* p) {
-#if defined(XED_SUPPORTS_AVX512) || defined(XED_SUPPORTS_KNC)
+#if defined(XED_SUPPORTS_AVX512)
     if (xed3_operand_get_mask(p) != 0)
         return 1;
 #endif
     return 0;
     (void)p; //pacify compiler
 }
+
 xed_bool_t xed_decoded_inst_merging(const xed_decoded_inst_t* p) {
-#if defined(XED_SUPPORTS_AVX512) || defined(XED_SUPPORTS_KNC)
+#if defined(XED_SUPPORTS_AVX512)
     if (xed3_operand_get_mask(p) != 0)
     {
-#   if defined(XED_SUPPORTS_AVX512)
         const xed_inst_t* xi = xed_decoded_inst_inst(p);
         const xed_operand_t* op = xed_inst_operand(xi,0); // 0'th operand.
         if (xed_operand_width(op) == XED_OPERAND_WIDTH_MSKW) // mask dest -> always zeroing
@@ -899,9 +895,6 @@ xed_bool_t xed_decoded_inst_merging(const xed_decoded_inst_t* p) {
         if (xed3_operand_get_zeroing(p) == 0)
             if (!xed_decoded_inst_get_attribute(p, XED_ATTRIBUTE_MASK_AS_CONTROL))            
                 return 1;
-#   elif defined(XED_SUPPORTS_KNC)
-        return 1;
-#   endif
     }
 #endif
     return 0;
@@ -915,6 +908,32 @@ xed_bool_t xed_decoded_inst_zeroing(const xed_decoded_inst_t* p) {
 #endif
     return 0;
     (void)p; //pacify compiler
+}
+
+xed_uint_t xed_decoded_inst_avx512_dest_elements(const xed_decoded_inst_t* p) {
+#if defined(XED_SUPPORTS_AVX512)
+    if (xed_decoded_inst_get_attribute(p, XED_ATTRIBUTE_SIMD_SCALAR))
+        return 1;
+    if (xed_decoded_inst_get_attribute(p, XED_ATTRIBUTE_MASKOP_EVEX)) {
+        const xed_inst_t* xi = xed_decoded_inst_inst(p);
+        const xed_operand_t* op = xed_inst_operand(xi,0); // 0'th operand.
+        if (xed_operand_width(op) == XED_OPERAND_WIDTH_MSKW) {
+            // need to use source vector or memop to find width (VFPCLASS, VCMP{PS,PD}
+            xed_uint_t vl_bits = xed_decoded_inst_vector_length_bits(p);
+            xed_uint_t source_operand_element_bits = xed_decoded_inst_operand_element_size_bits(p,2); // a bit of a hack
+            if (source_operand_element_bits)
+                return vl_bits / source_operand_element_bits;
+            return 0;
+        }
+        xed_uint_t vl_dest_bits = xed_decoded_inst_operand_length_bits(p,0);
+        xed_uint_t dest_element_bits = xed_decoded_inst_operand_element_size_bits(p,0);
+        if (dest_element_bits)
+            return vl_dest_bits / dest_element_bits;
+    }
+#else
+    (void)p; // satisfy compiler
+#endif
+    return 0;
 }
 
 xed_operand_action_enum_t

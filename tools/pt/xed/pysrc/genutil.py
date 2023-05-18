@@ -1,9 +1,8 @@
 #-*- python -*-
-# Mark Charney <mark.charney@intel.com>
 # Generic utilities
 #BEGIN_LEGAL
 #
-#Copyright (c) 2019 Intel Corporation
+#Copyright (c) 2022 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -259,7 +258,7 @@ def round_up_power_of_two(x):
 
 
 
-make_numeric_decimal_pattern = re.compile(r'^[0-9]+$')
+make_numeric_decimal_pattern = re.compile(r'^[-]?[0-9]+$')
 make_numeric_hex_pattern = re.compile(r'^0[xX][0-9A-Fa-f]+$')
 make_numeric_binary_pattern = re.compile(r'^0b[01_]+$') 
 
@@ -286,6 +285,11 @@ def make_binary(bits):
         return ''.join(d)
     bits = re.sub('_','',bits)
     return bits
+
+def is_hex(s):
+    if make_numeric_hex_pattern.match(s):
+        return True
+    return False
 
 def numeric(s):
     if make_numeric_decimal_pattern.match(s):

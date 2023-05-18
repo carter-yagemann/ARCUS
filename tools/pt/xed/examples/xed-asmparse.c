@@ -1,6 +1,6 @@
-/*BEGIN_LEGAL 
+/* BEGIN_LEGAL 
 
-Copyright (c) 2019 Intel Corporation
+Copyright (c) 2022 Intel Corporation
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -118,7 +118,7 @@ static void delete_slist_t(slist_t* s) {
     }
 }
 
-static slist_t* get_slist_node() {
+static slist_t* get_slist_node(void) {
     slist_t* node = (slist_t*)malloc(sizeof(slist_t));
     assert(node != 0);
     node->s = 0;
@@ -178,7 +178,7 @@ void asp_delete_xed_enc_line_parsed_t(xed_enc_line_parsed_t* v) {
     free(v);
 }
 
-static opnd_list_t* get_opnd_list_node() {
+static opnd_list_t* get_opnd_list_node(void) {
     opnd_list_t* p  = (opnd_list_t*)malloc(sizeof(opnd_list_t));
     assert(p != 0);
     memset(p, 0, sizeof(opnd_list_t));
@@ -829,12 +829,16 @@ static void parse_memref(char* s, opnd_list_t* onode)
         else if (stmp[i] == ':') { // can only end segment
             tbuf[p++]=0;
             p=0;
+            if (r.seg)
+                free(r.seg);
             r.seg = asp_strdup(tbuf);
         }
         else if (stmp[i] == '*') { // can end index
             tbuf[p++]=0;
             p=0;
             last_star=1;
+            if (r.index)
+                free(r.index);
             r.index=asp_strdup(tbuf);
             continue;  // skip loop bottom
         }

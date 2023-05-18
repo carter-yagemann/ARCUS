@@ -13,9 +13,9 @@ from distutils.core import setup
 setup(name='mbuild',
       version='0.2496',
       url='https://github.com/intelxed/mbuild',
-      description = "mbuild: python based build system",
-      author = 'Mark Charney',
-      author_email = 'Mark.Charney@intel.com',
-      packages = [ 'mbuild']
+      description='mbuild: python based build system',
+      author='XED Team',
+      author_email='xed.team@intel.com',
+      packages=['mbuild']
       )
 

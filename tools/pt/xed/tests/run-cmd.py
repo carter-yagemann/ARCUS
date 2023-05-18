@@ -2,7 +2,7 @@
 #-*- python -*-
 #BEGIN_LEGAL
 #
-#Copyright (c) 2018 Intel Corporation
+#Copyright (c) 2023 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -51,11 +51,9 @@ import mbuild
 
 def write_file(fn,lines):
     print("[EMIT] %s" % (fn))
-    # write the file in binary mode to prevent LF -> CR LF expansion on Windows
-    f = open(fn,"wb")
-    if lines:
-        for line in lines:
-            f.write(line.replace('\r', '')) # gobble CR symbols if any
+    f = open(fn, 'w')
+    for line in lines:
+        f.write(line)
     f.close()
 
 
@@ -73,7 +71,8 @@ def create_reference(env, test_dir, codes_and_cmd, make_new=True):
 
     # abspath required for windoze
     build_dir = mbuild.posix_slashes(os.path.abspath(env['build_dir']))
-    cmd2 = re.sub('BUILDDIR',build_dir,cmd)
+    cmd2 = re.sub('BUILDDIR',build_dir,cmd).strip()
+    cmd2 = re.sub('TESTDIR', test_dir ,cmd2)
     print(cmd2)
 
     (retcode, stdout,stderr) = mbuild.run_command(cmd2,separate_stderr=True)
@@ -118,6 +117,12 @@ def compare_file(reference, this_test):
         if ref.strip() != test.strip():
             if ref.find("XED version") != -1:  # skip the version lines
                 continue
+            if ref.find(" cycles") != -1:     # skip the cycle stats
+                continue
+            if ref.startswith("iform-enum-name-dispatch"):  # skip
+                continue
+            if ref.startswith("iclass-max-iform-dispatch"): # skip
+                continue
             mbuild.msgb("DIFFERENT", "\n\tref  [%s]\n\ttest [%s]" % (ref, test))
             return False
     return True
@@ -155,6 +160,7 @@ def one_test(env,test_dir):
     # abspath required for windoze
     build_dir = mbuild.posix_slashes(os.path.abspath(env['build_dir']))
     cmd2 = re.sub('BUILDDIR',build_dir,cmd)
+    cmd2 = re.sub('TESTDIR', test_dir ,cmd2)
     cmd2 = cmd2.strip()
     print(cmd2)
 
@@ -184,9 +190,14 @@ def one_test(env,test_dir):
 
 def find_tests(env):
     test_dirs = []
+    test_pattern = "test-[0-9][0-9]*"
     for d in env['tests']:
-        test_dirs.extend(mbuild.glob(mbuild.join(d,"test-[0-9][0-9]*")))
-    return  test_dirs
+        tests = mbuild.glob(mbuild.join(d, test_pattern))
+        if not tests:
+            mbuild.die(f"Couldn't find tests in: {d}.\n" \
+                       f"Expected tests directory pattern: '{test_pattern}'")
+        test_dirs.extend(tests)
+    return test_dirs
 
 def rebase_tests(env):
     test_dirs = find_tests(env)
@@ -263,7 +274,7 @@ def work():
                           action="append",
                           default=[], 
                           help="Codes for test subsetting (DEC, ENC, AVX, " 
-                             + "AVX512X, AVX512PF, XOP, VIA, KNC)." 
+                             + "AVX512X, AVX512PF, XOP, VIA)." 
                              + " Only used for running tests, not creating them.")
     env.parse_args()
 

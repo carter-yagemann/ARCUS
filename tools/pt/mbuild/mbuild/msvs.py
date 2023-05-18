@@ -1,7 +1,7 @@
 # -*- python -*-
 #BEGIN_LEGAL
 #
-#Copyright (c) 2019 Intel Corporation
+#Copyright (c) 2022 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -690,6 +690,186 @@ def set_msvc_compilers(env,msvc_tools_root):
     env['msvc_compilers']['x86-64']['ia32'] = x64_to_x86
     env['msvc_compilers']['x86-64']['x86-64'] = x64_to_x64
 
+def _set_msvs_dev17(env, x64_host, x64_target, regv=None): # msvs 2022
+    versions = ['Enterprise', 'Professional', 'Community']
+    
+    progfi = 'C:/Program Files (x86)'
+    if regv:
+        prefix = regv
+    else:
+        prefix = 'C:/Program Files/Microsoft Visual Studio/2022'
+
+    if x64_target:
+        tgt = 'x64'
+    else:
+        tgt = 'x86'
+
+    found = False
+    for v in versions:
+        p = _ijoin(prefix,v)
+        if os.path.exists(p):
+            found = True
+            break
+    if not found:
+        die('Could not find MSVS 2022 directory')
+    vprefix = p
+    winkit10 = progfi + '/Windows Kits/10'    
+    winkit10version, winkit10complete = _get_winkit10_version(env,winkit10)
+    #msgb('WINKIT10 VERSION', winkit10version)
+    if winkit10complete == False:
+        die('need a complete winkit10 for MSVS 2022 (dev 17)')
+    env['rc_winkit'] = winkit10
+    env['rc_winkit_number'] = winkit10version
+
+    msvc_tools_root, msvc_ver = msvc_dir_from_vc_dir(vprefix + '/VC')
+    
+    netfx_sdk = progfi + '/Windows Kits/NETFXSDK/4.8/'
+    
+    path = []
+    lib = []
+    libpath = []
+    inc  = []
+    
+    add_env(inc, prefix + '/ATLMFC/include')
+    add_env(inc, msvc_tools_root + '/include')
+    add_env(inc, netfx_sdk + 'include/um')
+    wki = '{}/include/{}'.format(winkit10, winkit10version)
+    add_env(inc, wki + '/ucrt')
+    add_env(inc, wki + '/shared')
+    add_env(inc, wki + '/um')
+    add_env(inc, wki + '/winrt')
+    add_env(inc, wki + '/cppwinrt')
+
+    # LIB
+    wkl = '{}/lib/{}'.format(winkit10, winkit10version)
+    lib1 = '{}/ATLMFC/lib/{}'.format(msvc_tools_root,tgt)
+    lib2 = '{}/lib/{}'.format(msvc_tools_root,tgt)
+    add_env(lib, lib1)
+    add_env(lib, lib2)
+    add_env(lib, '{}lib/um/{}'.format(netfx_sdk,tgt))
+    add_env(lib, '{}/ucrt/{}'.format(wkl,tgt))
+    add_env(lib, '{}/um/{}'.format(wkl,tgt))
+
+    # LIBPATH
+    add_env(libpath, lib1)
+    add_env(libpath, lib2)
+    add_env(libpath, winkit10 + '/UnionMetadata')
+    add_env(libpath, winkit10 + '/References')
+    s = ''
+    if tgt == 'x64':
+        s = '64'
+    fwr = 'C:/windows/Microsoft.NET/Framework{}'.format(s)
+    fwr64 = 'C:/windows/Microsoft.NET/Framework64'
+    fwv = 'v4.0.30319'
+    fwp = '{}/{}'.format(fwr,fwv)
+    add_env(libpath, fwp)
+
+    # PATH
+
+    # locations for cross compilers changed in this version
+    set_msvc_compilers(env, msvc_tools_root)
+    x86_to_x64 = env['msvc_compilers']['ia32']['ia32'] 
+    x86_to_x86 = env['msvc_compilers']['ia32']['x86-64']
+    x64_to_x86 = env['msvc_compilers']['x86-64']['ia32'] 
+    x64_to_x64 = env['msvc_compilers']['x86-64']['x86-64'] 
+    
+    cross = False
+    if x64_host:
+        if x64_target:
+            cl_tgt_bin_dir = x64_to_x64
+        else:
+            cross = True
+            cl_tgt_bin_dir = x64_to_x86
+            cl_host_bin_dir = x64_to_x64
+    else: 
+        if x64_target:
+            cross = True
+            cl_tgt_bin_dir = x86_to_x64
+            cl_host_bin_dir = x64_to_x86
+        else:
+            cl_tgt_bin_dir = x86_to_x86
+    
+    add_env(path, cl_tgt_bin_dir)
+    # CL TARGET compiler gets DLLs from the HOST bin dir
+    if cross:
+        add_env(path, cl_host_bin_dir)
+        
+    add_env(path, '{}/Common7/IDE/VC/VCPackages'.format(msvc_tools_root))
+    add_env(path, '{}/Common7/IDE/CommonExtensions/Microsoft/TestWindow'.format(msvc_tools_root))
+    add_env(path, '{}/Common7/IDE/CommonExtensions/Microsoft/TeamFoundation/Team Explorer'.format(msvc_tools_root))
+    add_env(path, '{}/MsBuild/Current/Bin/Roslyn'.format(msvc_tools_root))
+    add_env(path, '{}/Team Tools/Performance Tools'.format(msvc_tools_root))
+    
+    add_env(path, progfi + '/Microsoft Visual Studio/Shared/Common/VSPerfCollectionTools/vs2022')
+    netfx_tools = progfi + '/Microsoft SDKs/Windows/v10.0A/bin/NETFX 4.8 Tools'
+    add_env(path, netfx_tools)
+
+    add_env(path, '{}/bin/{}'.format(winkit10,tgt))
+    add_env(path, '{}/bin/{}/{}'.format(winkit10,winkit10version,tgt))
+    add_env(path, '{}/MSBuild/Current/Bin'.format(vprefix))
+    add_env(path, fwp)
+    add_env(path, '{}/Common7/IDE'.format(vprefix))
+    add_env(path, '{}/Common7/Tools'.format(vprefix))
+
+    set_env_list('INCLUDE',inc)
+    set_env_list('LIB',lib)
+    set_env_list('LIBPATH',libpath)
+    add_to_front_list('PATH',path)
+    if 0:
+        msgb("INCLUDE", "\n\t".join(inc))
+        msgb("LIB", "\n\t".join(lib))
+        msgb("LIBPATH", "\n\t".join(libpath))
+        msgb("PATH", "\n\t".join(path))
+
+    # Misc env variables. Not sure which are needed, if any
+    set_env('NETFXSDKDir',netfx_sdk)
+    set_env('DevEnvDir', vprefix + '/Common7/IDE/')
+    set_env('ExtensionSdkDir', progfi + '/Microsoft SDKs/Windows Kits/10/ExtensionSDKs')
+    set_env('Framework40Version','v4.0')
+    set_env('FrameworkVersion',fwv)
+    if x64_host:
+        set_env('VSCMD_ARG_HOST_ARCH','x64')
+    else:
+        set_env('VSCMD_ARG_HOST_ARCH','x86')
+        
+    set_env('Platform',tgt)
+    set_env('VSCMD_ARG_TGT_ARCH',tgt)
+        
+    if x64_target:
+        set_env('FrameworkDir', fwr)
+        set_env('FrameworkDIR64',fwr)
+        set_env('FrameworkVersion64',fwv)
+    else: 
+        set_env('FrameworkDIR32',fwr)
+        set_env('FrameworkVersion32',fwv)
+        if x64_host:
+            set_env('FrameworkDir', fwr64)
+            set_env('FrameworkDIR64',fwr64)
+            set_env('FrameworkVersion64',fwv)
+        else:
+            set_env('FrameworkDir', fwr)
+        
+    set_env('UCRTVersion',          winkit10version)
+    set_env('WindowsSDKLibVersion', winkit10version + '/')
+    set_env('WindowsSDKVersion',    winkit10version + '/')
+    set_env('WindowsSdkVerBinPath', '{}/bin/{}/'.format(winkit10,winkit10version))
+    set_env('WindowsSdkBinPath', winkit10 + '/bin/')
+    set_env('WindowsSdkDir',     winkit10 + '/')
+    set_env('UniversalCRTSdkDir',winkit10 + '/')
+    set_env('WindowsLibPath',    winkit10 + '/UnionMetadata;' + winkit10 + '/References')
+    
+    set_env('VCIDEInstallDir',   vprefix + '/Common7/IDE/VC/')
+    set_env('VCINSTALLDIR',      vprefix + '/VC/')
+    set_env('VCToolsInstallDir', vprefix + '/VC/Tools/MSVC/' + msvc_ver + '/')
+    set_env('VCToolsRedistDir',  vprefix + '/VC/Redist/MSVC/' + msvc_ver + '/')
+    set_env('VS150COMNTOOLS',    vprefix + '/Common7/Tools/')
+    set_env('VSINSTALLDIR',      vprefix + '/')
+    set_env('VisualStudioVersion', '17.0')
+        
+    set_env('WindowsSDK_ExecutablePath_x64', netfx_tools + '/x64/')
+    set_env('WindowsSDK_ExecutablePath_x86', netfx_tools + '/')
+    
+    return vprefix + '/VC'
 
 def _set_msvs_dev16(env, x64_host, x64_target, regv=None): # msvs 2019
     versions = ['Enterprise', 'Professional', 'Community']
@@ -1250,6 +1430,7 @@ def _figure_out_msvs_version_filesystem(env, specific_version=0):
     the latest install. """
     
     prefixes = [
+        (17,'C:/Program Files/Microsoft Visual Studio/2022'),
         (16,'C:/Program Files (x86)/Microsoft Visual Studio/2019'),
         
         # starting with DEV15, everything is in the "Program Files
@@ -1452,6 +1633,8 @@ def set_msvs_env(env):
         vc = _set_msvs_dev15(env, x64_host, x64_target, vs_dir)
     elif i == 16:  # vs 2019
         vc = _set_msvs_dev16(env, x64_host, x64_target, vs_dir)
+    elif i == 17:  # vs 2022
+        vc = _set_msvs_dev17(env, x64_host, x64_target, vs_dir)
     else:
         die("Unhandled MSVS version: " + env['msvs_version'])
 

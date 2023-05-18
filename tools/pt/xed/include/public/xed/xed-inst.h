@@ -1,6 +1,6 @@
-/*BEGIN_LEGAL 
+/* BEGIN_LEGAL 
 
-Copyright (c) 2019 Intel Corporation
+Copyright (c) 2020 Intel Corporation
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -184,14 +184,14 @@ xed_operand_print(const xed_operand_t* p, char* buf, int buflen);
 /// @name xed_inst_t Template Operand Enum Name Classification
 //@{
 /// @ingroup DEC
-/// Tests the enum for inclusion in XED_OPERAND_REG0 through XED_OPERAND_REG15.
+/// Tests the enum for inclusion in XED_OPERAND_REG0 through XED_OPERAND_REG9.
 /// @param name the operand name, type #xed_operand_enum_t
-/// @return 1 if the operand name is REG0...REG15, 0 otherwise. 
+/// @return 1 if the operand name is REG0...REG9, 0 otherwise. 
 ///
 ///Note there are other registers for memory addressing; See
 /// #xed_operand_is_memory_addressing_register .
 static XED_INLINE xed_uint_t xed_operand_is_register(xed_operand_enum_t name) {
-    return name >= XED_OPERAND_REG0 && name <= XED_OPERAND_REG8;
+    return name >= XED_OPERAND_REG0 && name <= XED_OPERAND_REG9;
 }
 /// @ingroup DEC
 /// Tests the enum for inclusion in XED_OPERAND_{BASE0,BASE1,INDEX,SEG0,SEG1}
