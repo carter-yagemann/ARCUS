@@ -47,7 +47,7 @@ def parse_args():
         action="store",
         type="str",
         default=None,
-        help="Import additional architecture from angr-platforms (ex: risc_v)"
+        help="Import additional architecture from angr-platforms (ex: risc_v)",
     )
     parser.add_option_group(group_symbex)
 
@@ -273,9 +273,11 @@ def prune(state):
     community provided ones require some extra help.
     """
     # risc_v
-    if (state.arch.name == 'RISCV' and
-            not state.solver.symbolic(state._ip) and
-            state.addr == 0):
+    if (
+        state.arch.name == "RISCV"
+        and not state.solver.symbolic(state._ip)
+        and state.addr == 0
+    ):
         return True
 
     return False
@@ -329,9 +331,9 @@ def main():
     hooks.apply_hooks(proj)
 
     init_state = proj.factory.entry_state(
-            concrete_fs=True,
-            args=tracee_args,
-            env=os.environ,
+        concrete_fs=True,
+        args=tracee_args,
+        env=os.environ,
     )
 
     dump_state(output_dir, tracee_args)
@@ -344,25 +346,27 @@ def main():
     log.info("Starting exploration")
     while len(simgr.stashes["active"]) > 0:
         simgr.step()
-        simgr.move('active', 'deadended', prune)
-        log.info("Status: Active (%d), Deadended (%d)" % (
-                len(simgr.stashes['active']),
-                len(simgr.stashes['deadended'])))
+        simgr.move("active", "deadended", prune)
+        log.info(
+            "Status: Active (%d), Deadended (%d)"
+            % (len(simgr.stashes["active"]), len(simgr.stashes["deadended"]))
+        )
 
     log.info("Exploration complete, processing results")
-    if len(simgr.stashes['deadended']) < 1:
+    if len(simgr.stashes["deadended"]) < 1:
         log.error("No states reached end of execution")
         sys.exit(1)
-    elif len(simgr.stashes['deadended']) > 1:
+    elif len(simgr.stashes["deadended"]) > 1:
         log.warning("Multiple states exited, picking one")
 
-    end_state = simgr.stashes['deadended'][0]
+    end_state = simgr.stashes["deadended"][0]
 
     log.info("Dumping trace from state: %s" % end_state)
     dump_trace(output_dir, end_state)
     dump_settings(output_dir, args, options.__dict__)
 
     log.info("Trace successfully written to: %s" % output_dir)
+
 
 if __name__ == "__main__":
     __name__ = "simulator"

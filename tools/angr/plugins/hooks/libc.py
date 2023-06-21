@@ -33,7 +33,6 @@ WCHAR_BYTES = 4
 
 
 class libc_clock_gettime(angr.SimProcedure):
-
     timespec_bits = 16 * 8
 
     def run(self, clockid, tp):
@@ -41,12 +40,17 @@ class libc_clock_gettime(angr.SimProcedure):
             return -1
 
         result = {
-            'tv_sec': self.state.solver.BVS('tv_sec', self.arch.bits, key=('api', 'clock_gettime', 'tv_sec')),
-            'tv_nsec': self.state.solver.BVS('tv_nsec', self.arch.bits, key=('api', 'clock_gettime', 'tv_nsec')),
+            "tv_sec": self.state.solver.BVS(
+                "tv_sec", self.arch.bits, key=("api", "clock_gettime", "tv_sec")
+            ),
+            "tv_nsec": self.state.solver.BVS(
+                "tv_nsec", self.arch.bits, key=("api", "clock_gettime", "tv_nsec")
+            ),
         }
 
         self.state.mem[tp].struct.timespec = result
         return 0
+
 
 class libc___cxa_atexit(angr.SimProcedure):
     def run(self, func):
@@ -180,29 +184,38 @@ class libc_getenv(angr.SimProcedure):
 
 
 class libc_getline(angr.SimProcedure):
-
     MAX_STRING = 128
 
     def run(self, lineptr_ptr, n_ptr, stream):
         # warn users that we're making an assumption about max string length
-        log.warning("Simulation procedure for getline currently assumes a max"
-                " string length of %d bytes" % self.MAX_STRING)
+        log.warning(
+            "Simulation procedure for getline currently assumes a max"
+            " string length of %d bytes" % self.MAX_STRING
+        )
 
         # free buffer if already allocated
-        lineptr = self.state.memory.load(lineptr_ptr, self.state.arch.bits // 8,
-                endness=self.state.arch.memory_endness)
+        lineptr = self.state.memory.load(
+            lineptr_ptr,
+            self.state.arch.bits // 8,
+            endness=self.state.arch.memory_endness,
+        )
         if not self.state.solver.is_true(lineptr == 0):
             self.inline_call(angr.SIM_PROCEDURES["libc"]["free"], lineptr)
 
         # allocate new buffer
-        buf = self.inline_call(angr.SIM_PROCEDURES["libc"]["malloc"],
-                self.MAX_STRING).ret_expr
+        buf = self.inline_call(
+            angr.SIM_PROCEDURES["libc"]["malloc"], self.MAX_STRING
+        ).ret_expr
         # place null terminator
         self.state.memory.store(buf + self.MAX_STRING - 1, b"\x00")
 
         # store it as the new lineptr
-        self.state.memory.store(lineptr_ptr, buf, size=self.state.arch.bits // 8,
-                endness=self.state.arch.memory_endness)
+        self.state.memory.store(
+            lineptr_ptr,
+            buf,
+            size=self.state.arch.bits // 8,
+            endness=self.state.arch.memory_endness,
+        )
 
         # update n_ptr
         n_bv = self.state.solver.BVS("getline_n", 32)
@@ -216,7 +229,6 @@ class libc_getline(angr.SimProcedure):
 
 
 class libc_getlogin(angr.SimProcedure):
-
     LOGIN_PTR = None
 
     def run(self):
@@ -229,7 +241,6 @@ class libc_getlogin(angr.SimProcedure):
 
 
 class libc_getpwnam(angr.SimProcedure):
-
     PASSWD_PTR = None
     CHAR_PTRS = {
         "pw_name": None,
@@ -285,15 +296,15 @@ class libc_getpwnam(angr.SimProcedure):
 
         return self.PASSWD_PTR
 
-class libc_getpwuid(angr.SimProcedure):
 
+class libc_getpwuid(angr.SimProcedure):
     def run(self, uid):
         # since we don't check the real shadow file, the result is the same as
         # calling getpwnam
         return self.inline_call(libc_getpwnam, 0).ret_expr
 
-class libc_getgrnam(angr.SimProcedure):
 
+class libc_getgrnam(angr.SimProcedure):
     GROUP_PTR = None
     CHAR_PTRS = {
         "gr_name": None,
@@ -367,33 +378,33 @@ class libc_getgrnam(angr.SimProcedure):
 
         return self.GROUP_PTR
 
-class libc_getgrgid(angr.SimProcedure):
 
+class libc_getgrgid(angr.SimProcedure):
     def run(self, gid):
         # since we don't check the real shadow file, the result is the same as
         # calling getgrnam
         return self.inline_call(libc_getgrnam, 0).ret_expr
 
-class libc_gettext(angr.SimProcedure):
 
+class libc_gettext(angr.SimProcedure):
     def run(self, msgid):
         # don't do a translation look-up, just return the current string
         return msgid
 
-class libc_dgettext(angr.SimProcedure):
 
+class libc_dgettext(angr.SimProcedure):
     def run(self, domainname, msgid):
         # don't do a translation look-up, just return the current string
         return msgid
 
-class libc_dcgettext(angr.SimProcedure):
 
+class libc_dcgettext(angr.SimProcedure):
     def run(self, domainname, msgid, category):
         # don't do a translation look-up, just return the current string
         return msgid
 
-class libc_mbsrtowcs(angr.SimProcedure):
 
+class libc_mbsrtowcs(angr.SimProcedure):
     max_dest_size = 1024
 
     def run(self, dest, src, len, ps):
@@ -403,8 +414,9 @@ class libc_mbsrtowcs(angr.SimProcedure):
         ret_val = 0
 
         # pointer at src is updated to point after last parsed character
-        src_base = self.state.memory.load(src, self.state.arch.bytes,
-                endness=self.state.arch.memory_endness)
+        src_base = self.state.memory.load(
+            src, self.state.arch.bytes, endness=self.state.arch.memory_endness
+        )
 
         # determine max number of characters to parse
         len_val = min(self.max_dest_size, self.state.solver.max(len))
@@ -417,15 +429,18 @@ class libc_mbsrtowcs(angr.SimProcedure):
                 ret_val += 1
                 if not self.state.solver.is_true(dest == 0):
                     wc = next_byte.zero_extend((WCHAR_BYTES * 8) - 8)
-                    self.state.memory.store(dest + (offset * WCHAR_BYTES), wc,
-                            endness=self.state.arch.memory_endness)
+                    self.state.memory.store(
+                        dest + (offset * WCHAR_BYTES),
+                        wc,
+                        endness=self.state.arch.memory_endness,
+                    )
             else:
                 if warn_once:
                     log.warning("mbsrtowcs is assuming source string is all ASCII")
                     warn_once = False
 
                 ret_val += 1
-                wc = self.state.solver.BVS('mbsrtowcs_%d' % offset, WCHAR_BYTES * 8)
+                wc = self.state.solver.BVS("mbsrtowcs_%d" % offset, WCHAR_BYTES * 8)
                 self.state.memory.store(dest + (offset * WCHAR_BYTES), wc)
 
             if self.state.solver.is_true(next_byte == 0):
@@ -438,8 +453,8 @@ class libc_mbsrtowcs(angr.SimProcedure):
 
         return ret_val
 
-class libc_readdir(angr.SimProcedure):
 
+class libc_readdir(angr.SimProcedure):
     DIR_PTR = None
     DIR_SIZE = 275
 
@@ -456,46 +471,44 @@ class libc_readdir(angr.SimProcedure):
 
         self.state.memory.store(
             ptr,
-            self.state.solver.BVS('d_ino', 64),
+            self.state.solver.BVS("d_ino", 64),
             endness=self.state.arch.memory_endness,
         )
         ptr += 8
 
         self.state.memory.store(
             ptr,
-            self.state.solver.BVS('d_off', 64),
+            self.state.solver.BVS("d_off", 64),
             endness=self.state.arch.memory_endness,
         )
         ptr += 8
 
         self.state.memory.store(
             ptr,
-            self.state.solver.BVS('d_reclen', 16),
+            self.state.solver.BVS("d_reclen", 16),
             endness=self.state.arch.memory_endness,
         )
         ptr += 2
 
-        self.state.memory.store(ptr, self.state.solver.BVS('d_type', 8))
+        self.state.memory.store(ptr, self.state.solver.BVS("d_type", 8))
         ptr += 1
 
         for idx in range(255):
             self.state.memory.store(
-                ptr + idx,
-                self.state.solver.BVS('d_name_%d' % idx, 8)
+                ptr + idx, self.state.solver.BVS("d_name_%d" % idx, 8)
             )
         self.state.memory.store(ptr + 255, b"\x00")
 
         ret = self.state.solver.BVS("readdir_ret", self.state.arch.bits)
-        self.state.add_constraints(self.state.solver.Or(
-            ret == 0, ret == self.DIR_PTR))
+        self.state.add_constraints(self.state.solver.Or(ret == 0, ret == self.DIR_PTR))
 
         return ret
+
 
 class libc_realpath(angr.SimProcedure):
     MAX_PATH = 4096
 
     def run(self, path_ptr, resolved_path):
-
         resolved_path_val = self.state.solver.eval(resolved_path)
         if resolved_path_val == 0:
             buf = self.inline_call(
@@ -522,13 +535,15 @@ class libc_realpath(angr.SimProcedure):
 
         return buf
 
-class libc_unlink(angr.SimProcedure):
 
+class libc_unlink(angr.SimProcedure):
     def run(self, path_addr):
-        strlen = angr.SIM_PROCEDURES['libc']['strlen']
+        strlen = angr.SIM_PROCEDURES["libc"]["strlen"]
 
         p_strlen = self.inline_call(strlen, path_addr)
-        str_expr = self.state.memory.load(path_addr, p_strlen.max_null_index, endness='Iend_BE')
+        str_expr = self.state.memory.load(
+            path_addr, p_strlen.max_null_index, endness="Iend_BE"
+        )
         str_val = self.state.solver.eval(str_expr, cast_to=bytes)
 
         # Check if entity exists before attempting to unlink
@@ -540,11 +555,11 @@ class libc_unlink(angr.SimProcedure):
         else:
             return -1
 
+
 class libc_snprintf(FormatParser):
     """Custom snprintf simproc because angr's doesn't honor the size argument"""
 
     def run(self, dst_ptr, size):
-
         if self.state.solver.eval(size) == 0:
             return size
 
@@ -627,7 +642,8 @@ class libc_strncat(angr.SimProcedure):
 
 class libc_setlocale(angr.SimProcedure):
     locale = None
-    def run (self, category, locale):
+
+    def run(self, category, locale):
         if self.locale is None:
             self.locale = self.inline_call(
                 angr.SIM_PROCEDURES["libc"]["malloc"], 256
@@ -635,28 +651,34 @@ class libc_setlocale(angr.SimProcedure):
             self.state.memory.store(self.locale + 255, b"\x00")
         return self.locale
 
+
 class libc_bindtextdomain(angr.SimProcedure):
     domainname = None
-    def run (self, domainname, dirname):
+
+    def run(self, domainname, dirname):
         if self.domainname is None:
             self.domainname = self.inline_call(
-               angr.SIM_PROCEDURES["libc"]["malloc"], 256
+                angr.SIM_PROCEDURES["libc"]["malloc"], 256
             ).ret_expr
             self.state.memory.store(self.domainname + 255, b"\x00")
         return self.domainname
+
 
 class libc_textdomain(angr.SimProcedure):
     domainname = None
-    def run (self, domainname):
+
+    def run(self, domainname):
         if self.domainname is None:
             self.domainname = self.inline_call(
-               angr.SIM_PROCEDURES["libc"]["malloc"], 256
+                angr.SIM_PROCEDURES["libc"]["malloc"], 256
             ).ret_expr
             self.state.memory.store(self.domainname + 255, b"\x00")
         return self.domainname
 
+
 class libc_signal(angr.SimProcedure):
     SIG_HNDLR = {}
+
     def run(self, signum, handler):
         signum_int = self.state.solver.eval(signum)
         if signum_int not in self.SIG_HNDLR:
@@ -665,8 +687,8 @@ class libc_signal(angr.SimProcedure):
         self.SIG_HNDLR[signum_int] = handler
         return old
 
-class libc_symlink(angr.SimProcedure):
 
+class libc_symlink(angr.SimProcedure):
     def run(self, target_ptr, linkpath_ptr):
         # believe it or not, angr currently does not support symlinks, but since
         # our state has an option set to pretend all files exist, we don't have
@@ -674,40 +696,40 @@ class libc_symlink(angr.SimProcedure):
         ret = self.state.solver.BVS("symlink_ret", self.state.arch.bits)
         return ret
 
-class libc_sysconf(angr.SimProcedure):
 
+class libc_sysconf(angr.SimProcedure):
     def run(self, name):
         return self.state.solver.BVS("sysconf_ret", self.state.arch.bits)
 
-class libc_towupper(angr.SimProcedure):
 
+class libc_towupper(angr.SimProcedure):
     def run(self, wc):
         # sizeof(wint_t) == sizeof(wchar_t)
         # Most wide encodings are backwards compatible with ASCII
         if self.state.solver.is_true(wc < 0x80):
             return self.state.solver.If(
-                    self.state.solver.And(wc >= 97, wc <= 122),  # a - z
-                    wc - 32, wc)
+                self.state.solver.And(wc >= 97, wc <= 122), wc - 32, wc  # a - z
+            )
         else:
             log.warning("Simproc towupper cannot handle non-ASCII characters")
             return self.state.solver.BVS("towupper_ret", self.state.arch.bits)
 
-class libc_vfwprintf(angr.SimProcedure):
 
+class libc_vfwprintf(angr.SimProcedure):
     def run(self, stream, format, ap):
         log.warning("vfwprintf not implemented, skipping write")
         ret = self.state.solver.BVS("vfwprintf_ret", self.state.arch.bits)
         return ret
 
-class libc_swprintf(angr.SimProcedure):
 
+class libc_swprintf(angr.SimProcedure):
     def run(self, wcs_ptr, maxlen, format):
         log.warning("swprintf not implemented, symbolizing output string")
         len_val = self.state.solver.max(maxlen)
         log.debug("Symbolizing %d wide characters" % len_val)
 
         for offset in range(len_val):
-            wcs = self.state.solver.BVS('swprintf_%d' % offset, WCHAR_BYTES * 8)
+            wcs = self.state.solver.BVS("swprintf_%d" % offset, WCHAR_BYTES * 8)
             self.state.memory.store(wcs_ptr + (offset * WCHAR_BYTES), wcs)
 
         # insert final null character
@@ -715,12 +737,12 @@ class libc_swprintf(angr.SimProcedure):
         self.state.memory.store(wcs_ptr + ((len_val - 1) * WCHAR_BYTES), null_wcs)
 
         # return number of wide characters written
-        ret = self.state.solver.BVS('swprintf_ret', self.state.arch.bits)
+        ret = self.state.solver.BVS("swprintf_ret", self.state.arch.bits)
         self.state.add_constraints(ret <= len_val)
         return ret
 
-class libc_wcschr(angr.SimProcedure):
 
+class libc_wcschr(angr.SimProcedure):
     max_null_index = 1024
 
     def run(self, wcs, wc):
@@ -732,25 +754,44 @@ class libc_wcschr(angr.SimProcedure):
 
         if self.state.solver.symbolic(wcs_len.ret_expr):
             log.debug("symbolic wcslen")
-            max_sym = min((self.state.solver.max_int(wcs_len.ret_expr) * WCHAR_BYTES) + WCHAR_BYTES,
-                    self.state.libc.max_symbolic_strchr)
-            a, c, i = self.state.memory.find(wcs, wc, self.max_null_index,
-                    max_symbolic_bytes=max_sym, default=0, char_size=WCHAR_BYTES)
+            max_sym = min(
+                (self.state.solver.max_int(wcs_len.ret_expr) * WCHAR_BYTES)
+                + WCHAR_BYTES,
+                self.state.libc.max_symbolic_strchr,
+            )
+            a, c, i = self.state.memory.find(
+                wcs,
+                wc,
+                self.max_null_index,
+                max_symbolic_bytes=max_sym,
+                default=0,
+                char_size=WCHAR_BYTES,
+            )
         else:
             log.debug("concrete wcslen")
-            max_search = (self.state.solver.eval(wcs_len.ret_expr) * WCHAR_BYTES) + WCHAR_BYTES
-            a, c, i = self.state.memory.find(wcs, wc, max_search, default=0, chunk_size=chunk_size,
-                    char_size=WCHAR_BYTES)
+            max_search = (
+                self.state.solver.eval(wcs_len.ret_expr) * WCHAR_BYTES
+            ) + WCHAR_BYTES
+            a, c, i = self.state.memory.find(
+                wcs,
+                wc,
+                max_search,
+                default=0,
+                chunk_size=chunk_size,
+                char_size=WCHAR_BYTES,
+            )
 
         if len(i) > 1:
             a = a.annotate(MultiwriteAnnotation())
             self.state.add_constraints(*c)
 
         chrpos = a - wcs
-        self.state.add_constraints(self.state.solver.If(a != 0,
-                chrpos <= wcs_len.ret_expr * WCHAR_BYTES, True))
+        self.state.add_constraints(
+            self.state.solver.If(a != 0, chrpos <= wcs_len.ret_expr * WCHAR_BYTES, True)
+        )
 
         return a
+
 
 class libc_wcsrchr(angr.SimProcedure):
     def run(self, wcs, wc):
@@ -767,12 +808,18 @@ class libc_wcsrchr(angr.SimProcedure):
             wc = wc[31:]
         assert wc.length == (WCHAR_BYTES * 8)
         # flip endness
-        if self.state.arch.memory_endness == 'Iend_LE':
+        if self.state.arch.memory_endness == "Iend_LE":
             wc = claripy.Concat(*(wc.chop(8)[::-1]))
 
         while offset < max_bytes:
-            a, c, i = self.state.memory.find(wcs + offset, wc, max_bytes - offset,
-                    max_symbolic_bytes=128, default=0, char_size=WCHAR_BYTES)
+            a, c, i = self.state.memory.find(
+                wcs + offset,
+                wc,
+                max_bytes - offset,
+                max_symbolic_bytes=128,
+                default=0,
+                char_size=WCHAR_BYTES,
+            )
             if self.state.solver.is_true(a == 0):
                 break
             best_match = [a, c]
@@ -784,41 +831,48 @@ class libc_wcsrchr(angr.SimProcedure):
         self.state.add_constraints(*(best_match[1]))
         return best_match[0]
 
-class libc_wcslen(angr.SimProcedure):
 
+class libc_wcslen(angr.SimProcedure):
     max_null_index = 1024
 
     def run(self, s):
         null = self.state.solver.BVV(0, WCHAR_BYTES * 8)
-        r, c, i = self.state.memory.find(s, null, self.max_null_index,
-                max_symbolic_bytes=128, char_size=WCHAR_BYTES)
+        r, c, i = self.state.memory.find(
+            s, null, self.max_null_index, max_symbolic_bytes=128, char_size=WCHAR_BYTES
+        )
         self.state.add_constraints(*c)
         return (r - s) // WCHAR_BYTES
 
-class libc_wcscpy(angr.SimProcedure):
 
+class libc_wcscpy(angr.SimProcedure):
     def run(self, dest, src):
         src_len = self.inline_call(libc_wcslen, src).ret_expr
-        self.inline_call(angr.SIM_PROCEDURES["libc"]["memcpy"],
-                dest, src, src_len * WCHAR_BYTES + WCHAR_BYTES)
+        self.inline_call(
+            angr.SIM_PROCEDURES["libc"]["memcpy"],
+            dest,
+            src,
+            src_len * WCHAR_BYTES + WCHAR_BYTES,
+        )
         return dest
 
-class libc_wcsncpy(angr.SimProcedure):
 
+class libc_wcsncpy(angr.SimProcedure):
     def run(self, dest, src, n):
         n_val = self.state.solver.max(n)
         for offset in range(0, n_val * WCHAR_BYTES, WCHAR_BYTES):
-            wchar = self.state.memory.load(src + offset, WCHAR_BYTES,
-                    endness=self.state.arch.memory_endness)
-            self.state.memory.store(dest + offset, wchar,
-                    endness=self.state.arch.memory_endness)
+            wchar = self.state.memory.load(
+                src + offset, WCHAR_BYTES, endness=self.state.arch.memory_endness
+            )
+            self.state.memory.store(
+                dest + offset, wchar, endness=self.state.arch.memory_endness
+            )
             if self.state.solver.is_true(wchar == 0):
                 break
 
         return dest
 
-class libc_wcspbrk(angr.SimProcedure):
 
+class libc_wcspbrk(angr.SimProcedure):
     def run(self, wcs, accept):
         Or = self.state.solver.Or
         And = self.state.solver.And
@@ -831,11 +885,17 @@ class libc_wcspbrk(angr.SimProcedure):
             acc = self.state.memory.load(accept + (WCHAR_BYTES * idx), WCHAR_BYTES)
             if self.state.solver.is_true(acc == 0):
                 break
-            a, c, i = self.state.memory.find(wcs, acc, wcs_len.max_null_index,
-                    max_symbolic_bytes=self.state.libc.max_symbolic_strchr * WCHAR_BYTES,
-                    default=0, char_size=WCHAR_BYTES)
+            a, c, i = self.state.memory.find(
+                wcs,
+                acc,
+                wcs_len.max_null_index,
+                max_symbolic_bytes=self.state.libc.max_symbolic_strchr * WCHAR_BYTES,
+                default=0,
+                char_size=WCHAR_BYTES,
+            )
             if best_match is None or self.state.solver.is_true(
-                    self.state.solver.And(a != 0, a < best_match[0])):
+                self.state.solver.And(a != 0, a < best_match[0])
+            ):
                 best_match = [a, c, i]
 
         if best_match is None:
@@ -844,8 +904,8 @@ class libc_wcspbrk(angr.SimProcedure):
         self.state.add_constraints(*(best_match[1]))
         return best_match[0]
 
-class libc_wcsrtombs(angr.SimProcedure):
 
+class libc_wcsrtombs(angr.SimProcedure):
     max_dest_size = 1024
 
     def run(self, dest, src, len, ps):
@@ -855,15 +915,19 @@ class libc_wcsrtombs(angr.SimProcedure):
         ret_val = 0
 
         # pointer at src is updated to point after last parsed character
-        src_base = self.state.memory.load(src, self.state.arch.bytes,
-                endness=self.state.arch.memory_endness)
+        src_base = self.state.memory.load(
+            src, self.state.arch.bytes, endness=self.state.arch.memory_endness
+        )
 
         # determine max number of characters to parse
         len_val = min(self.max_dest_size, self.state.solver.max(len))
 
         for offset in range(len_val):
-            next_wc = self.state.memory.load(src_base + (offset * WCHAR_BYTES),
-                    WCHAR_BYTES, endness=self.state.arch.memory_endness)
+            next_wc = self.state.memory.load(
+                src_base + (offset * WCHAR_BYTES),
+                WCHAR_BYTES,
+                endness=self.state.arch.memory_endness,
+            )
 
             if self.state.solver.is_true(next_wc < 0x80):
                 # most wide encodings are backwards compatible with ASCII
@@ -877,7 +941,7 @@ class libc_wcsrtombs(angr.SimProcedure):
                     warn_once = False
 
                 ret_val += 1
-                mbs = self.state.solver.BVS('wcsrtombs_%d' % offset, 8)
+                mbs = self.state.solver.BVS("wcsrtombs_%d" % offset, 8)
                 self.state.memory.store(dest + offset, mbs)
 
             if self.state.solver.is_true(next_wc == 0):
@@ -890,21 +954,20 @@ class libc_wcsrtombs(angr.SimProcedure):
 
         return ret_val
 
-class libc_mempcpy(angr.SimProcedure):
 
+class libc_mempcpy(angr.SimProcedure):
     def run(self, dest, src, n):
-        res = self.inline_call(angr.SIM_PROCEDURES["libc"]["memcpy"],
-                dest, src, n)
+        res = self.inline_call(angr.SIM_PROCEDURES["libc"]["memcpy"], dest, src, n)
         return dest + n
 
-class libc_wmempcpy(angr.SimProcedure):
 
+class libc_wmempcpy(angr.SimProcedure):
     def run(self, dest, src, n):
         cpy = self.inline_call(libc_mempcpy, dest, src, n * WCHAR_BYTES)
         return cpy.ret_expr
 
-class libc_wcsncmp(angr.SimProcedure):
 
+class libc_wcsncmp(angr.SimProcedure):
     def run(self, s1, s2, n):
         # don't need to actually compare because we can just let the trace
         # determine whether they matched or not for us
@@ -944,7 +1007,7 @@ libc_hooks = {
     "__snprintf_chk": libc__snprintf_chk,
     "strncat": libc_strncat,
     "strrchr": libc_strrchr,
-    "setlocale":libc_setlocale,
+    "setlocale": libc_setlocale,
     "bindtextdomain": libc_bindtextdomain,
     "textdomain": libc_textdomain,
     "signal": libc_signal,

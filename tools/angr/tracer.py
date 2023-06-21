@@ -34,9 +34,7 @@ from elftools.common.exceptions import ELFError
 import perf
 
 PROGRAM_VERSION = "3.2.0"
-PROGRAM_USAGE = (
-    "Usage: %prog [options] <output_directory> [tracee_args]..."
-)
+PROGRAM_USAGE = "Usage: %prog [options] <output_directory> [tracee_args]..."
 
 BREAKPOINTS = dict()
 
@@ -121,7 +119,10 @@ def parse_args():
         "--no-state", action="store_true", default=False, help="Skip saving a state"
     )
     group_debug.add_option(
-        "--keep-perf", action="store_true", default=False, help="Keep perf.data when using perf tracing"
+        "--keep-perf",
+        action="store_true",
+        default=False,
+        help="Keep perf.data when using perf tracing",
     )
     parser.add_option_group(group_debug)
 
@@ -637,9 +638,9 @@ def disable_perf(dir, options):
         sys.stderr.write("Failed to decode perf.data: %s\n" % str(ex))
 
     if options.keep_perf:
-        move('perf.data', os.path.join(dir, 'perf.data'))
+        move("perf.data", os.path.join(dir, "perf.data"))
     else:
-        os.remove('perf.data')
+        os.remove("perf.data")
 
 
 def dump_state(dir, args, sym_argv=False, sym_env=False):
@@ -846,7 +847,7 @@ def dump_files(outdir, tracee_args, symbolic_files=False):
 
     # grab common locale files, this significantly speeds up
     # analysis of functions like setlocale, bindtextdomain, and more.
-    locale_configs = {'/usr/lib/locale/locale-archive'}
+    locale_configs = {"/usr/lib/locale/locale-archive"}
 
     for locale_fp in locale_configs:
         if os.path.isfile(locale_fp):

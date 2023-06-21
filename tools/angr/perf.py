@@ -85,7 +85,6 @@ class DisasmError(Exception):
 
 
 class Disasm(object):
-
     CONTEXT_REGEX = re.compile("\[context: pid-(?P<pid>[0-9a-f]+)\]")
     ADDR_REGEX = re.compile(
         "(?P<time>[0-9a-f]+)  (?P<addr>[0-9a-f]+)  (?P<mnemonic>[a-z ]+)"
@@ -321,7 +320,6 @@ def get_bbs_for_pid(trace_fp, pid):
 
 
 if __name__ == "__main__":
-
     if len(sys.argv) != 3:
         print("Usage: perf.py <perf.data> <output_file>")
         sys.exit(1)

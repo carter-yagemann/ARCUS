@@ -116,7 +116,7 @@ class Tracer(ExplorationTechnique):
         #
         # TODO: We currently do not track stack frames or call depth for RISC-V
         # because Capstone and PyVex don't detect calls and returns reliably
-        if not state.solver.symbolic(state._ip) and state.arch.name != 'RISCV':
+        if not state.solver.symbolic(state._ip) and state.arch.name != "RISCV":
             next_jumpkind = state.project.factory.block(state.addr).vex.jumpkind
             if state.globals["call_depth"] < 1 and next_jumpkind.startswith("Ijk_Ret"):
                 return "traced"
@@ -221,7 +221,9 @@ class Tracer(ExplorationTechnique):
                         % (prev_vex.addr, trace_addr, next_trace_addr, str(succs))
                     )
                     raise AngrTracerError("Cannot find next trace address")
-            elif succs[0].arch.name == 'AMD64' and prev_cap.insns[-1].mnemonic.startswith("rep"):
+            elif succs[0].arch.name == "AMD64" and prev_cap.insns[
+                -1
+            ].mnemonic.startswith("rep"):
                 log.warn(
                     "State split at rep instruction: %s" % prev_cap.insns[-1].mnemonic
                 )
@@ -285,7 +287,9 @@ class Tracer(ExplorationTechnique):
         """Maintain a list of stack frame addresses in the state's global dictionary."""
         kind = state.history.jumpkind
         if kind.startswith("Ijk_Call"):
-            sp_bv = state.registers.load(state.arch.sp_offset, size=state.arch.bits // 8)
+            sp_bv = state.registers.load(
+                state.arch.sp_offset, size=state.arch.bits // 8
+            )
             curr_frame = state.solver.eval(sp_bv)
             state.deep["frame_addrs"].append(curr_frame)
         elif kind.startswith("Ijk_Ret") and len(state.deep["frame_addrs"]) > 0:
@@ -300,7 +304,7 @@ class Tracer(ExplorationTechnique):
         #
         # TODO: We currently do not track stack frames or call depth for RISC-V
         # because Capstone and PyVex don't detect calls and returns reliably
-        if state.arch.name != 'RISCV':
+        if state.arch.name != "RISCV":
             if state.history.jumpkind.startswith("Ijk_Call"):
                 state.globals["call_depth"] += 1
             elif state.history.jumpkind.startswith("Ijk_Ret"):
@@ -310,7 +314,7 @@ class Tracer(ExplorationTechnique):
         #
         # TODO: We currently do not track stack frames or call depth for RISC-V
         # because Capstone and PyVex don't detect calls and returns reliably
-        if state.arch.name != 'RISCV':
+        if state.arch.name != "RISCV":
             self._update_stack_frame_list(state)
 
         if state.history.recent_block_count > 1:
@@ -399,8 +403,9 @@ class Tracer(ExplorationTechnique):
         elif self.project.is_hooked(state.history.addr):
             # simprocedures - is this safe..?
             self._fast_forward(state)
-        elif (self.project.is_hooked(state.addr) and
-                self.project.loader.find_symbol(self.project.hooked_by(state.addr).display_name)):
+        elif self.project.is_hooked(state.addr) and self.project.loader.find_symbol(
+            self.project.hooked_by(state.addr).display_name
+        ):
             # likely an IFUNC
             log.debug("Hooked indirect function (ifunc) resolver detected")
             self._sync_callsite(state, idx - 1, state.history.bbl_addrs[-2])

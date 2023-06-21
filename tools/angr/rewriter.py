@@ -35,7 +35,6 @@ log = logging.getLogger("rewriter")
 
 
 class Transformer(object):
-
     record_ptwrite_64 = """
 void record() {
     // input:    rax - value to encode
@@ -174,7 +173,7 @@ void record() {
         raw_ints = self.elf.get_content_from_virtual_address(addr, 32)
         raw_bytes = bytes(raw_ints)
         trampoline_size = 0
-        for (address, size, mnemonic, op_str) in self.capstone.disasm_lite(
+        for address, size, mnemonic, op_str in self.capstone.disasm_lite(
             raw_bytes, addr
         ):
             trampoline_size += size

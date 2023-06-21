@@ -25,53 +25,53 @@ log = logging.getLogger(name=__name__)
 
 
 class unrar__Z9InitCRC32Pj(angr.SimProcedure):
-
     def run(self, crc_tab):
         # we're going to simulate all checksum calculations, so no need to
         # actually initialize the table
         return
 
-class unrar__Z5CRC32jPKvm(angr.SimProcedure):
 
+class unrar__Z5CRC32jPKvm(angr.SimProcedure):
     def run(self, start, addr, size):
         # building constraints for checksums is hard, so just under-constrain
         return self.state.solver.BVS("crc32_checksum", self.state.arch.bits)
 
-class unrar__ZL10InitTablesv(angr.SimProcedure):
 
+class unrar__ZL10InitTablesv(angr.SimProcedure):
     def run(self):
         # no need to initialize tables, we're going to simulate checksum
         # calculations
         return
 
-class unrar__Z10Checksum14tPKvm(angr.SimProcedure):
 
+class unrar__Z10Checksum14tPKvm(angr.SimProcedure):
     def run(self, start, addr, size):
         # building constraints for checksums is hard, so just under-constrain
         return self.state.solver.BVS("checksum14", self.state.arch.bits)
 
-class unrar__Z3LogPKwS0_z(angr.SimProcedure):
 
+class unrar__Z3LogPKwS0_z(angr.SimProcedure):
     def run(self, arc_name, fmt):
         # don't care about logging
         return
 
-class unrar__ZN7Archive15BrokenHeaderMsgEv(angr.SimProcedure):
 
+class unrar__ZN7Archive15BrokenHeaderMsgEv(angr.SimProcedure):
     def run(self, this_ptr):
         # don't care about logging
         return
 
-class unrar__ZN12ErrorHandler14CreateErrorMsgEPKwS1(angr.SimProcedure):
 
+class unrar__ZN12ErrorHandler14CreateErrorMsgEPKwS1(angr.SimProcedure):
     def run(self, this_ptr, arc_name, file_name):
         # don't care about logging
         return
 
+
 ## RawRead class
 
-class unrar__ZN7RawRead4Get1Ev(angr.SimProcedure):
 
+class unrar__ZN7RawRead4Get1Ev(angr.SimProcedure):
     def run(self, this_ptr):
         # returns a byte read from input file
         val = self.state.solver.BVS("raw_read_get1", 8)
@@ -79,8 +79,8 @@ class unrar__ZN7RawRead4Get1Ev(angr.SimProcedure):
             val = val.zero_extend(self.state.arch.bits - val.length)
         return val
 
-class unrar__ZN7RawRead4Get2Ev(angr.SimProcedure):
 
+class unrar__ZN7RawRead4Get2Ev(angr.SimProcedure):
     def run(self, this_ptr):
         # returns a ushort read from input file
         val = self.state.solver.BVS("raw_read_get2", 16)
@@ -88,8 +88,8 @@ class unrar__ZN7RawRead4Get2Ev(angr.SimProcedure):
             val = val.zero_extend(self.state.arch.bits - val.length)
         return val
 
-class unrar__ZN7RawRead4Get4Ev(angr.SimProcedure):
 
+class unrar__ZN7RawRead4Get4Ev(angr.SimProcedure):
     def run(self, this_ptr):
         # returns a uint read from input file
         val = self.state.solver.BVS("raw_read_get4", 32)
@@ -97,8 +97,8 @@ class unrar__ZN7RawRead4Get4Ev(angr.SimProcedure):
             val = val.zero_extend(self.state.arch.bits - val.length)
         return val
 
-class unrar__ZN7RawRead4GetVEv(angr.SimProcedure):
 
+class unrar__ZN7RawRead4GetVEv(angr.SimProcedure):
     def run(self, this_ptr):
         # returns a uint64 read from input file
         val = self.state.solver.BVS("raw_read_getv", 64)
@@ -106,40 +106,40 @@ class unrar__ZN7RawRead4GetVEv(angr.SimProcedure):
             val = val.zero_extend(self.state.arch.bits - val.length)
         return val
 
-class unrar__ZN7RawRead6SetPosEm(angr.SimProcedure):
 
+class unrar__ZN7RawRead6SetPosEm(angr.SimProcedure):
     def run(self, this_ptr, pos):
         # simulating RawRead, so don't actually need to move position
         return
 
-class unrar__ZN7RawRead5ResetEv(angr.SimProcedure):
 
+class unrar__ZN7RawRead5ResetEv(angr.SimProcedure):
     def run(self, this_ptr):
         # simulating RawRead, so don't actually need to reset
         return
 
-class unrar__ZN7RawRead4ReadEm(angr.SimProcedure):
 
+class unrar__ZN7RawRead4ReadEm(angr.SimProcedure):
     def run(self, this_ptr, size):
         # simulating RawRead, so don't actually need to read from file
         return
 
-class unrar__ZN7RawRead4ReadEPhm(angr.SimProcedure):
 
+class unrar__ZN7RawRead4ReadEPhm(angr.SimProcedure):
     def run(self, this_ptr, src_data, size):
         # simulating RawRead, so don't actually need to read from file
         return
 
-class unrar__Z9cleandataPvm(angr.SimProcedure):
 
+class unrar__Z9cleandataPvm(angr.SimProcedure):
     def run(self, data, size):
         # unrar uses this method to wipe data from memory, but since
         # we're not looking for leaks, we can just skip this to save
         # a ton of steps
         return
 
-class unrar__ZN7RawRead4GetWEPwm(angr.SimProcedure):
 
+class unrar__ZN7RawRead4GetWEPwm(angr.SimProcedure):
     MAX_SIZE = 128
 
     def run(self, this_ptr, field_ptr, size):
@@ -153,12 +153,15 @@ class unrar__ZN7RawRead4GetWEPwm(angr.SimProcedure):
         log.debug("Proceeding with max size: %d" % max_size * WCHAR_BYTES)
 
         for idx in range(0, max_size * WCHAR_BYTES, WCHAR_BYTES):
-            wchar = self.state.solver.BVS('rawread_getw_%d' % idx, WCHAR_BYTES * 8)
-            self.state.memory.store(field_ptr + (idx * WCHAR_BYTES),
-                    wchar, endness=self.state.arch.memory_endness)
+            wchar = self.state.solver.BVS("rawread_getw_%d" % idx, WCHAR_BYTES * 8)
+            self.state.memory.store(
+                field_ptr + (idx * WCHAR_BYTES),
+                wchar,
+                endness=self.state.arch.memory_endness,
+            )
+
 
 class unrar__ZN7RawRead4GetBEPvm(angr.SimProcedure):
-
     MAX_SIZE = 256
 
     def run(self, this_ptr, field_ptr, size):
@@ -172,13 +175,14 @@ class unrar__ZN7RawRead4GetBEPvm(angr.SimProcedure):
         log.debug("Proceeding with max size: %d" % max_size)
 
         for idx in range(0, max_size):
-            char = self.state.solver.BVS('rawread_getb_%d' % idx, 8)
+            char = self.state.solver.BVS("rawread_getb_%d" % idx, 8)
             self.state.memory.store(field_ptr + idx, char)
 
         # returns number of bytes read
-        ret = self.state.solver.BVS('rawread_getb_ret', self.state.arch.bits)
+        ret = self.state.solver.BVS("rawread_getb_ret", self.state.arch.bits)
         self.state.add_constraints(ret <= max_size)
         return ret
+
 
 unrar_hooks = {
     "_Z9InitCRC32Pj": unrar__Z9InitCRC32Pj,

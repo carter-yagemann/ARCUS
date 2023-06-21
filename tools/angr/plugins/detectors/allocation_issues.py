@@ -699,7 +699,6 @@ def check_for_vulns(simgr: SimulationManager, proj: Project) -> bool:
         sim_proc = proj.hooked_by(state.addr)
 
         if not sim_proc is None:
-
             args = cc.get_args(state, sim_proc.prototype)
 
             for arg_idx in range(sim_proc.num_args):

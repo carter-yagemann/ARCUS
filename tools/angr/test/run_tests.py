@@ -36,7 +36,6 @@ from angr import Project
 
 
 class TestGriffinParser(unittest.TestCase):
-
     test_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "test-data"))
     test_file = os.path.join(test_dir, "griffin/last.griffin")
     test_file_gzip = os.path.join(test_dir, "griffin/last.griffin.gz")
@@ -157,7 +156,6 @@ class TestGriffinParser(unittest.TestCase):
 
 
 class TestXed(unittest.TestCase):
-
     test_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "test-data"))
     test_file = os.path.join(test_dir, "griffin/last.griffin")
     test_file_gzip = os.path.join(test_dir, "griffin/last.griffin.gz")
@@ -245,7 +243,6 @@ class TestXed(unittest.TestCase):
 
 
 class TestPTCFG(unittest.TestCase):
-
     test_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "test-data"))
     test_bin = os.path.join(test_dir, "bins/hello")
     test_trace = os.path.join(test_dir, "griffin/hello.griffin")
@@ -307,7 +304,6 @@ class TestPTCFG(unittest.TestCase):
 
 
 class TestDwarf(unittest.TestCase):
-
     test_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "test-data"))
     test_file = os.path.join(test_dir, "bins/ntpq")
     ground_truth = {
@@ -338,13 +334,18 @@ class TestDwarf(unittest.TestCase):
 
 
 class TestAnalysis(unittest.TestCase):
-
     run_script = os.path.join(os.path.dirname(__file__), "../analysis.py")
     traces_dir = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "test-data/traces")
     )
     test_traces = {
         "uaf-01-poc": {
+            "explore": False,
+            "timeout": 120,
+            "reports": [{"count": 1, "prefix": "alloc"}],
+        },
+        "uaf-01-poc-riscv64": {
+            "angr-platforms": "riscv64",
             "explore": False,
             "timeout": 120,
             "reports": [{"count": 1, "prefix": "alloc"}],
@@ -561,6 +562,10 @@ class TestAnalysis(unittest.TestCase):
                 ]
             if "apisnap" in trace_info:
                 cmd += ["--api-snapshot", trace_info["apisnap"], "--api-inference"]
+
+            if "angr-platforms" in trace_info:
+                cmd += ["-a", trace_info["angr-platforms"]]
+
             cmd += [trace_path]
 
             ret = subprocess.run(
@@ -582,6 +587,9 @@ class TestAnalysis(unittest.TestCase):
 
     def test_uaf_01_poc(self):
         self.do_analysis_test("uaf-01-poc")
+
+    def test_uaf_01_poc_riscv64(self):
+        self.do_analysis_test("uaf-01-poc-riscv64")
 
     def test_uaf_02_poc(self):
         self.do_analysis_test("uaf-02-poc")

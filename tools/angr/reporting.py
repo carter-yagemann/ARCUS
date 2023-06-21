@@ -181,7 +181,6 @@ class BugReport(object):
         Keyword Arguments:
         max_words -- The max number of words to read, starting from stack pointer (SP).
         """
-        state = state.copy()  # avoid messing up original stack
         arch = state.project.arch
         reg_load = lambda offset: state.registers.load(
             offset, size=state.arch.bits // 8
@@ -197,8 +196,12 @@ class BugReport(object):
             reg_load(arch.bp_offset), state.solver
         )
 
-        for _ in range(max_words):
-            self.report["stack"].append(self.eval_bv(state.stack_pop(), state.solver))
+        for i in range(max_words):
+            self.report["stack"].append(
+                self.eval_bv(
+                    state.stack_read(-i * arch.bits // 8, arch.bits // 8), state.solver
+                )
+            )
 
     def log_state(self, max_words=10):
         """Prints the state's stack in a human readable format.

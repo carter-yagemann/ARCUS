@@ -53,7 +53,7 @@ import reporting
 import taint
 import xed
 
-PROGRAM_VERSION = "2.1.4"
+PROGRAM_VERSION = "2.1.5"
 PROGRAM_USAGE = "Usage: %prog [options] tracer_output_directory"
 
 
@@ -451,8 +451,12 @@ def parse_entry_state_json(
     # restore CLE's relocations
     for gotaddr in orig_relocs:
         gotvalue = orig_relocs[gotaddr]
-        state.memory.store(addr=gotaddr, data=gotvalue,
-                size=state.arch.bits // 8, endness=state.arch.memory_endness)
+        state.memory.store(
+            addr=gotaddr,
+            data=gotvalue,
+            size=state.arch.bits // 8,
+            endness=state.arch.memory_endness,
+        )
 
     # create simulated filesystem
     if not fs_files is None:
@@ -1066,8 +1070,9 @@ def main():
     if isinstance(options.arch, str):
         try:
             importlib.import_module("angr_platforms.%s" % options.arch)
-        except ImportError:
+        except ImportError as ex:
             log.error("Failed to import architecture: %s" % options.arch)
+            log.debug(str(ex))
             return
 
     if options.explore_after:

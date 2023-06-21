@@ -1,4 +1,6 @@
-angr==9.2.51
+angr==9.2.56
 construct>=2.9.45
 ipython>=7.8.0
 redis>=3.4.1
+# fills in gaps in angr's current riscv64 support
+git+https://github.com/carter-yagemann/angr-platforms.git@riscv64-linux

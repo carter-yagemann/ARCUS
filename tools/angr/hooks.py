@@ -41,7 +41,6 @@ class linux_getdents(angr.SimProcedure):
 
 
 class linux_epoll_ctl(angr.SimProcedure):
-
     EPOLL_CTL_ADD = 1
     EPOLL_CTL_DEL = 2
     EPOLL_CTL_MOD = 3
@@ -180,7 +179,6 @@ linux_hooks = {
 
 
 class strlen(angr.SimProcedure):
-
     max_null_index = None
     max_ovf_len = 8096
 

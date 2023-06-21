@@ -228,7 +228,8 @@ class LoopBounds(ExplorationTechnique):
 
     def _overflow_store_check(self, cycle):
         """We check for two write patterns: 1) monotonic step, 2) unique write address per iteration
-        (heuristic from "Tupni: Automatic Reverse Engineering of Input Formats" by Weidong, et al.)"""
+        (heuristic from "Tupni: Automatic Reverse Engineering of Input Formats" by Weidong, et al.)
+        """
         loader = self.project.loader
         extern = loader.extern_object
 

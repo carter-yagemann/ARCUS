@@ -23,13 +23,14 @@ log = logging.getLogger(name=__name__)
 
 
 class pthreads_open(angr.SimProcedure):
-
     def run(self, p_addr, oflag):
-        strlen = angr.SIM_PROCEDURES['libc']['strlen']
-        malloc = angr.SIM_PROCEDURES['libc']['malloc']
+        strlen = angr.SIM_PROCEDURES["libc"]["strlen"]
+        malloc = angr.SIM_PROCEDURES["libc"]["malloc"]
 
         p_strlen = self.inline_call(strlen, p_addr)
-        p_expr = self.state.memory.load(p_addr, p_strlen.max_null_index, endness='Iend_BE')
+        p_expr = self.state.memory.load(
+            p_addr, p_strlen.max_null_index, endness="Iend_BE"
+        )
         path = self.state.solver.eval(p_expr, cast_to=bytes)
 
         fd = self.state.posix.open(path, oflag)
@@ -38,43 +39,46 @@ class pthreads_open(angr.SimProcedure):
             return 0
         else:
             io_file_data = io_file_data_for_arch(self.state.arch)
-            file_struct_ptr = self.inline_call(malloc, io_file_data['size']).ret_expr
+            file_struct_ptr = self.inline_call(malloc, io_file_data["size"]).ret_expr
 
             # Write the fd
-            fd_bvv = self.state.solver.BVV(fd, 4 * 8) # int
-            self.state.memory.store(file_struct_ptr + io_file_data['fd'],
-                                    fd_bvv,
-                                    endness=self.state.arch.memory_endness)
+            fd_bvv = self.state.solver.BVV(fd, 4 * 8)  # int
+            self.state.memory.store(
+                file_struct_ptr + io_file_data["fd"],
+                fd_bvv,
+                endness=self.state.arch.memory_endness,
+            )
 
             return file_struct_ptr
 
-class pthreads_open64(angr.SimProcedure):
 
+class pthreads_open64(angr.SimProcedure):
     def run(self, path, oflag):
         oflag_val = self.state.solver.eval(oflag)
         oflag_val = oflag_val | angr.storage.file.Flags.O_LARGEFILE
         return self.inline_call(pthreads_open, path, oflag_val).ret_expr
 
-class pthread_mutex_init(angr.SimProcedure):
 
+class pthread_mutex_init(angr.SimProcedure):
     def run(self):
         # don't do anything
         log.warning("We don't model multi-threading, skipping pthread_mutex_init")
         return
 
-class pthread_cond_broadcast(angr.SimProcedure):
 
+class pthread_cond_broadcast(angr.SimProcedure):
     def run(self):
         log.warning("We don't model multi-threading, skipping pthread_cond_broadcast")
         return
 
-class pthread_mutex_destroy(angr.SimProcedure):
 
+class pthread_mutex_destroy(angr.SimProcedure):
     def run(self):
         # since we didn't actually initialize a mutux, we don't have anything
         # to destroy
         log.warning("We don't model multi-threading, skipping pthread_mutex_destroy")
         return
+
 
 libpthread_hooks = {
     "open": pthreads_open,
