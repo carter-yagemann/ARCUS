@@ -53,7 +53,7 @@ import reporting
 import taint
 import xed
 
-PROGRAM_VERSION = "2.1.5"
+PROGRAM_VERSION = "2.1.6"
 PROGRAM_USAGE = "Usage: %prog [options] tracer_output_directory"
 
 
@@ -430,23 +430,24 @@ def parse_entry_state_json(
 
     # restore memory
     mem_dir = os.path.join(snapshot_dir, "mem/")
-    for item in os.listdir(mem_dir):
-        fullfp = os.path.join(mem_dir, item)
-        base_va = int(item.split("-", 1)[0], 16)
-        end_va = base_va + os.path.getsize(fullfp)
+    if os.path.exists(mem_dir):
+        for item in os.listdir(mem_dir):
+            fullfp = os.path.join(mem_dir, item)
+            base_va = int(item.split("-", 1)[0], 16)
+            end_va = base_va + os.path.getsize(fullfp)
 
-        name = item.split("-", 1)[1][:-4]
-        if name == "0":
-            name = "null"
+            name = item.split("-", 1)[1][:-4]
+            if name == "0":
+                name = "null"
 
-        if not is_snapshot and name in ["[stack]"]:
-            # we created a new stack for the analysis, so don't load in the original
-            # heap is fine though because our snapshot includes the brk
-            continue
+            if not is_snapshot and name in ["[stack]"]:
+                # we created a new stack for the analysis, so don't load in the original
+                # heap is fine though because our snapshot includes the brk
+                continue
 
-        with open(fullfp, "rb") as ifile:
-            log.debug("Restoring %s at %#x" % (name, base_va))
-            state.memory.store(base_va, ifile.read())
+            with open(fullfp, "rb") as ifile:
+                log.debug("Restoring %s at %#x" % (name, base_va))
+                state.memory.store(base_va, ifile.read())
 
     # restore CLE's relocations
     for gotaddr in orig_relocs:
