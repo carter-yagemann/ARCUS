@@ -413,8 +413,8 @@ def parse_entry_state_json(
             continue
         try:
             setattr(state.regs, reg, regs[reg])
-        except:
-            log.warn("State does not have register %s" % reg)
+        except Exception as ex:
+            log.warn("Failed to set register %s in state: %s" % (reg, str(ex)))
 
     # we're about to restore memory, but don't want to overwrite relocations
     # because CLE already resolved them to add things like hooks for simulation procedures
