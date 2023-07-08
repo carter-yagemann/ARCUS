@@ -138,7 +138,7 @@ ssh -A "$1" /bin/bash << EOF
     # run an end-to-end test to make sure analysis is working
     echo "Testing analysis functionality..."
     cd ~/griffin-angr/tools/angr
-    ./test/run-tests.py TestAnalysis.test_ovf_01_poc
+    ./test/run_tests.py TestAnalysis.test_ovf_01_poc
     if [ \$? -ne 0 ]; then
         echo "Functionality test failed!"
         exit 1

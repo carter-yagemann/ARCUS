@@ -20,13 +20,13 @@ You can test the basic functionality of your setup by running the quick unit tes
 This should only take a few seconds:
 
     cd tools/angr
-    python test/run-tests.py TestGriffinParser TestXed TestPTCFG
+    python test/run_tests.py TestGriffinParser TestXed TestPTCFG
 
 You can also run one of the analysis unit tests. This will take about
 30 seconds:
 
     cd tools/angr
-    python test/run-tests.py TestAnalysis.test_uaf_01_poc
+    python test/run_tests.py TestAnalysis.test_uaf_01_poc
 
 ## Miscellaneous Tools
 
