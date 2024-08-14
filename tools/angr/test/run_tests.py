@@ -486,7 +486,7 @@ class TestAnalysis(unittest.TestCase):
         "ovf-09-ben": {
             "explore": True,
             "plugins": "loop_bounds,arg_max",
-            "max-arg": "512",
+            "max-arg": "1024",
             "timeout": 360,
             "reports": [{"count": 1, "prefix": "sip"}],
         },
