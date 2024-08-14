@@ -1,6 +1,6 @@
 /* BEGIN_LEGAL 
 
-Copyright (c) 2022 Intel Corporation
+Copyright (c) 2023 Intel Corporation
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -251,13 +251,16 @@ xed_encoder_request_set_effective_address_size( xed_encoder_request_t* p,
 }
 
 void xed_encoder_request_set_branch_displacement(xed_encoder_request_t* p,
-                                                 xed_int32_t brdisp,
+                                                 xed_int64_t brdisp,
                                                  xed_uint_t nbytes) {
     xed_operand_values_set_branch_displacement(p, brdisp, nbytes);
 }
 
 void xed_encoder_request_set_relbr(xed_encoder_request_t* p) {
     xed3_operand_set_relbr(p,1);
+}
+void xed_encoder_request_set_absbr(xed_encoder_request_t* p) {
+    xed3_operand_set_absbr(p,1);
 }
 void xed_encoder_request_set_ptr(xed_encoder_request_t* p) {
     xed3_operand_set_ptr(p,1);
@@ -499,6 +502,52 @@ static void xed_encode_precondition_vl(xed_encoder_request_t* req)
 }
 
 #endif
+#if defined(XED_APX)
+// Return non-zero value if GPR index is ( 16 < GPR < 32 )
+static xed_uint_t reg_is_egpr(xed_reg_enum_t reg)
+{
+    reg = xed_get_largest_enclosing_register(reg);
+    if ((reg >= XED_REG_R16) && (reg <= XED_REG_R31)) {
+        return 1;
+    }
+    return 0;
+}
+
+/* Some instructions (e.g. VEX, LEGACY_MAP2, LEGACY_MAP3) does not support EGPRs(GPR > 16).
+ * Each encoder group can include both EGPR and non-EGPR variations of the same
+ * instruction(iclass). For example, KMOV exists in both VEX (non-EGPR) and EVEX enc space.
+ * XED adds HAS_EGPR input condition for non-egpr instructions to skip them, so we 
+ * need to scan and detect EGPR as a preparation */
+static void xed_encode_precondition_egpr(xed_encoder_request_t* req)
+{
+    xed_uint_t i;
+    for (i=XED_OPERAND_REG0; i<=XED_OPERAND_REG9 ;i++)
+    {
+        xed_reg_enum_t r;
+        xed3_get_generic_operand(req, i, &r);
+        if (r == XED_REG_INVALID)
+            break;
+        if (reg_is_egpr(r)) {
+            xed3_operand_set_has_egpr(req, 1);
+            return;
+        }
+    }
+
+    if (xed3_operand_get_mem0(req)) {
+        // Detect EGPR within the memory operand structure
+        xed_reg_enum_t gprs[3];
+        gprs[0] = xed3_operand_get_base0(req);
+        gprs[1] = xed3_operand_get_base1(req);
+        gprs[2] = xed3_operand_get_index(req);
+        for (i = 0; i < sizeof(gprs)/sizeof(xed_reg_enum_t) ; i++) {
+            if (reg_is_egpr(gprs[i])) {
+                xed3_operand_set_has_egpr(req, 1);
+                return;
+            }
+        }
+    }
+}
+#endif
 
 static void xed_encode_precondition(xed_encoder_request_t* r) {
     /* If the base is RIP, then we help the encoder users by adjusting or
@@ -524,6 +573,9 @@ static void xed_encode_precondition(xed_encoder_request_t* r) {
     }
 #if defined(XED_AVX) || defined(XED_SUPPORTS_AVX512)        
     xed_encode_precondition_vl(r);
+#endif
+#if defined(XED_APX)
+    xed_encode_precondition_egpr(r);
 #endif
 }
 

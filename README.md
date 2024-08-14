@@ -71,15 +71,15 @@ pre-recorded traces in `tools/angr/test/test-data/traces` without performing thi
 
 # Usage
 
-* [Tracing with Perf](docs/perf.md).
+* [Tracing with Perf](docs/perf.md)
 
-* [Analyzing with ARCUS](docs/arcus.md).
+* [Analyzing with ARCUS](docs/arcus.md)
 
-* [Debugging ARCUS](docs/arcus.md#debugging-analysis).
+* [Debugging ARCUS](docs/arcus.md#debugging-analysis)
 
-* [Analyzing with ARCUS at scale](docs/scaling-arcus.md).
+* [Analyzing with ARCUS at scale](docs/scaling-arcus.md)
 
-* [Miscellaneous tools](docs/misc-tools.md).
+* [Miscellaneous tools](docs/misc-tools.md)
 
 ## Unit Tests
 

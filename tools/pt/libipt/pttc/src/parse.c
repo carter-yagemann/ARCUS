@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2013-2022, Intel Corporation
+ * Copyright (c) 2013-2024, Intel Corporation
+ * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -132,7 +133,7 @@ static void sb_rename_file(struct sb_file *sb)
 	}
 
 	/* Print the name of the sideband file for test.bash. */
-	printf("%s\n", filename);
+	printf("%s ", filename);
 }
 
 #endif /* defined(FEATURE_SIDEBAND) */
@@ -355,7 +356,7 @@ static int p_gen_expfile(struct parser *p)
 
 		if (errcode == 0 && strcmp(pd->name, ".exp") == 0) {
 			fclose(f);
-			printf("%s\n", filename);
+			printf("%s ", filename);
 			free(filename);
 			filename = expfilename(p, pd->payload);
 			if (!filename)
@@ -548,11 +549,10 @@ error:
 
 	fclose(f);
 	if (errcode < 0 && errcode != -err_out_of_range) {
-		fprintf(stderr, "fatal: %s could not be created:\n", filename);
+		fprintf(stderr, "fatal: error generating %s:\n", filename);
 		yasm_print_err(p->y, "", errcode);
-		remove(filename);
 	} else
-		printf("%s\n", filename);
+		printf("%s ", filename);
 	free(filename);
 
 	/* If there are no lines left, we are done.  */
@@ -597,6 +597,143 @@ static int report_lib_error(struct parser *p, const char *message, int errcode)
 	yasm_print_err(p->y, buffer, -err_pt_lib);
 
 	return -err_pt_lib;
+}
+
+/* Parse any amount of whitespace from @pinput, including none.
+ *
+ * We want to stay within one source line so we only parse spaces and
+ * horizontal tabs.
+ *
+ * Returns zero on success and updates @input.
+ * Returns a negative integer on error.
+ */
+static int parse_whitespace(const char **pinput)
+{
+	const char *input;
+
+	if (!pinput)
+		return -err_internal;
+
+	input = *pinput;
+	if (!input)
+		return -err_internal;
+
+	while ((*input == ' ') || (*input == '\t'))
+		input += 1;
+
+	*pinput = input;
+	return 0;
+}
+
+/* Parse @size bytes of a literal @token in @input.
+ *
+ * Returns zero on success and updates @input.
+ * Returns a positive integer on failure.
+ * Returns a negative integer on error.
+ */
+static int parse_token_aux(const char **pinput, const char *token, size_t size)
+{
+	const char *input;
+	int status;
+
+	if (!pinput)
+		return -err_internal;
+
+	input = *pinput;
+	if (!input)
+		return -err_internal;
+
+	if (!token || !size)
+		return -err_internal;
+
+	status = parse_whitespace(&input);
+	if (status < 0)
+		return status;
+
+	if (strncmp(input, token, size) != 0)
+		return 1;
+
+	input += size;
+	*pinput = input;
+	return 0;
+}
+
+/* Parse a string literal @token in @input. */
+#define parse_token(input, token)				\
+	parse_token_aux(input, token, sizeof(token) - 1)
+
+/* Parse an @size-bit base-@base unsigned integer in @input.
+ *
+ * If an integer number can be parsed from @input, diagnoses exceeding the
+ * expected range with an error code return.
+ *
+ * Returns zero on success and updates @input.
+ * Returns a positive integer if @input does not start with an integer.
+ * Returns a negative integer on error.
+ */
+static int parse_uint(const char **pinput, unsigned long long *puint,
+		      uint8_t size, int base)
+{
+	unsigned long long uint;
+	const char *input;
+	char *end;
+
+	if (!pinput)
+		return -err_internal;
+
+	input = *pinput;
+	if (!input)
+		return -err_internal;
+
+	if (!puint || !size)
+		return -err_internal;
+
+	if (size > 64)
+		return -err_internal;
+
+	errno = 0;
+	uint = strtoull(input, &end, base);
+	if (input == end)
+		return 1;
+
+	if (errno == EINVAL)
+		return -err_internal;
+
+	if (errno == ERANGE)
+		return -err_parse_int_too_big;
+
+	if ((size < 64) && ((uint >> size) != 0))
+		return -err_parse_int_too_big;
+
+	*puint = uint;
+	*pinput = end;
+	return 0;
+}
+
+static int parse_uint_8(const char **pinput, uint8_t *uint)
+{
+	unsigned long long tmp;
+	int status;
+
+	status = parse_uint(pinput, &tmp, 8, 0);
+	if (status != 0)
+		return status;
+
+	*uint = (uint8_t) tmp;
+	return 0;
+}
+
+static int parse_uint_64(const char **pinput, uint64_t *uint)
+{
+	unsigned long long tmp;
+	int status;
+
+	status = parse_uint(pinput, &tmp, 64, 0);
+	if (status != 0)
+		return status;
+
+	*uint = (uint64_t) tmp;
+	return 0;
 }
 
 static int parse_mwait(uint32_t *hints, uint32_t *ext, char *payload)
@@ -669,6 +806,273 @@ static int parse_c_state(uint8_t *state, uint8_t *sub_state, const char *input)
 	*state = (uint8_t) ((maj - 1) & 0xf);
 	if (sub_state)
 		*sub_state = (uint8_t) ((min - 1) & 0xf);
+
+	return 0;
+}
+
+/* Parse a mode.exec execution mode in @input into @packet.
+ *
+ * Returns zero on success and updates @input.
+ * Returns a positive integer on failure.
+ * Returns a negative integer on error.
+ */
+static int parse_exec_mode(const char **input,
+			   struct pt_packet_mode_exec *packet)
+{
+	int status;
+
+	if (!packet)
+		return -err_internal;
+
+	status = parse_token(input, "64bit");
+	if (status <= 0) {
+		if (status < 0)
+			return status;
+
+		packet->csl = 1;
+		packet->csd = 0;
+
+		return status;
+	}
+
+	status = parse_token(input, "32bit");
+	if (status <= 0) {
+		if (status < 0)
+			return status;
+
+		packet->csl = 0;
+		packet->csd = 1;
+
+		return status;
+	}
+
+	status = parse_token(input, "16bit");
+	if (status <= 0) {
+		if (status < 0)
+			return status;
+
+		packet->csl = 0;
+		packet->csd = 0;
+
+		return status;
+	}
+
+	return 1;
+}
+
+/* Parse mode.exec arguments in @input into @packet.
+ *
+ * Returns zero on success and updates @input.
+ * Returns a positive integer on failure.
+ * Returns a negative integer on error.
+ */
+static int parse_mode_exec(const char **input, const struct parser *p,
+			   struct pt_packet_mode_exec *packet)
+{
+	int status;
+
+	if (!p || !packet)
+		return -err_internal;
+
+	status = parse_exec_mode(input, packet);
+	if (status != 0) {
+		if (status < 0)
+			return status;
+
+		status = yasm_print_err(p->y, "mode.exec: bad argument, "
+					"expected \"16bit\", \"64bit\" or "
+					"\"32bit\"", -err_parse);
+		if (status < 0)
+			return status;
+
+		return 1;
+	}
+
+	status = parse_token(input, ",");
+	if (status != 0) {
+		if (status < 0)
+			return status;
+
+		packet->iflag = 0;
+		return 0;
+	}
+
+	status = parse_token(input, "if");
+	if (status != 0) {
+		if (status < 0)
+			return status;
+
+		status = yasm_print_err(p->y, "mode.exec: bad argument, "
+					"expected \"if\"", -err_parse);
+		if (status < 0)
+			return status;
+
+		return 1;
+	}
+
+	packet->iflag = 1;
+	return 0;
+}
+
+/* Parse cfe arguments in @input into @packet.
+ *
+ * Returns zero on success and updates @input.
+ * Returns a positive integer on failure.
+ * Returns a negative integer on error.
+ */
+static int parse_cfe(const char **input, const struct parser *p,
+		     struct pt_packet_cfe *packet)
+{
+	uint8_t type;
+	int status;
+
+	if (!p || !packet)
+		return -err_internal;
+
+	status = parse_uint_8(input, &type);
+	if (status != 0) {
+		if (status < 0)
+			return status;
+
+		status = yasm_print_err(p->y, "cfe: bad argument, expected "
+					"8-bit unsigned integer 'type'",
+					-err_parse);
+		if (status < 0)
+			return status;
+
+		return 1;
+	}
+
+	packet->type = (enum pt_cfe_type) type;
+
+	status = parse_token(input, ":");
+	if (status != 0) {
+		if (status < 0)
+			return status;
+
+		switch (packet->type) {
+		case pt_cfe_intr:
+		case pt_cfe_sipi:
+		case pt_cfe_vmexit_intr:
+		case pt_cfe_uintr:
+			status = yasm_print_err(p->y, "cfe: type needs "
+						"'vector' argument",
+						-err_parse);
+			if (status < 0)
+				return status;
+
+			return 1;
+
+		case pt_cfe_iret:
+		case pt_cfe_smi:
+		case pt_cfe_rsm:
+		case pt_cfe_init:
+		case pt_cfe_vmentry:
+		case pt_cfe_vmexit:
+		case pt_cfe_shutdown:
+		case pt_cfe_uiret:
+			packet->vector = 0;
+			break;
+		}
+	} else {
+		status = parse_uint_8(input, &packet->vector);
+		if (status != 0) {
+			if (status < 0)
+				return status;
+
+			status = yasm_print_err(p->y, "cfe: bad argument, "
+						"expected  8-bit unsigned "
+						"integer 'vector'", -err_parse);
+			if (status < 0)
+				return status;
+
+			return 1;
+		}
+	}
+
+	status = parse_token(input, ",");
+	if (status != 0) {
+		if (status < 0)
+			return status;
+
+		packet->ip = 0;
+		return 0;
+	}
+
+	status = parse_token(input, "ip");
+	if (status != 0) {
+		if (status < 0)
+			return status;
+
+		status = yasm_print_err(p->y, "cfe: bad argument, expected"
+					"'ip' keyword", -err_parse);
+		if (status < 0)
+			return status;
+
+		return 1;
+	}
+
+	packet->ip = 1;
+	return 0;
+}
+
+/* Parse evd arguments in @input into @packet.
+ *
+ * Returns zero on success and updates @input.
+ * Returns a positive integer on failure.
+ * Returns a negative integer on error.
+ */
+static int parse_evd(const char **input, const struct parser *p,
+		     struct pt_packet_evd *packet)
+{
+	uint8_t type;
+	int status;
+
+	if (!p || !packet)
+		return -err_internal;
+
+	status = parse_uint_8(input, &type);
+	if (status != 0) {
+		if (status < 0)
+			return status;
+
+		status = yasm_print_err(p->y, "evd: bad argument, expected "
+					"8-bit unsigned integer 'type'",
+					-err_parse);
+		if (status < 0)
+			return status;
+
+		return 1;
+	}
+
+	packet->type = (enum pt_evd_type) type;
+
+	status = parse_token(input, ":");
+	if (status != 0) {
+		if (status < 0)
+			return status;
+
+		status = yasm_print_err(p->y, "evd: bad argument, expected "
+					"':' separator", -err_parse);
+		if (status < 0)
+			return status;
+
+		return 1;
+	}
+
+	status = parse_uint_64(input, &packet->payload);
+	if (status != 0) {
+		if (status < 0)
+			return status;
+
+		status = yasm_print_err(p->y, "evd: bad argument, expected "
+					"64-bit unsigned integer 'payload'",
+					-err_parse);
+		if (status < 0)
+			return status;
+
+		return 1;
+	}
 
 	return 0;
 }
@@ -853,21 +1257,22 @@ static int p_process_pt(struct parser *p, struct pt_encoder *e)
 		}
 		packet.type = ppt_fup;
 	} else if (strcmp(directive, "mode.exec") == 0) {
-		if (strcmp(payload, "16bit") == 0) {
-			packet.payload.mode.bits.exec.csl = 0;
-			packet.payload.mode.bits.exec.csd = 0;
-		} else if (strcmp(payload, "64bit") == 0) {
-			packet.payload.mode.bits.exec.csl = 1;
-			packet.payload.mode.bits.exec.csd = 0;
-		} else if (strcmp(payload, "32bit") == 0) {
-			packet.payload.mode.bits.exec.csl = 0;
-			packet.payload.mode.bits.exec.csd = 1;
-		} else {
-			errcode = yasm_print_err(p->y,
-						 "mode.exec: argument must be one of \"16bit\", \"64bit\" or \"32bit\"",
-						 -err_parse);
+		const char *cpl;
+
+		cpl = (const char *) payload;
+		errcode = parse_mode_exec(&cpl, p,
+					  &packet.payload.mode.bits.exec);
+		if (errcode != 0) {
+			if (errcode < 0)
+				yasm_print_err(p->y,
+					       "mode.exec: parsing failed",
+					       errcode);
+			else
+				errcode = -err_parse;
+
 			return errcode;
 		}
+
 		packet.payload.mode.leaf = pt_mol_exec;
 		packet.type = ppt_mode;
 	} else if (strcmp(directive, "mode.tsx") == 0) {
@@ -1090,6 +1495,38 @@ static int p_process_pt(struct parser *p, struct pt_encoder *e)
 
 			packet.payload.ptw.ip = 1;
 		}
+	} else if (strcmp(directive, "cfe") == 0) {
+		const char *cpl;
+
+		cpl = (const char *) payload;
+		errcode = parse_cfe(&cpl, p, &packet.payload.cfe);
+		if (errcode != 0) {
+			if (errcode < 0)
+				yasm_print_err(p->y, "cfe: parsing failed",
+					       errcode);
+			else
+				errcode = -err_parse;
+
+			return errcode;
+		}
+
+		packet.type = ppt_cfe;
+	} else if (strcmp(directive, "evd") == 0) {
+		const char *cpl;
+
+		cpl = (const char *) payload;
+		errcode = parse_evd(&cpl, p, &packet.payload.evd);
+		if (errcode != 0) {
+			if (errcode < 0)
+				yasm_print_err(p->y, "evd: parsing failed",
+					       errcode);
+			else
+				errcode = -err_parse;
+
+			return errcode;
+		}
+
+		packet.type = ppt_evd;
 	} else if (strcmp(directive, "raw-8") == 0) {
 		uint8_t value;
 

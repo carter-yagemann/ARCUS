@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2013-2022, Intel Corporation
+ * Copyright (c) 2013-2024, Intel Corporation
+ * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -251,6 +252,7 @@ static void help(const char *name)
 	printf("  --event:time                         print the tsc for events if available.\n");
 	printf("  --event:ip                           print the ip of events if available.\n");
 	printf("  --event:tick                         request tick events.\n");
+	printf("  --event:iflags                       request iflags events.\n");
 	printf("  --filter:addr<n>_cfg <cfg>           set IA32_RTIT_CTL.ADDRn_CFG to <cfg>.\n");
 	printf("  --filter:addr<n>_a <base>            set IA32_RTIT_ADDRn_A to <base>.\n");
 	printf("  --filter:addr<n>_b <limit>           set IA32_RTIT_ADDRn_B to <limit>.\n");
@@ -271,6 +273,8 @@ static void help(const char *name)
 	printf("                              load a perf_event sideband stream from <file>.\n");
 	printf("                              an optional offset or range can be given.\n");
 	printf("  --pevent:sample-type <val>  set perf_event_attr.sample_type to <val> (default: 0).\n");
+	printf("  --pevent:sample-config <id>:<val>\n");
+	printf("                              set perf_event_attr.sample_type to <val> for event <id>.\n");
 	printf("  --pevent:time-zero <val>    set perf_event_mmap_page.time_zero to <val> (default: 0).\n");
 	printf("  --pevent:time-shift <val>   set perf_event_mmap_page.time_shift to <val> (default: 0).\n");
 	printf("  --pevent:time-mult <val>    set perf_event_mmap_page.time_mult to <val> (default: 1).\n");
@@ -302,12 +306,16 @@ static void help(const char *name)
 	printf("  --cpuid-0x15.eax                     set the value of cpuid[0x15].eax.\n");
 	printf("  --cpuid-0x15.ebx                     set the value of cpuid[0x15].ebx.\n");
 	printf("  --insn-decoder                       use the instruction flow decoder.\n");
+#if (LIBIPT_VERSION >= 0x201)
 	printf("  --insn:keep-tcal-on-ovf              preserve timing calibration on overflow.\n");
+#endif
 	printf("  --block-decoder                      use the block decoder (default).\n");
 	printf("  --block:show-blocks                  show blocks in the output.\n");
 	printf("  --block:end-on-call                  set the end-on-call block decoder flag.\n");
 	printf("  --block:end-on-jump                  set the end-on-jump block decoder flag.\n");
+#if (LIBIPT_VERSION >= 0x201)
 	printf("  --block:keep-tcal-on-ovf             preserve timing calibration on overflow.\n");
+#endif
 	printf("\n");
 #if defined(FEATURE_ELF)
 	printf("You must specify at least one binary or ELF file (--raw|--elf).\n");
@@ -616,9 +624,13 @@ static xed_machine_mode_enum_t translate_mode(enum pt_exec_mode mode)
 static const char *visualize_iclass(enum pt_insn_class iclass)
 {
 	switch (iclass) {
+#if (LIBIPT_VERSION >= 0x201)
 	case ptic_unknown:
 		return "unknown";
-
+#else
+	case ptic_error:
+		return "error";
+#endif
 	case ptic_other:
 		return "other";
 
@@ -646,17 +658,18 @@ static const char *visualize_iclass(enum pt_insn_class iclass)
 	case ptic_ptwrite:
 		return "ptwrite";
 
+#if (LIBIPT_VERSION >= 0x201)
 	case ptic_indirect:
 		return "indirect";
+#endif
 	}
 
 	return "undefined";
 }
 
-static void check_insn_iclass(const xed_inst_t *inst,
+static void check_insn_iclass(const xed_decoded_inst_t *inst,
 			      const struct pt_insn *insn, uint64_t offset)
 {
-	xed_category_enum_t category;
 	xed_iclass_enum_t iclass;
 
 	if (!inst || !insn) {
@@ -664,152 +677,135 @@ static void check_insn_iclass(const xed_inst_t *inst,
 		return;
 	}
 
-	category = xed_inst_category(inst);
-	iclass = xed_inst_iclass(inst);
-
-	switch (insn->iclass) {
-	case ptic_unknown:
-		break;
-
-	case ptic_ptwrite:
-	case ptic_other:
-		switch (category) {
-		default:
+	iclass = xed_decoded_inst_get_iclass(inst);
+	switch (iclass) {
+	default:
+		if (insn->iclass == ptic_other)
 			return;
-
-		case XED_CATEGORY_CALL:
-		case XED_CATEGORY_RET:
-		case XED_CATEGORY_UNCOND_BR:
-		case XED_CATEGORY_SYSCALL:
-		case XED_CATEGORY_SYSRET:
-			break;
-
-		case XED_CATEGORY_COND_BR:
-			switch (iclass) {
-			case XED_ICLASS_XBEGIN:
-			case XED_ICLASS_XEND:
-				return;
-
-			default:
-				break;
-			}
-			break;
-
-		case XED_CATEGORY_INTERRUPT:
-			switch (iclass) {
-			case XED_ICLASS_BOUND:
-				return;
-
-			default:
-				break;
-			}
-			break;
-		}
 		break;
 
-	case ptic_call:
-		if (iclass == XED_ICLASS_CALL_NEAR)
+	case XED_ICLASS_CALL_NEAR:
+		if (insn->iclass == ptic_call)
 			return;
-
-		break;
-
-	case ptic_return:
-		if (iclass == XED_ICLASS_RET_NEAR)
+#if (LIBIPT_VERSION >= 0x201)
+		if (insn->iclass == ptic_indirect)
 			return;
-
+#endif
 		break;
 
-	case ptic_jump:
-		if (iclass == XED_ICLASS_JMP)
+	case XED_ICLASS_RET_NEAR:
+		if (insn->iclass == ptic_return)
 			return;
-
-		break;
-
-	case ptic_cond_jump:
-		if (category == XED_CATEGORY_COND_BR)
+#if (LIBIPT_VERSION >= 0x201)
+		if (insn->iclass == ptic_indirect)
 			return;
-
+#endif
 		break;
 
-	case ptic_far_call:
-		switch (iclass) {
-		default:
-			break;
-
-		case XED_ICLASS_CALL_FAR:
-		case XED_ICLASS_INT:
-		case XED_ICLASS_INT1:
-		case XED_ICLASS_INT3:
-		case XED_ICLASS_INTO:
-		case XED_ICLASS_SYSCALL:
-		case XED_ICLASS_SYSCALL_AMD:
-		case XED_ICLASS_SYSENTER:
-		case XED_ICLASS_VMCALL:
+	case XED_ICLASS_JMP:
+#if defined(XED_ICLASS_JMPABS_DEFINED) && XED_ICLASS_JMPABS_DEFINED
+	case XED_ICLASS_JMPABS:
+#endif
+		if (insn->iclass == ptic_jump)
 			return;
-		}
-		break;
-
-	case ptic_far_return:
-		switch (iclass) {
-		default:
-			break;
-
-		case XED_ICLASS_RET_FAR:
-		case XED_ICLASS_IRET:
-		case XED_ICLASS_IRETD:
-		case XED_ICLASS_IRETQ:
-		case XED_ICLASS_SYSRET:
-		case XED_ICLASS_SYSRET_AMD:
-		case XED_ICLASS_SYSEXIT:
-		case XED_ICLASS_VMLAUNCH:
-		case XED_ICLASS_VMRESUME:
+#if (LIBIPT_VERSION >= 0x201)
+		if (insn->iclass == ptic_indirect)
 			return;
-		}
+#endif
 		break;
 
-	case ptic_far_jump:
-		if (iclass == XED_ICLASS_JMP_FAR)
+	case XED_ICLASS_JB:
+	case XED_ICLASS_JBE:
+	case XED_ICLASS_JCXZ:
+	case XED_ICLASS_JECXZ:
+	case XED_ICLASS_JL:
+	case XED_ICLASS_JLE:
+	case XED_ICLASS_JNB:
+	case XED_ICLASS_JNBE:
+	case XED_ICLASS_JNL:
+	case XED_ICLASS_JNLE:
+	case XED_ICLASS_JNO:
+	case XED_ICLASS_JNP:
+	case XED_ICLASS_JNS:
+	case XED_ICLASS_JNZ:
+	case XED_ICLASS_JO:
+	case XED_ICLASS_JP:
+	case XED_ICLASS_JRCXZ:
+	case XED_ICLASS_JS:
+	case XED_ICLASS_JZ:
+	case XED_ICLASS_LOOP:
+	case XED_ICLASS_LOOPE:
+	case XED_ICLASS_LOOPNE:
+		if (insn->iclass == ptic_cond_jump)
 			return;
-
 		break;
 
-	case ptic_indirect:
-		switch (iclass) {
-		default:
-			break;
-
-		case XED_ICLASS_CALL_FAR:
-		case XED_ICLASS_INT:
-		case XED_ICLASS_INT1:
-		case XED_ICLASS_INT3:
-		case XED_ICLASS_INTO:
-		case XED_ICLASS_SYSCALL:
-		case XED_ICLASS_SYSCALL_AMD:
-		case XED_ICLASS_SYSENTER:
-		case XED_ICLASS_VMCALL:
-		case XED_ICLASS_RET_FAR:
-		case XED_ICLASS_IRET:
-		case XED_ICLASS_IRETD:
-		case XED_ICLASS_IRETQ:
-		case XED_ICLASS_SYSRET:
-		case XED_ICLASS_SYSRET_AMD:
-		case XED_ICLASS_SYSEXIT:
-		case XED_ICLASS_VMLAUNCH:
-		case XED_ICLASS_VMRESUME:
-		case XED_ICLASS_JMP_FAR:
-		case XED_ICLASS_JMP:
+	case XED_ICLASS_CALL_FAR:
+	case XED_ICLASS_INT:
+	case XED_ICLASS_INT1:
+	case XED_ICLASS_INT3:
+	case XED_ICLASS_INTO:
+	case XED_ICLASS_SYSCALL:
+#if defined(XED_ICLASS_SYSCALL_AMD_DEFINED) && XED_ICLASS_SYSCALL_AMD_DEFINED
+	case XED_ICLASS_SYSCALL_AMD:
+#endif
+#if defined(XED_ICLASS_SYSCALL_32_DEFINED) && XED_ICLASS_SYSCALL_32_DEFINED
+	case XED_ICLASS_SYSCALL_32:
+#endif
+	case XED_ICLASS_SYSENTER:
+	case XED_ICLASS_VMCALL:
+		if (insn->iclass == ptic_far_call)
 			return;
-		}
+#if (LIBIPT_VERSION >= 0x201)
+		if (insn->iclass == ptic_indirect)
+			return;
+#endif
 		break;
 
+#if defined(XED_ICLASS_ERETS_DEFINED) && XED_ICLASS_ERETS_DEFINED
+	case XED_ICLASS_ERETS:
+#endif
+#if defined(XED_ICLASS_ERETU_DEFINED) && XED_ICLASS_ERETU_DEFINED
+	case XED_ICLASS_ERETU:
+#endif
+	case XED_ICLASS_IRET:
+	case XED_ICLASS_IRETD:
+	case XED_ICLASS_IRETQ:
+	case XED_ICLASS_RET_FAR:
+	case XED_ICLASS_SYSEXIT:
+	case XED_ICLASS_SYSRET:
+	case XED_ICLASS_SYSRET64:
+	case XED_ICLASS_SYSRET_AMD:
+	case XED_ICLASS_UIRET:
+	case XED_ICLASS_VMLAUNCH:
+	case XED_ICLASS_VMRESUME:
+		if (insn->iclass == ptic_far_return)
+			return;
+#if (LIBIPT_VERSION >= 0x201)
+		if (insn->iclass == ptic_indirect)
+			return;
+#endif
+		break;
+
+	case XED_ICLASS_JMP_FAR:
+		if (insn->iclass == ptic_far_jump)
+			return;
+#if (LIBIPT_VERSION >= 0x201)
+		if (insn->iclass == ptic_indirect)
+			return;
+#endif
+		break;
+
+	case XED_ICLASS_PTWRITE:
+		if (insn->iclass == ptic_ptwrite)
+			return;
+		break;
 	}
 
 	/* If we get here, @insn->iclass doesn't match XED's classification. */
 	printf("[%" PRIx64 ", %" PRIx64 ": iclass error: iclass: %s, "
-	       "xed iclass: %s, category: %s]\n", offset, insn->ip,
-	       visualize_iclass(insn->iclass), xed_iclass_enum_t2str(iclass),
-	       xed_category_enum_t2str(category));
-
+	       "xed iclass: %s]\n", offset, insn->ip,
+	       visualize_iclass(insn->iclass), xed_iclass_enum_t2str(iclass));
 }
 
 static void check_insn_decode(xed_decoded_inst_t *inst,
@@ -872,7 +868,7 @@ static void check_insn(const struct pt_insn *insn, uint64_t offset)
 	if (!xed_decoded_inst_valid(&inst))
 		return;
 
-	check_insn_iclass(xed_decoded_inst_inst(&inst), insn, offset);
+	check_insn_iclass(&inst, insn, offset);
 }
 
 static void print_raw_insn(const struct pt_insn *insn)
@@ -1184,6 +1180,7 @@ static void print_event(const struct pt_event *event,
 		printf("mnt: %" PRIx64, event->variant.mnt.payload);
 		break;
 
+#if (LIBIPT_VERSION >= 0x201)
 	case ptev_tip:
 		printf("tip: %" PRIx64, event->variant.tip.ip);
 		break;
@@ -1197,6 +1194,115 @@ static void print_event(const struct pt_event *event,
 			       (event->variant.tnt.bits & index) ? "!" : ".");
 	}
 		break;
+
+	case ptev_iflags:
+		printf("interrupts %s",
+		       event->variant.iflags.iflag ? "enabled" : "disabled");
+
+		if (options->print_event_ip && !event->ip_suppressed)
+			printf(", ip: %016" PRIx64,
+			       event->variant.iflags.ip);
+		break;
+
+	case ptev_interrupt:
+		printf("interrupt %u", event->variant.interrupt.vector);
+
+		if (event->variant.interrupt.has_cr2)
+			printf(", cr2: %016" PRIx64,
+			       event->variant.interrupt.cr2);
+
+		if (options->print_event_ip && !event->ip_suppressed)
+			printf(", ip: %016" PRIx64,
+			       event->variant.interrupt.ip);
+		break;
+
+	case ptev_iret:
+		printf("iret");
+
+		if (options->print_event_ip && !event->ip_suppressed)
+			printf(", ip: %016" PRIx64,
+			       event->variant.iret.ip);
+		break;
+
+	case ptev_smi:
+		printf("smi");
+
+		if (options->print_event_ip && !event->ip_suppressed)
+			printf(", ip: %016" PRIx64,
+			       event->variant.smi.ip);
+		break;
+
+	case ptev_rsm:
+		printf("rsm");
+
+		if (options->print_event_ip && !event->ip_suppressed)
+			printf(", ip: %016" PRIx64,
+			       event->variant.rsm.ip);
+		break;
+
+	case ptev_sipi:
+		printf("sipi: %x", event->variant.sipi.vector);
+		break;
+
+	case ptev_init:
+		printf("init");
+
+		if (options->print_event_ip && !event->ip_suppressed)
+			printf(", ip: %016" PRIx64,
+			       event->variant.init.ip);
+		break;
+
+	case ptev_vmentry:
+		printf("vmentry");
+
+		if (options->print_event_ip && !event->ip_suppressed)
+			printf(", ip: %016" PRIx64,
+			       event->variant.vmentry.ip);
+		break;
+
+	case ptev_vmexit:
+		printf("vmexit");
+
+		if (event->variant.vmexit.has_vector)
+			printf(", intr: %u", event->variant.vmexit.vector);
+
+		if (event->variant.vmexit.has_vmxr)
+			printf(", vmxr: %016" PRIx64,
+			       event->variant.vmexit.vmxr);
+
+		if (event->variant.vmexit.has_vmxq)
+			printf(", vmxq: %016" PRIx64,
+			       event->variant.vmexit.vmxq);
+
+		if (options->print_event_ip && !event->ip_suppressed)
+			printf(", ip: %016" PRIx64,
+			       event->variant.vmexit.ip);
+		break;
+
+	case ptev_shutdown:
+		printf("shutdown");
+
+		if (options->print_event_ip && !event->ip_suppressed)
+			printf(", ip: %016" PRIx64,
+			       event->variant.shutdown.ip);
+		break;
+
+	case ptev_uintr:
+		printf("uintr %u", event->variant.uintr.vector);
+
+		if (options->print_event_ip && !event->ip_suppressed)
+			printf(", ip: %016" PRIx64,
+			       event->variant.uintr.ip);
+		break;
+
+	case ptev_uiret:
+		printf("uiret");
+
+		if (options->print_event_ip && !event->ip_suppressed)
+			printf(", ip: %016" PRIx64,
+			       event->variant.uiret.ip);
+		break;
+#endif
 	}
 
 	printf("]\n");
@@ -1384,7 +1490,12 @@ static void decode_insn(struct ptxed_decoder *decoder,
 				/* Even in case of errors, we may have succeeded
 				 * in decoding the current instruction.
 				 */
-				if (insn.iclass != ptic_unknown) {
+#if (LIBIPT_VERSION >= 0x201)
+				if (insn.iclass != ptic_unknown)
+#else
+				if (insn.iclass != ptic_error)
+#endif
+				{
 					if (!options->quiet)
 						print_insn(&insn, &xed, options,
 							   offset, time);
@@ -1706,7 +1817,7 @@ static void check_block(const struct pt_block *block,
 	/* Check the last instruction's classification, if available. */
 	insn.iclass = block->iclass;
 	if (insn.iclass)
-		check_insn_iclass(xed_decoded_inst_inst(&inst), &insn, offset);
+		check_insn_iclass(&inst, &insn, offset);
 }
 
 static int drain_events_block(struct ptxed_decoder *decoder, uint64_t *time,
@@ -2066,6 +2177,58 @@ static int ptxed_sb_pevent(struct ptxed_decoder *decoder, char *filename,
 	return 0;
 }
 
+static int pt_parse_sample_config(struct pt_sb_pevent_config *pevent,
+				  const char *arg)
+{
+	struct pev_sample_config *sample_config;
+	uint64_t identifier, sample_type;
+	uint8_t nstypes;
+	char *rest;
+
+	if (!pevent || !arg)
+		return -pte_internal;
+
+	errno = 0;
+	identifier = strtoull(arg, &rest, 0);
+	if (errno || (rest == arg))
+		return -pte_invalid;
+
+	arg = rest;
+	if (arg[0] != ':')
+		return -pte_invalid;
+
+	arg += 1;
+	sample_type = strtoull(arg, &rest, 0);
+	if (errno || *rest)
+		return -pte_invalid;
+
+	sample_config = pevent->sample_config;
+	if (!sample_config) {
+		sample_config = malloc(sizeof(*sample_config));
+		if (!sample_config)
+			return -pte_nomem;
+
+		memset(sample_config, 0, sizeof(*sample_config));
+		pevent->sample_config = sample_config;
+	}
+
+	nstypes = sample_config->nstypes;
+	sample_config = realloc(sample_config,
+				sizeof(*sample_config) +
+				((nstypes + 1) *
+				 sizeof(struct pev_sample_type)));
+	if (!sample_config)
+		return -pte_nomem;
+
+	sample_config->stypes[nstypes].identifier = identifier;
+	sample_config->stypes[nstypes].sample_type = sample_type;
+	sample_config->nstypes = nstypes + 1;
+
+	pevent->sample_config = sample_config;
+
+	return 0;
+}
+
 #endif /* defined(FEATURE_PEVENT) */
 #endif /* defined(FEATURE_SIDEBAND) */
 
@@ -2358,6 +2521,14 @@ extern int main(int argc, char *argv[])
 
 			continue;
 		}
+		if (strcmp(arg, "--event:iflags") == 0) {
+			decoder.block.flags.variant.block.
+				enable_iflags_events = 1;
+			decoder.insn.flags.variant.insn.
+				enable_iflags_events = 1;
+
+			continue;
+		}
 		if (strcmp(arg, "--filter:addr0_cfg") == 0) {
 			if (ptxed_have_decoder(&decoder)) {
 				fprintf(stderr,
@@ -2628,6 +2799,20 @@ extern int main(int argc, char *argv[])
 
 			continue;
 		}
+		if (strcmp(arg, "--pevent:sample-config") == 0) {
+			arg = argv[i++];
+
+			errcode = pt_parse_sample_config(&decoder.pevent, arg);
+			if (errcode < 0) {
+				fprintf(stderr,
+					"%s: bad sample config %s: %s.\n",
+					prog, arg,
+					pt_errstr(pt_errcode(errcode)));
+				goto err;
+			}
+
+			continue;
+		}
 		if (strcmp(arg, "--pevent:time-zero") == 0) {
 			if (!get_arg_uint64(&decoder.pevent.time_zero,
 					    "--pevent:time-zero",
@@ -2819,11 +3004,12 @@ extern int main(int argc, char *argv[])
 			continue;
 		}
 
+#if (LIBIPT_VERSION >= 0x201)
 		if (strcmp(arg, "--insn:keep-tcal-on-ovf") == 0) {
 			decoder.insn.flags.variant.insn.keep_tcal_on_ovf = 1;
 			continue;
 		}
-
+#endif
 
 		if (strcmp(arg, "--block-decoder") == 0) {
 			if (ptxed_have_decoder(&decoder)) {
@@ -2852,11 +3038,12 @@ extern int main(int argc, char *argv[])
 			continue;
 		}
 
+#if (LIBIPT_VERSION >= 0x201)
 		if (strcmp(arg, "--block:keep-tcal-on-ovf") == 0) {
 			decoder.block.flags.variant.block.keep_tcal_on_ovf = 1;
 			continue;
 		}
-
+#endif
 		fprintf(stderr, "%s: unknown option: %s.\n", prog, arg);
 		goto err;
 	}

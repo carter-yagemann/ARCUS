@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2013-2022, Intel Corporation
+ * Copyright (c) 2013-2024, Intel Corporation
+ * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -268,6 +269,7 @@ static int pt_pkt_read_mode_exec(struct pt_packet_mode_exec *packet,
 
 	packet->csl = (mode & pt_mob_exec_csl) != 0;
 	packet->csd = (mode & pt_mob_exec_csd) != 0;
+	packet->iflag = (mode & pt_mob_exec_iflag) != 0;
 
 	return ptps_mode;
 }
@@ -573,4 +575,39 @@ int pt_pkt_read_ptw(struct pt_packet_ptw *packet, const uint8_t *pos,
 	packet->ip = opc & pt_opm_ptw_ip ? 1 : 0;
 
 	return pt_opcs_ptw + size;
+}
+
+int pt_pkt_read_cfe(struct pt_packet_cfe *packet, const uint8_t *pos,
+		    const struct pt_config *config)
+{
+	if (!packet || !pos || !config)
+		return -pte_internal;
+
+	if (config->end < pos + ptps_cfe)
+		return -pte_eos;
+
+	pos += pt_opcs_cfe;
+
+	packet->type = pos[0] & pt_pl_cfe_type;
+	packet->vector = pos[1];
+	packet->ip = pos[0] & pt_pl_cfe_ip ? 1 : 0;
+
+	return ptps_cfe;
+}
+
+int pt_pkt_read_evd(struct pt_packet_evd *packet, const uint8_t *pos,
+		    const struct pt_config *config)
+{
+	if (!packet || !pos || !config)
+		return -pte_internal;
+
+	if (config->end < pos + ptps_evd)
+		return -pte_eos;
+
+	pos += pt_opcs_evd;
+
+	packet->type = pos[0] & pt_pl_evd_type;
+	packet->payload = pt_pkt_read_value(&pos[1], pt_pl_evd_pl_size);
+
+	return ptps_evd;
 }

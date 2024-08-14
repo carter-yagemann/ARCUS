@@ -198,23 +198,27 @@ class strlen(angr.SimProcedure):
         if orig_max < self.max_ovf_len:
             if wchar:
                 null_seq = self.state.solver.BVV(0, 16)
-                step = 2
+                char_size = 2
             else:
                 null_seq = self.state.solver.BVV(0, 8)
-                step = 1
+                char_size = 1
 
             chunk_size = None
             if MEMORY_CHUNK_INDIVIDUAL_READS in self.state.options:
                 chunk_size = 1
 
-            r, c, i = self.state.memory.find(
-                s,
-                null_seq,
-                self.max_ovf_len,
-                max_symbolic_bytes=self.max_ovf_len,
-                step=step,
-                chunk_size=chunk_size,
-            )
+            try:
+                r, c, i = self.state.memory.find(
+                    s,
+                    null_seq,
+                    self.max_ovf_len,
+                    max_symbolic_bytes=self.max_ovf_len,
+                    chunk_size=chunk_size,
+                    char_size=char_size,
+                )
+            except ValueError:
+                # search failed, set empty result
+                i = []
 
             if len(i) > 0:
                 ovf_max = max(i)

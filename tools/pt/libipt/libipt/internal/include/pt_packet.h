@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2014-2022, Intel Corporation
+ * Copyright (c) 2014-2024, Intel Corporation
+ * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -49,6 +50,8 @@ struct pt_packet_mwait;
 struct pt_packet_pwre;
 struct pt_packet_pwrx;
 struct pt_packet_ptw;
+struct pt_packet_cfe;
+struct pt_packet_evd;
 
 
 /* Read the payload of an Intel PT packet.
@@ -106,6 +109,10 @@ extern int pt_pkt_read_pwre(struct pt_packet_pwre *packet, const uint8_t *pos,
 extern int pt_pkt_read_pwrx(struct pt_packet_pwrx *packet, const uint8_t *pos,
 			    const struct pt_config *config);
 extern int pt_pkt_read_ptw(struct pt_packet_ptw *packet, const uint8_t *pos,
+			   const struct pt_config *config);
+extern int pt_pkt_read_cfe(struct pt_packet_cfe *packet, const uint8_t *pos,
+			   const struct pt_config *config);
+extern int pt_pkt_read_evd(struct pt_packet_evd *packet, const uint8_t *pos,
 			   const struct pt_config *config);
 
 #endif /* PT_PACKET_H */

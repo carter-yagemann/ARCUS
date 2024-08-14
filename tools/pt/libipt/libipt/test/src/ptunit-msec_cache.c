@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2017-2022, Intel Corporation
+ * Copyright (c) 2017-2024, Intel Corporation
+ * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -207,6 +208,8 @@ static struct ptunit_result read_null(void)
 	struct pt_msec_cache mcache;
 	struct pt_image image;
 	int status;
+
+	memset(&mcache, 0, sizeof(mcache));
 
 	status = pt_msec_cache_read(NULL, &msec, &image, 0ull);
 	ptu_int_eq(status, -pte_internal);

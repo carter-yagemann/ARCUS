@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2013-2022, Intel Corporation
+ * Copyright (c) 2013-2024, Intel Corporation
+ * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -79,8 +80,8 @@ extern void pt_image_fini(struct pt_image *image);
  *
  * Add @section identified by @isid to @image at @vaddr in @asid.  If @section
  * overlaps with existing sections, the existing sections are shrunk, split, or
- * removed to accomodate @section.  Absence of a section identifier is indicated
- * by an @isid of zero.
+ * removed to accommodate @section.  Absence of a section identifier is
+ * indicated by an @isid of zero.
  *
  * Returns zero on success.
  * Returns -pte_internal if @image, @section, or @asid is NULL.

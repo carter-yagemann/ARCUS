@@ -16,7 +16,7 @@ Operands
 0   REG0              REG0=RIP SUPPRESSED   W         Q   64     8     1     64        INT         IP
 1   REG1              REG1=RCX SUPPRESSED   R         Q   64     8     1     64        INT        GPR
 2   REG2              REG2=R11 SUPPRESSED   R         Q   64     8     1     64        INT        GPR
-3   REG3           REG3=RFLAGS SUPPRESSED   W         Y   64     8     1     64        INT      FLAGS
+3   REG3           REG3=RFLAGS SUPPRESSED   W   INVALID   64     8     1     64        INT      FLAGS
 Memory Operands
   MemopBytes = 0
 FLAGS:
@@ -28,5 +28,6 @@ ATTRIBUTES: NOTSX PROTECTED_MODE RING0
 RING0 only
 Number of legacy prefixes: 1 
 ISA SET: [LONGMODE]
-0	CPUID BIT NAME: [INTEL64]
-	Leaf 0x80000001, subleaf 0x00000000, EDX[29]
+0	CPUID GROUP NAME: [LONGMODE]
+	0	CPUID RECORD NAME: [INTEL64]
+		{Leaf 0x80000001, subleaf 0x00000000, EDX[29:29]} = 1

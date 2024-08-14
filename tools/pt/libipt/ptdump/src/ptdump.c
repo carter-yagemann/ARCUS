@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2013-2022, Intel Corporation
+ * Copyright (c) 2013-2024, Intel Corporation
+ * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -80,8 +81,10 @@ struct ptdump_options {
 	/* Show timing information as delta to the previous value. */
 	uint32_t show_time_as_delta:1;
 
+#if (LIBIPT_VERSION >= 0x201)
 	/* Preserve timing calibration on overflow. */
 	uint32_t keep_tcal_on_ovf:1;
+#endif
 
 	/* Quiet mode: Don't print anything but errors. */
 	uint32_t quiet:1;
@@ -217,7 +220,9 @@ static int help(const char *name)
 	printf("  --no-tcal                 skip timing calibration.\n");
 	printf("                            this will result in errors when CYC packets are encountered.\n");
 	printf("  --no-wall-clock           suppress the no-time error and print relative time.\n");
+#if (LIBIPT_VERSION >= 0x201)
 	printf("  --keep-tcal-on-ovf        preserve timing calibration on overflow.\n");
+#endif
 #if defined(FEATURE_SIDEBAND)
 	printf("  --sb:compact | --sb       show sideband records in compact format.\n");
 	printf("  --sb:verbose              show sideband records in verbose format.\n");
@@ -230,6 +235,8 @@ static int help(const char *name)
 	printf("                              load a perf_event sideband stream from <file>.\n");
 	printf("                              an optional offset or range can be given.\n");
 	printf("  --pevent:sample-type <val>  set perf_event_attr.sample_type to <val> (default: 0).\n");
+	printf("  --pevent:sample-config <id>:<val>\n");
+	printf("                              set perf_event_attr.sample_type to <val> for event <id>.\n");
 	printf("  --pevent:time-zero <val>    set perf_event_mmap_page.time_zero to <val> (default: 0).\n");
 	printf("  --pevent:time-shift <val>   set perf_event_mmap_page.time_shift to <val> (default: 0).\n");
 	printf("  --pevent:time-mult <val>    set perf_event_mmap_page.time_mult to <val> (default: 1).\n");
@@ -1098,6 +1105,7 @@ static int print_packet(struct ptdump_buffer *buffer, uint64_t offset,
 		print_field(buffer->opcode, "ovf");
 
 		if (options->track_time) {
+#if (LIBIPT_VERSION >= 0x201)
 			if (options->keep_tcal_on_ovf) {
 				int errcode;
 
@@ -1107,6 +1115,7 @@ static int print_packet(struct ptdump_buffer *buffer, uint64_t offset,
 					diag("error calibrating time",
 					     offset, errcode);
 			} else
+#endif
 				pt_tcal_init(&tracking->tcal);
 		}
 
@@ -1195,9 +1204,16 @@ static int print_packet(struct ptdump_buffer *buffer, uint64_t offset,
 			sep = csd[0] && csl[0] ? ", " : "";
 
 			print_field(buffer->opcode, "mode.exec");
+#if (LIBIPT_VERSION < 0x201)
 			print_field(buffer->payload.standard, "%s%s%s",
 				    csd, sep, csl);
-
+#else
+			print_field(buffer->payload.standard, "%s%s%s%s%s",
+				    csd, sep, csl,
+				    mode->bits.exec.iflag &&
+				    (csd[0] || csl[0]) ? ", " : "",
+				    mode->bits.exec.iflag ? "if" : "");
+#endif
 			if (options->show_exec_mode) {
 				const char *em;
 
@@ -1348,6 +1364,60 @@ static int print_packet(struct ptdump_buffer *buffer, uint64_t offset,
 			    packet->payload.ptw.ip ? ", ip" : "");
 
 		return 0;
+
+#if (LIBIPT_VERSION >= 0x201)
+	case ppt_cfe:
+		print_field(buffer->opcode, "cfe");
+
+		switch (packet->payload.cfe.type) {
+		case pt_cfe_intr:
+		case pt_cfe_vmexit_intr:
+		case pt_cfe_uintr:
+			print_field(buffer->payload.standard, "%u: %u%s",
+				    packet->payload.cfe.type,
+				    packet->payload.cfe.vector,
+				    packet->payload.cfe.ip ? ", ip" : "");
+			return 0;
+
+		case pt_cfe_sipi:
+			print_field(buffer->payload.standard, "%u: %x%s",
+				    packet->payload.cfe.type,
+				    packet->payload.cfe.vector,
+				    packet->payload.cfe.ip ? ", ip" : "");
+			return 0;
+
+		case pt_cfe_iret:
+		case pt_cfe_smi:
+		case pt_cfe_rsm:
+		case pt_cfe_init:
+		case pt_cfe_vmentry:
+		case pt_cfe_vmexit:
+		case pt_cfe_shutdown:
+		case pt_cfe_uiret:
+			break;
+		}
+
+		print_field(buffer->payload.standard, "%u%s",
+			    packet->payload.cfe.type,
+			    packet->payload.cfe.ip ? ", ip" : "");
+		return 0;
+
+	case ppt_evd:
+		print_field(buffer->opcode, "evd");
+		print_field(buffer->payload.standard, "%u: %" PRIx64,
+			    packet->payload.evd.type,
+			    packet->payload.evd.payload);
+
+		switch (packet->payload.evd.type) {
+		case pt_evd_cr2:
+		case pt_evd_vmxq:
+		case pt_evd_vmxr:
+			break;
+		}
+
+		return 0;
+
+#endif /* (LIBIPT_VERSION >= 0x201) */
 	}
 
 	return diag("unknown packet", offset, -pte_bad_opc);
@@ -1567,6 +1637,58 @@ static int ptdump_sb_pevent(struct pt_sb_session *session, char *filename,
 	return 0;
 }
 
+static int pt_parse_sample_config(struct pt_sb_pevent_config *pevent,
+				  const char *arg)
+{
+	struct pev_sample_config *sample_config;
+	uint64_t identifier, sample_type;
+	uint8_t nstypes;
+	char *rest;
+
+	if (!pevent || !arg)
+		return -pte_internal;
+
+	errno = 0;
+	identifier = strtoull(arg, &rest, 0);
+	if (errno || (rest == arg))
+		return -pte_invalid;
+
+	arg = rest;
+	if (arg[0] != ':')
+		return -pte_invalid;
+
+	arg += 1;
+	sample_type = strtoull(arg, &rest, 0);
+	if (errno || *rest)
+		return -pte_invalid;
+
+	sample_config = pevent->sample_config;
+	if (!sample_config) {
+		sample_config = malloc(sizeof(*sample_config));
+		if (!sample_config)
+			return -pte_nomem;
+
+		memset(sample_config, 0, sizeof(*sample_config));
+		pevent->sample_config = sample_config;
+	}
+
+	nstypes = sample_config->nstypes;
+	sample_config = realloc(sample_config,
+				sizeof(*sample_config) +
+				((nstypes + 1) *
+				 sizeof(struct pev_sample_type)));
+	if (!sample_config)
+		return -pte_nomem;
+
+	sample_config->stypes[nstypes].identifier = identifier;
+	sample_config->stypes[nstypes].sample_type = sample_type;
+	sample_config->nstypes = nstypes + 1;
+
+	pevent->sample_config = sample_config;
+
+	return 0;
+}
+
 #endif /* defined(FEATURE_PEVENT) */
 #endif /* defined(FEATURE_SIDEBAND) */
 
@@ -1736,8 +1858,10 @@ static int process_args(int argc, char *argv[],
 			options->no_tcal = 1;
 		else if (strcmp(argv[idx], "--no-wall-clock") == 0)
 			options->no_wall_clock = 1;
+#if (LIBIPT_VERSION >= 0x201)
 		else if (strcmp(argv[idx], "--keep-tcal-on-ovf") == 0)
 			options->keep_tcal_on_ovf = 1;
+#endif
 #if defined(FEATURE_SIDEBAND)
 		else if ((strcmp(argv[idx], "--sb:compact") == 0) ||
 			 (strcmp(argv[idx], "--sb") == 0)) {
@@ -1782,6 +1906,15 @@ static int process_args(int argc, char *argv[],
 					    "--pevent:sample-type",
 					    argv[++idx], argv[0]))
 				return -1;
+		} else if (strcmp(argv[idx], "--pevent:sample-config") == 0) {
+			errcode = pt_parse_sample_config(&pevent, argv[++idx]);
+			if (errcode < 0) {
+				fprintf(stderr,
+					"%s: bad sample config %s: %s.\n",
+					argv[0], argv[idx-1],
+					pt_errstr(pt_errcode(errcode)));
+				return -1;
+			}
 		} else if (strcmp(argv[idx], "--pevent:time-zero") == 0) {
 			if (!get_arg_uint64(&pevent.time_zero,
 					    "--pevent:time-zero",

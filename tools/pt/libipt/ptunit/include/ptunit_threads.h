@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2015-2022, Intel Corporation
+ * Copyright (c) 2015-2024, Intel Corporation
+ * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -32,7 +33,11 @@
 #include "ptunit.h"
 
 #if defined(FEATURE_THREADS)
-#  include <threads.h>
+#  if !defined(__STDC_NO_THREADS__)
+#    include <threads.h>
+#  else
+#    include "pt_threads.h"
+#  endif
 #endif /* defined(FEATURE_THREADS) */
 
 
@@ -90,7 +95,7 @@ ptunit_thrd_fini(struct ptunit_thrd_fixture *tfix)
 		int thrd, errcode[ptu_thrd_max];
 
 		for (thrd = 0; thrd < tfix->nthreads; ++thrd)
-			errcode[thrd] = thrd_join(&tfix->threads[thrd],
+			errcode[thrd] = thrd_join(tfix->threads[thrd],
 						  &tfix->result[thrd]);
 
 		mtx_destroy(&tfix->lock);

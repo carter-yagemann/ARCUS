@@ -2,7 +2,7 @@
 # -*- python -*-
 #BEGIN_LEGAL
 #
-#Copyright (c) 2023 Intel Corporation
+#Copyright (c) 2024 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -28,11 +28,7 @@ import argparse
 from collections import defaultdict, Counter
 import subprocess
 
-import find_dir
-XED_ROOT = find_dir.find_dir('xed')
-sys.path.append(XED_ROOT)
-sys.path.append(find_dir.find_dir('mbuild'))    #git-hook don't recognize this
-import mbuild
+XED_ROOT = Path(__file__).parents[1]
 
 TEMPLATE_PATH = Path(XED_ROOT, 'misc','legal-header.txt')
 CURRENT_YEAR = datetime.date.today().strftime("%Y")
@@ -40,16 +36,20 @@ CURRENT_YEAR = datetime.date.today().strftime("%Y")
 HEADER_SKIP_COMMITS = ['5d594f8b09224e77524098bbac43e8f7f680d9f9']
 
 def print_final_lines(output):
-   mbuild.msgb('FINAL COMMAND OUTPUT')
+   print('[FINAL COMMAND OUTPUT]')
    for line in output:
       print("\t" + line)
+
+def die(s):
+    sys.stdout.write("ERROR: {0}\n".format(s))
+    sys.exit(1)
 
 def cond_die(v, cmd, msg, lines=[]):
    if v:
       if lines:
          print_final_lines(lines)
       s = msg + "\n  [CMD] " + cmd
-      mbuild.die(s)
+      die(s)
 
 def ensure_string(x):
     """handle non unicode output"""
@@ -80,7 +80,7 @@ def run_shell_command(cmd, **kwargs):
                "Child was terminated by signal {0:d}".format(-returncode), lines)
         return (returncode, lines)
    except OSError as e:
-     mbuild.die("Execution failed: {0}".format(str(e)))
+     die("Execution failed: {0}".format(str(e)))
 
 def get_mode(fn):
     "get the mode of the file named fn, suitable for os.chmod() or open() calls"
@@ -216,7 +216,9 @@ def skip_file(file):
     if f.is_dir():   # skip directories (e.g. submodule changes)
         return True
 
-    skip_dirs = ['tests/resync']
+    skip_dirs = ['tests/resync',
+                 '.github/actions/create-pull-request',  # Borrowed action
+                 ]
     skip_dirs = [Path(XED_ROOT, d).resolve() for d in skip_dirs]  # convert to Path list
     dir = f.parent
     for skip_d in skip_dirs:
@@ -226,7 +228,7 @@ def skip_file(file):
     skip_suffix = ['.pdf', '.msi', '.sln', '.vcproj', '.vcxproj', '.filters',
                    '.xsl', '.rtf', '.reference', '.rc', '.doc', '.html',
                    '.docx', '.msm', '.ico', '.bmp', '.exe', '.a', '.lib', '.csv', '.bz2',
-                   '.zip', '.csproj', '.json', '.js', '.xz', '.TESTS', '.pyc']
+                   '.zip', '.csproj', '.json', '.js', '.xz', '.TESTS', '.pyc', '.md', '.in']
     # Path().suffixes return a list of the final component's suffixes, if any.
     # check if the intersection with skip_suffix is empty or not
     if set(f.suffixes).intersection(skip_suffix):
@@ -242,7 +244,7 @@ def skip_file(file):
                 return True
     
     #skip pattern
-    skip_patterns = ['*.gitignore', '*README.*', 'tests/tests-*/*/*', '*tests/test-*/*']
+    skip_patterns = ['*.gitignore', '*README.*', 'tests/test*/*', 'tests/test*/**/*']
     for pattern in skip_patterns:
         if f.match(pattern):
             return True
@@ -450,8 +452,7 @@ def setup():
     env = vars(parser.parse_args())
     return env
 
-if __name__ == '__main__':
-
+def main():
     env = setup()
     files_for_scan = []
     files = retrieve_files(env['dir'])
@@ -463,3 +464,7 @@ if __name__ == '__main__':
     else: 
         retval = replace_copyrights(files_for_scan)
     sys.exit(retval)
+
+if __name__ == '__main__':
+
+    main()

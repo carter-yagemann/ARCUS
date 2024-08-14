@@ -1,6 +1,7 @@
 #! /bin/bash
 #
-# Copyright (c) 2015-2022, Intel Corporation
+# Copyright (c) 2015-2024, Intel Corporation
+# SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
@@ -113,35 +114,58 @@ perf script --no-itrace -i $file -D | \
 
 gawk_sample_type() {
   echo $1 | gawk -- '
-  BEGIN         { RS = "[|\n]" }
-  /^TID$/        { config += 0x00002 }
-  /^TIME$/       { config += 0x00004 }
-  /^ID$/         { config += 0x00040 }
-  /^CPU$/        { config += 0x00080 }
-  /^STREAM$/     { config += 0x00200 }
-  /^IDENTIFIER$/ { config += 0x10000 }
+  BEGIN               { RS = "[|\n]" }
+  /^IP$/              { config += 0x0000001 }
+  /^TID$/             { config += 0x0000002 }
+  /^TIME$/            { config += 0x0000004 }
+  /^ADDR$/            { config += 0x0000008 }
+  /^READ$/            { config += 0x0000010 }
+  /^CALLCHAIN$/       { config += 0x0000020 }
+  /^ID$/              { config += 0x0000040 }
+  /^CPU$/             { config += 0x0000080 }
+  /^PERIOD$/          { config += 0x0000100 }
+  /^STREAM$/          { config += 0x0000200 }
+  /^STREAM_ID$/       { config += 0x0000200 }
+  /^RAW$/             { config += 0x0000400 }
+  /^BRANCH_STACK$/    { config += 0x0000800 }
+  /^REGS_USER$/       { config += 0x0001000 }
+  /^STACK_USER$/      { config += 0x0002000 }
+  /^WEIGHT$/          { config += 0x0004000 }
+  /^DATA_SRC$/        { config += 0x0008000 }
+  /^IDENTIFIER$/      { config += 0x0010000 }
+  /^TRANSACTION$/     { config += 0x0020000 }
+  /^REGS_INTR$/       { config += 0x0040000 }
+  /^PHYS_ADDR$/       { config += 0x0080000 }
+  /^AUX$/             { config += 0x0100000 }
+  /^CGROUP$/          { config += 0x0200000 }
+  /^DATA_PAGE_SIZE$/  { config += 0x0400000 }
+  /^CODE_PAGE_SIZE$/  { config += 0x0800000 }
+  /^WEIGHT_STRUCT$/   { config += 0x1000000 }
   END           {
-    if (config != 0) {
-      printf(" --pevent:sample-type 0x%x", config)
-    }
+    printf("0x%lx", config)
   }
 '
 }
 
-attr_sample_types=$(perf evlist -v -i $file |  gawk -F' ' -- '
-  BEGIN { RS = "," }
-  /sample_type/  { print $2 }
-' | sort | uniq)
+zero_config=1
+perf script --header-only -i $file | grep -e '^# *event *:' | \
+    sed 's/.*id = {\([^}]*\)}.*sample_type = \([^,]*\),.*/\1:\2/' | \
+    while read -r conf; do
+        ids=$(echo $conf | sed 's/\([^:]*\):.*/\1/' | sed 's/,//g')
+        sts=$(echo $conf | sed 's/.*:\(.*\)/\1/')
 
-for attr in $attr_sample_types; do
-    # We assume at most one attr with and at most one attr without CPU
-    #
-    if [[ $(echo $attr | grep -e CPU) ]]; then
-        gawk_sample_type $attr
-    else
-        gawk_sample_type $attr
-    fi
-done
+        for id in $ids; do
+            # The reserved zero identifier used for synthesized event
+            # records uses the same sample type as the first identifier in
+            # the first event.
+            #
+            if (( $zero_config )); then
+                echo -n " --pevent:sample-config 0:$(gawk_sample_type $sts)"
+                zero_config=0
+            fi
+            echo -n " --pevent:sample-config $id:$(gawk_sample_type $sts)"
+        done
+    done
 
 perf evlist -v -i $file | grep intel_pt | gawk -F' ' -- '
   BEGIN             { RS = "," }
@@ -206,8 +230,18 @@ if [[ -n "$kcore" ]]; then
         '
 fi
 
-for sbfile in $(ls -1 "$(basename $file)"-sideband*.pevent 2>/dev/null); do
-    if [[ -z "$master" || "$sbfile" == "$master" ]]; then
+fbase="$(basename "$file")"
+mbase="$(basename "$master")"
+sdir="$(dirname "$master")"
+if [[ "$mbase" == "$master" ]]; then
+    sdir="$(dirname "$file")"
+fi
+for sbfile in "$sdir/$fbase"-sideband*.pevent; do
+    if [[ ! -e "$sbfile" ]]; then
+        break
+    fi
+
+    if [[ -z "$master" || "$sbfile" == "$sdir/$mbase" ]]; then
         echo -n " --pevent:primary $sbfile"
     else
         echo -n " --pevent:secondary $sbfile"

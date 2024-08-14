@@ -3,7 +3,7 @@
 # -*- python -*-
 #BEGIN_LEGAL
 #
-#Copyright (c) 2023 Intel Corporation
+#Copyright (c) 2024 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -42,24 +42,16 @@ import os
 import optparse
 import stat
 import copy
-
-def find_dir(d):
-    directory = os.getcwd()
-    last = ''
-    while directory != last:
-        target_directory = os.path.join(directory,d)
-        if os.path.exists(target_directory):
-            return target_directory
-        last = directory
-        directory = os.path.split(directory)[0]
-    return None
+from genutil import add_mbuild_to_path, find_dir
 
 mbuild_install_path = os.path.join(os.path.dirname(sys.argv[0]), 
                                    '..', '..', 'mbuild')
+if os.path.exists(mbuild_install_path):
+    sys.path = [mbuild_install_path]  + sys.path
+else:
+    add_mbuild_to_path()
 
-if not os.path.exists(mbuild_install_path):
-    mbuild_install_path =  find_dir('mbuild')
-sys.path=  [mbuild_install_path]  + sys.path
+
 try:
    import mbuild
 except:
@@ -90,11 +82,10 @@ except:
    sys.exit(1)
    
 import actions
+from actions import ActionEmitType, ActionType
 import ins_emit
 import encutil
 from patterns import *
-
-EXT_MODULE = None
 
 storage_fields = {}
 def outreg():
@@ -723,7 +714,7 @@ class rule_t(object):
 
     def prepare_value_for_emit(self, a):
         """@return: (length-in-bits, value-as-hex)"""
-        if a.emit_type == 'numeric':
+        if a.emit_type == ActionEmitType.NUMERIC:
             v = hex(a.int_value)
             return (a.nbits, v) # return v with the leading 0x
         s = a.value
@@ -803,7 +794,7 @@ class rule_t(object):
              "condition list, we do not support it currently") % str(self)
         die(error)
 
-    def emit_isa_rule(self, ith_rule, group):
+    def emit_isa_rule(self, ith_rule, group: ins_emit.ins_group_t):
         ''' emit code for INSTRUCTION's rule:
             1. conditions.
             2. set of the encoders iform index.
@@ -837,7 +828,7 @@ class rule_t(object):
         for a in self.actions:
             if a.is_nonterminal():
                 lines += a.emit_code('BIND')
-        
+
         lines.append( "    if (okay) return 1;")
         lines.append( "}")
         return lines
@@ -998,7 +989,7 @@ class rule_t(object):
 
                 if vtuples():
                     msgb("TUPLES", (" ,".join( [str(x) for x in list_of_tuples] )))
-                if len(list_of_tuples) == 0 or a.emit_type == 'numeric':
+                if len(list_of_tuples) == 0 or a.emit_type == ActionEmitType.NUMERIC:
                     # no substitutions required
                     (length, s) = self.prepare_value_for_emit(a)
                     if veemit():
@@ -1041,12 +1032,30 @@ class rule_t(object):
     def get_all_fbs(self):
         ''' collect all the actions that sets fields '''
         fbs = []
+        found_map_fb = False
         for action in self.actions:
             if action.is_field_binding():
-                    fbs.append(action)
-            if action.is_emit_action() and action.emit_type == 'numeric':
+                fbs.append(action)
+                if action.field_name == 'MAP': 
+                    found_map_fb = True
+            if action.is_emit_action() and action.emit_type == ActionEmitType.NUMERIC:
                 if action.field_name:
                     fbs.append(action)
+
+        if not found_map_fb:
+            # MAP binding does not exist in Legacy encoding space (implied by the escape and map bytes)
+            # Force MAP binding as it is needed for REX2 support (to emit the REX2.MAP 
+            # bit and validate a legal map-id whenever REX2 prefix is emitted)
+            legacy_map_pattern = re.compile(r'^LEGACY_MAP(?P<mapid>[0-9])$')
+            vv0_map = 0
+            for action in self.actions:
+                if action.field_name:
+                    m = legacy_map_pattern.match(action.field_name)
+                    if m:
+                        cond_die(vv0_map, '', 'Legacy map was set twice')
+                        vv0_map = int(m['mapid'])
+            fbs.append(actions.action_t(f'MAP={vv0_map}'))
+
         return fbs
     
     def get_all_emits(self):
@@ -1092,23 +1101,23 @@ class iform_t(object):
                 self.encspace=act.value
                 break
         
-        # Use extension module constructor, if exists
-        if EXT_MODULE: EXT_MODULE.ext_iform_t.extend_init(self)
-        self._fixup_vex_conditions()
+        self._fixup_non_evex_conditions()
+        self._fixup_evex_scalable_operands()
         self._find_legacy_map(map_info)
+        self._fixup_non_egpr_conditions()
         self.rule = self.make_rule()
 
     def _find_legacy_map(self, map_info):
         """Set self.legacy_map to the map_info_t record that best matches"""
         if self.encspace == 0:
             s = []
-            self.legacy_map = None
+            self.legacy_map: map_info_rdr.map_info_t = None
             for act in self.enc_actions:
                 if act.type == 'bits':
                     s.append(act.value)
             if s:
                 found = False
-                default_map = None
+                default_map: map_info_rdr.map_info_t = None
                 for m in map_info:
                     if m.space == 'legacy':
                         if m.legacy_escape == 'N/A':  # 1B map (map 0)
@@ -1126,12 +1135,62 @@ class iform_t(object):
                     self.legacy_map = default_map
             if not self.legacy_map:
                 genutil.die("Could not set legacy map.")
-            
-    def _fixup_vex_conditions(self):
-        """if action has VEXVALID=1, add modal_pattern MUST_USE_EVEX=0. 
+                
+    def _fixup_evex_scalable_operands(self):
+        """
+        Some EVEX instructions are defined with scalable width operand. For them,
+        the EVEX.PP=1 is equivalent to 66 OSZ prefix.
+        In this case, the function adds EOSZ restriction according to the PP field.
+        This is true for a full VAR scalability level (excluding y,z...)
+
+        Args:
+            iform_t (iform_t): the iform_t self object
+        """
+        
+        evex_scalable_op = False
+        mode64 = 'MODE=2' in self.modal_patterns
+        if self.encspace == 2: # EVEX
+            for e in self.enc_conditions:
+                if e.lencode in ['v']:
+                    evex_scalable_op = True
+                    break
+        
+        support_evex_scalable_op = evex_scalable_op and mode64
+        if not support_evex_scalable_op:
+            return
+        
+        pp = None
+        for e in self.enc_actions:
+            if e.field_name == 'VEX_PREFIX':
+                pp = e.value
+                break
+
+        # mode64   66_pp REXW=0 | EOSZ=1
+        # mode64 no66_pp REXW=0 | EOSZ=2
+        # mode64   66_pp REXW=1 | EOSZ=3
+        # mode64 no66_pp REXW=1 | EOSZ=3            
+        pp_cond = {0 : 'EOSZ!=1', # EVEX.PP=0 (VNP) is treated as "no66_pp"
+                   1 : 'EOSZ!=2'} # EVEX.PP=1 (V66) is treated as "66_pp"
+
+        assert pp in pp_cond, "Unhandled EVEX prefix for scalable operands"
+        self.modal_patterns.append(pp_cond[pp])
+        return
+    
+    def _fixup_non_evex_conditions(self):
+        """if instruction is not EVEX add modal_pattern MUST_USE_EVEX=0. 
            The modal_patterns become conditions later on."""
-        if self.encspace == 1: # VEX
+        if self.encspace != 2: # Not EVEX
             self.modal_patterns.append("MUST_USE_EVEX=0")
+
+    def _fixup_non_egpr_conditions(self):
+        """if instruction does not support EGPRs (GPR>16).
+           add modal_pattern HAS_EGPR=0 which become a condition later on"""
+        if self.encspace == 1: # VEX
+            self.modal_patterns.append("HAS_EGPR=0")
+        elif self.encspace == 0: # Legacy
+            if self.legacy_map.map_id not in [0,1]:
+                # REX2 supports MAP0 and MAP1
+                self.modal_patterns.append("HAS_EGPR=0")
     
     def make_operand_name_list(self):
         """Make an ordered list of operand storage field names that
@@ -1255,15 +1314,15 @@ class iform_t(object):
             modifying to input action_list
         '''
         
-        emit_actions = list(filter(lambda x: x.type == 'emit', action_list))
-        fb_actions = list(filter(lambda x: x.type == 'FB', action_list))
+        emit_actions = list(filter(lambda x: x.type == ActionType.EMIT, action_list))
+        fb_actions = list(filter(lambda x: x.type == ActionType.FIELD_BINDING, action_list))
         
         #iterate to find overlapping actions
         action_to_remove = []
         for fb in fb_actions:
             for emit in emit_actions:
                 if fb.field_name.lower() == emit.field_name and \
-                  emit.emit_type == 'numeric':
+                  emit.emit_type == ActionEmitType.NUMERIC:
                     if fb.int_value == emit.int_value:
                         # overlapping actions, recored this action
                         # and remove later
@@ -1375,6 +1434,7 @@ class nonterminal_t(object):
         if bind_or_emit == 'BIND' or bind_or_emit == 'NTLUF':
             fo.add_code_eol( "xed_uint_t conditions_satisfied=0" )
 
+        fo.add_code('(void) xes; // pacify the compiler')
         has_emit_action = False
         if bind_or_emit == 'EMIT':
             for r in self.rules:
@@ -1411,9 +1471,9 @@ class nonterminal_t(object):
                 iform_builder.remember_iforms(nt_name)
             else:
                 # nothing to emit, so skip this...
-                fo.add_code_eol('return 1')
                 fo.add_code_eol('(void) okay')
                 fo.add_code_eol('(void) xes')
+                fo.add_code_eol('return 1')
                 return fo
 
         #_vmsgb("EMITTING RULES FOR", nt_name)
@@ -1432,15 +1492,7 @@ class nonterminal_t(object):
         default_rule = self._default_rule()
         lines = default_rule.emit_rule(bind_or_emit,0, nt_name)
         fo.add_lines(lines)
-        
-        fo.add_code('return 0; /*pacify the compiler*/')
-        fo.add_code_eol('(void) okay')
-        fo.add_code_eol('(void) xes')
-        if bind_or_emit == 'EMIT':
-            fo.add_code_eol('(void) iform')
-
-        if bind_or_emit == 'BIND' or bind_or_emit == 'NTLUF':
-            fo.add_code_eol("(void) conditions_satisfied")
+        fo.add_code('return 0;')
         return fo
 
 class sequencer_t(object):
@@ -2071,7 +2123,7 @@ class encoder_configuration_t(object):
         return False
             
         
-    def parse_one_decode_rule(self, iclass, operand_str, pattern_str):
+    def parse_one_decode_rule(self, iclass, operand_str, pattern_str, attribute_str):
         """Read the decoder rule from the main ISA file and package it
         up for encoding. Flipping things around as necessary.
         
@@ -2119,12 +2171,16 @@ class encoder_configuration_t(object):
 
             # special cases
 
-            # VL is generally an encoder input, except in some cases
-            # (VZERO*, BMI, KMASKS, etc.)
             do_encoder_input_check = True
+            # VL is generally an encoder input, except in some cases (VZERO*, BMI, KMASKS, etc.)
             if p_short in ['VL'] and self.force_vl_encoder_output(iclass, operand_str, pattern_str):
                 do_encoder_input_check = False
-                
+            # The NF (No-Flags) XED operand is used as an encoder input for APX no-flag 
+            # instructions. Those instructions are defined with the APX_NF attribute.
+            # NF=1 should not be an encoder input if it represents other properties (see {,CF}CMOV)
+            elif p == 'NF=1' and attribute_str and 'APX_NF' not in attribute_str:
+                do_encoder_input_check = False
+
             if do_encoder_input_check:
                 if p_short in storage_fields and storage_fields[p_short].encoder_input:
                     if voperand():
@@ -2201,7 +2257,7 @@ class encoder_configuration_t(object):
         # from the instruction decode patterns (MOD[mm] etc.). We
         # ignore the ones for constant bindings!
         for (field_name,value) in extra_bindings:
-            if genutil.numeric(value):
+            if genutil.is_numeric(value):
                 #msgerr("IGNORING %s %s" % (field_name, value))
                 pass # we ignore things that are just bits at this point.
             else:
@@ -2249,9 +2305,8 @@ class encoder_configuration_t(object):
         for a in modal_patterns:
             msg("\t" +  str(a))
     
-    def finalize_decode_conversion(self,iclass, operands, ipattern, uname=None,
-                                   real_opcode=True,
-                                   isa_set=None):
+    def finalize_decode_conversion(self,iclass, operands, ipattern, uname,
+                                   real_opcode, isa_set, iattribute):
         if ipattern  == None:
             die("No ipattern for iclass %s and operands: %s" % 
                 (str(iclass), operands ))
@@ -2261,7 +2316,7 @@ class encoder_configuration_t(object):
         # the encode actions are the decode patterns    (as [ blot_t ])
         # the modal_patterns are things that should become encode conditions
         (conditions, actions, modal_patterns) = \
-                      self.parse_one_decode_rule(iclass, operands, ipattern)
+                      self.parse_one_decode_rule(iclass, operands, ipattern, iattribute)
         if vfinalize():
             self.print_iclass_info(iclass, operands, ipattern, conditions, 
                                    actions, modal_patterns)
@@ -2269,6 +2324,9 @@ class encoder_configuration_t(object):
         iform = iform_t(self.map_info, iclass, conditions, actions, modal_patterns, uname,
                         real_opcode, isa_set)
 
+        # Current priorities are; P0: 0F1F NOP and EVEX RC instructions   P1: VEX and Legacy instructions  P2: rest of EVEX   P3: XOP
+        # split P1 into two priorities, such that instructions with no REP constraints (must use prefixes) are preferred in the sorting of the IFORMs
+        # This means that P2 and P3 now have the priorities 3 and 4 respectively
         if uname == 'NOP0F1F':
             # We have many fat NOPS, 0F1F is the preferred one so we
             # give it a higher priority in the iform sorting. 
@@ -2279,11 +2337,13 @@ class encoder_configuration_t(object):
             if 'BCRC=1' in ipattern:
                 iform.priority = 0
             else:
-                iform.priority = 2
+                iform.priority = 3
         elif 'VEXVALID=3' in ipattern: # XOP
-            iform.priority = 3
+            iform.priority = 4
         else:  # EVERYTHING ELSE
             iform.priority = 1
+            if 'REP=' in ipattern:
+                iform.priority = 2
 
         try:
             self.iarray[iclass].append ( iform )
@@ -2309,6 +2369,7 @@ class encoder_configuration_t(object):
         real_opcode = True
         extension = None # used  if no isa_set found/present
         isa_set = None
+        iattribute = None
         
         while len(lines) > 0:
             line = lines.pop(0)
@@ -2354,6 +2415,7 @@ class encoder_configuration_t(object):
                 real_opcode = True
                 extension = None # used  if no isa_set found/present
                 isa_set = None
+                iattribute = None
 
                 continue
             
@@ -2393,12 +2455,16 @@ class encoder_configuration_t(object):
                 ipattern = ip.group('ipattern')
                 continue
             
+            iatt = iattribute_pattern.match(line)
+            if iatt:
+                iattribute = iatt.group('iattribute')
+            
             if no_operand_pattern.match(line):
                 if not isa_set:
                     isa_set = extension
                 self.finalize_decode_conversion(iclass,'', 
                                                 ipattern, uname,
-                                                real_opcode, isa_set)
+                                                real_opcode, isa_set, iattribute)
                 continue
 
             op = operand_pattern.match(line)
@@ -2408,7 +2474,7 @@ class encoder_configuration_t(object):
                     isa_set = extension
                 self.finalize_decode_conversion(iclass, operands, 
                                                 ipattern, uname,
-                                                real_opcode, isa_set)
+                                                real_opcode, isa_set, iattribute)
                 continue
 
         return
@@ -2638,9 +2704,9 @@ class encoder_configuration_t(object):
             fo.add_code(pad4 + '} // initial conditions')
             fo.add_code('} // xed_enc_chip_check ')
         
-        fo.add_code_eol('return 0')
         fo.add_code_eol("(void) okay")
         fo.add_code_eol("(void) xes")
+        fo.add_code_eol('return 0')
         return fo
     
     def emit_encode_function_table_init(self):
@@ -3210,28 +3276,6 @@ def setup_arg_parser():
                                 chip.''')
     
     options, args = arg_parser.parse_args()
-
-    if options.xedext_dir: 
-        extdir_path = Path(options.xedext_dir).resolve()
-        if extdir_path.exists(): 
-            # Catch read-encfile.py extension
-            try:
-                global EXT_MODULE
-                fname = Path(__file__).name
-                ext_file = 'ext-' + fname
-                ext_module = 'ext-' + Path(__file__).stem
-
-                ext_path = extdir_path.joinpath('pysrc', ext_file).resolve(strict=True)
-                spec = importlib.util.spec_from_file_location(ext_module, ext_path)
-                EXT_MODULE = importlib.util.module_from_spec(spec)
-                sys.modules[ext_module] = EXT_MODULE
-                spec.loader.exec_module(EXT_MODULE)
-                mbuild.msgb(f'PYSRC: Extending "{fname}" with "{ext_file}"')
-            except:
-                die('(read-encfile.py) couldn\'t find an expected extension module')
-        else:
-            warn(f'Provided --xedext-dir does not exists: "{options.xedext_dir}"')
-
     return options, args
 
 

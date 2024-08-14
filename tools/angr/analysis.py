@@ -53,7 +53,7 @@ import reporting
 import taint
 import xed
 
-PROGRAM_VERSION = "2.1.6"
+PROGRAM_VERSION = "2.2.0"
 PROGRAM_USAGE = "Usage: %prog [options] tracer_output_directory"
 
 

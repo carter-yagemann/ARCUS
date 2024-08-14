@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2013-2022, Intel Corporation
+ * Copyright (c) 2013-2024, Intel Corporation
+ * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -67,6 +68,8 @@ enum pt_ext_code {
 	pt_ext_pwre		= 0x22,
 	pt_ext_pwrx		= 0xa2,
 	pt_ext_ptw		= 0x12,
+	pt_ext_cfe		= 0x13,
+	pt_ext_evd		= 0x53,
 
 	pt_ext_bad		= 0x04
 };
@@ -145,7 +148,9 @@ enum pt_opcode_size {
 	pt_opcs_mwait		= 2,
 	pt_opcs_pwre		= 2,
 	pt_opcs_pwrx		= 2,
-	pt_opcs_ptw		= 2
+	pt_opcs_ptw		= 2,
+	pt_opcs_cfe		= 2,
+	pt_opcs_evd		= 2,
 };
 
 /* The psb magic payload.
@@ -317,7 +322,25 @@ enum pt_payload {
 	pt_pl_pwrx_wr_store	= 0x400,
 
 	/* The bit-mask for the autonomous wake reason in the PWRX payload. */
-	pt_pl_pwrx_wr_hw	= 0x800
+	pt_pl_pwrx_wr_hw	= 0x800,
+
+	/* The size in bytes of the CFE payload. */
+	pt_pl_cfe_size		= 2,
+
+	/* The bit mask for the type field in the CFE payload. */
+	pt_pl_cfe_type		= 0x1f,
+
+	/* The bit mask for the IP bit in the CFE payload. */
+	pt_pl_cfe_ip		= 0x80,
+
+	/* The size in bytes of the EVD payload field. */
+	pt_pl_evd_pl_size	= 8,
+
+	/* The size in bytes of the EVD payload. */
+	pt_pl_evd_size		= 9,
+
+	/* The bit mask for the type field in the EVD payload. */
+	pt_pl_evd_type		= 0x1f,
 };
 
 /* Mode packet masks. */
@@ -332,6 +355,7 @@ enum pt_mode_bit {
 	/* mode.exec */
 	pt_mob_exec_csl		= 0x01,
 	pt_mob_exec_csd		= 0x02,
+	pt_mob_exec_iflag	= 0x04,
 
 	/* mode.tsx */
 	pt_mob_tsx_intx		= 0x01,
@@ -384,7 +408,9 @@ enum pt_packet_size {
 	ptps_pwre		= pt_opcs_pwre + pt_pl_pwre_size,
 	ptps_pwrx		= pt_opcs_pwrx + pt_pl_pwrx_size,
 	ptps_ptw_32		= pt_opcs_ptw + 4,
-	ptps_ptw_64		= pt_opcs_ptw + 8
+	ptps_ptw_64		= pt_opcs_ptw + 8,
+	ptps_cfe		= pt_opcs_cfe + pt_pl_cfe_size,
+	ptps_evd		= pt_opcs_evd + pt_pl_evd_size,
 };
 
 /* Supported address range configurations. */

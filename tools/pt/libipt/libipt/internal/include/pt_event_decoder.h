@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2018-2022, Intel Corporation
+ * Copyright (c) 2018-2024, Intel Corporation
+ * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -89,6 +90,21 @@ struct pt_event_decoder {
 	 */
 	int status;
 
+	/* The current mode.exec state.
+	 *
+	 * This is updated when processing mode.exec packets and it is used for
+	 * mapping mode.exec packets to events depending on which part of the
+	 * state changed.
+	 *
+	 * Since we use only one bit for each piece, we need a separate valid
+	 * flag.  The below mode.exec state bits are only valid if
+	 * @mode_exec_valid is set.
+	 */
+	unsigned int mode_exec_valid:1;
+	unsigned int iflag:1;
+	unsigned int csd:1;
+	unsigned int csl:1;
+
 	/* A collection of flags saying whether:
 	 *
 	 * - tracing is enabled.
@@ -101,6 +117,17 @@ struct pt_event_decoder {
 	unsigned int bound:1;
 };
 
+/* A special, internal-only event type used for binding packets without
+ * generating an event.
+ *
+ * We alias the tick event since compilers diagnose values outside of the
+ * enumerated type in switch statements and we want to keep compilers to
+ * diagnose unhandled cases, which is guarded by the same compiler option.
+ *
+ * The tick event is synthesized by higher-level decoders and does not appear
+ * on event level.
+ */
+#define ptev_ignore ptev_tick
 
 /* Initialize the event decoder.
  *

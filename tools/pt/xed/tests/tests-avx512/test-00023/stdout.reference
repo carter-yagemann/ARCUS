@@ -1,0 +1,66 @@
+Attempting to decode: 62 f5 74 28 58 c2 
+iclass VADDPH	category FP16	ISA-extension AVX512EVEX	ISA-set AVX512_FP16_256
+instruction-length 6
+operand-width 32
+effective-operand-width 32
+effective-address-width 64
+stack-address-width 64
+iform-enum-name VADDPH_YMMf16_MASKmskw_YMMf16_YMMf16_AVX512
+iform-enum-name-dispatch (zero based) 3
+iclass-max-iform-dispatch 6
+Nominal opcode position 4
+Nominal opcode 0x58
+Operands
+#   TYPE               DETAILS        VIS  RW       OC2 BITS BYTES NELEM ELEMSZ   ELEMTYPE   REGCLASS
+#   ====               =======        ===  ==       === ==== ===== ===== ======   ========   ========
+0   REG0             REG0=YMM0   EXPLICIT   W        QQ  256    32    16     16    FLOAT16        YMM
+1   REG1               REG1=K0   EXPLICIT   R      MSKW   64     8    64      1        INT       MASK
+2   REG2             REG2=YMM1   EXPLICIT   R        QQ  256    32    16     16    FLOAT16        YMM
+3   REG3             REG3=YMM2   EXPLICIT   R        QQ  256    32    16     16    FLOAT16        YMM
+Memory Operands
+  MemopBytes = 0
+ATTRIBUTES: MASKOP_EVEX MXCSR 
+EXCEPTION TYPE: AVX512_E2
+AVX512
+Vector length: 256
+AVX512 vector elements: 16
+ISA SET: [AVX512_FP16_256]
+0	CPUID GROUP NAME: [AVX512_FP16_256_AVX10]
+	0	CPUID RECORD NAME: [AVX10_ENABLED]
+		{Leaf 0x00000007, subleaf 0x00000001, EDX[19:19]} = 1
+	1	CPUID RECORD NAME: [AVX10_VER1]
+		{Leaf 0x00000024, subleaf 0x00000000, EBX[0:7]} = 1
+	2	CPUID RECORD NAME: [AVX10_256VL]
+		{Leaf 0x00000024, subleaf 0x00000000, EBX[17:17]} = 1
+1	CPUID GROUP NAME: [AVX512_FP16_256]
+	0	CPUID RECORD NAME: [AVX512_FP16]
+		{Leaf 0x00000007, subleaf 0x00000000, EDX[23:23]} = 1
+	1	CPUID RECORD NAME: [AVX512VL]
+		{Leaf 0x00000007, subleaf 0x00000000, EBX[31:31]} = 1
+[Encoding Bits]
+====================== EVEX payload #0 ======================
+P0                             = 0x62
+====================== EVEX payload #1 ======================
+P1[2:0]  (EVEX.mmm)            = 0b101
+P1[3]    (EVEX.reserved / APX.B4) = 0b0
+P1[4]    (EVEX.R4)             = 0b1
+P1[5]    (EVEX.B3)             = 0b1
+P1[6]    (EVEX.X3)             = 0b1
+P1[7]    (EVEX.R3)             = 0b1
+====================== EVEX payload #2 ======================
+P2[1:0]  (EVEX.pp)             = 0b00
+P2[2]    (EVEX.U / APX.X4)     = 0b1
+P2[3:6]  (EVEX.vvvv / APX.DFV) = 0b1110
+P2[7]    (EVEX.W)              = 0b0
+====================== EVEX payload #3 ======================
+P3[0:2]  (EVEX.aaa)            = 0b000
+P3[3]    (EVEX.V4)             = 0b1
+P3[4]    (EVEX.b)              = 0b0
+P3[5:6]  (EVEX.LL/RC)          = 0b01
+P3[7]    (EVEX.z)              = 0b0
+========================== Opcode ===========================
+Nominal opcode                 = 0x58
+=========================== ModRM ===========================
+p[0:2]   (R/M)                 = 0b010
+p[3:5]   (REG)                 = 0b000
+p[6:7]   (MOD)                 = 0b11

@@ -2,7 +2,7 @@
 # -*- python -*-
 #BEGIN_LEGAL
 #
-#Copyright (c) 2023 Intel Corporation
+#Copyright (c) 2024 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -23,19 +23,21 @@ import sys
 import os
 
 def find_dir(d):
-    dir, last = os.getcwd(), ''
+    dir = os.getcwd()
+    last = ''
     while dir != last:
         target_dir = os.path.join(dir,d)
         if os.path.exists(target_dir):
             return target_dir
         last = dir
-        (dir,_) = os.path.split(dir)
+        (dir,tail) = os.path.split(dir)
     return None
 
+# import apply_legal_header from mbuild or xed
 XED_ROOT = find_dir('xed')
-sys.path.append(XED_ROOT)
-sys.path.append(find_dir('scripts'))
-from scripts import apply_legal_header
+assert XED_ROOT, 'Couldn\'t locate XED root directory'
+sys.path.append(str( os.path.join(XED_ROOT, 'scripts')))
+import apply_legal_header
 
 def get_interesting_files():
     """returns a list of staged files that should get their legal header checked/changed"""

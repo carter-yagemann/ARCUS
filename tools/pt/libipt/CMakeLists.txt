@@ -1,4 +1,5 @@
-# Copyright (c) 2013-2022, Intel Corporation
+# Copyright (c) 2013-2024, Intel Corporation
+# SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
@@ -24,7 +25,13 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-cmake_minimum_required(VERSION 2.8.12)
+cmake_minimum_required(VERSION 3.1)
+
+# Do not add /W3 to MSVC command-line
+#
+if (POLICY CMP0092)
+  cmake_policy(SET CMP0092 NEW)
+endif ()
 
 project(PT C)
 
@@ -37,7 +44,7 @@ project(PT C)
 #
 set(PT_VERSION_MAJOR 2)
 set(PT_VERSION_MINOR 1)
-set(PT_VERSION_PATCH 0)
+set(PT_VERSION_PATCH 1)
 set(PT_VERSION_BUILD "0" CACHE STRING "")
 set(PT_VERSION_EXT "" CACHE STRING "")
 
@@ -87,7 +94,16 @@ endif (SIDEBAND)
 
 if (PTXED OR PEVENT)
   option(FEATURE_ELF "Support ELF files." OFF)
+  if (FEATURE_ELF)
+    add_definitions(
+      -DFEATURE_ELF
+    )
+  endif (FEATURE_ELF)
 endif (PTXED OR PEVENT)
+
+if (PEVENT AND NOT SIDEBAND)
+  message(FATAL_ERROR "PEVENT requires SIDEBAND")
+endif ()
 
 set(PTT OFF)
 if (BASH AND PTDUMP AND PTXED AND PTTC)
@@ -112,12 +128,6 @@ if (PTUNIT)
     ptunit/include
   )
 endif (PTUNIT)
-
-if (FEATURE_ELF)
-  add_definitions(
-    -DFEATURE_ELF
-  )
-endif (FEATURE_ELF)
 
 if (SIDEBAND)
   add_definitions(
@@ -179,14 +189,20 @@ if (CMAKE_HOST_WIN32)
     #
     /Dstrtoull=_strtoui64
 
+    # cl spells strdup _strdup
+    #
+    /Dstrdup=_strdup
+
     # avoid annoying warnings about unsecure standard functions
     #
     /D_CRT_SECURE_NO_WARNINGS
   )
 
-  # enable parallel build
-  #
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /MP")
+  if (CMAKE_GENERATOR MATCHES "Visual Studio")
+    # enable parallel build
+    #
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /MP")
+  endif ()
 
   if (DEVBUILD)
     # compiler warnings
@@ -232,10 +248,6 @@ if (CMAKE_HOST_UNIX)
     link_libraries(pthread)
   endif (FEATURE_THREADS)
 
-  # set the language
-  #
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99")
-
   # windows-like dll export model
   #
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fvisibility=hidden")
@@ -262,6 +274,9 @@ if (CMAKE_HOST_UNIX)
         HAVE_C_Wno_format_truncation)
     endif (CMAKE_C_COMPILER_ID MATCHES "[Cc]lang")
 
+    add_cflag_if_available("-Wno-debug-disables-optimization"
+      HAVE_C_Wno_debug_disables_optimization)
+
     # warnings are errors
     #
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
@@ -273,6 +288,10 @@ endif (CMAKE_HOST_UNIX)
 function(add_ptunit_test_base name)
   if (PTUNIT)
     add_executable(${name} ${ARGN})
+    set_target_properties(${name} PROPERTIES
+      C_STANDARD 11
+      C_STANDARD_REQUIRED ON
+    )
     target_link_libraries(${name} ptunit)
 
     add_test(NAME ${name} COMMAND ${name})

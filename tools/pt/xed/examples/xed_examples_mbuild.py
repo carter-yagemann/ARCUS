@@ -2,7 +2,7 @@
 # -*- python -*-
 #BEGIN_LEGAL
 #
-#Copyright (c) 2023 Intel Corporation
+#Copyright (c) 2024 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -53,10 +53,11 @@ def ex_compile_and_link(env, dag, src, objs):
 
 def mkenv():
     """External entry point: create the environment"""
-    if sys.version_info[0] == 3 and sys.version_info[1] < 6:        
-        _fatal("Need python version 3.6 or later.")
-    elif sys.version_info[0] == 2 and sys.version_info[1] < 7:        
-        _fatal("Need python version 2.7 or later.")
+    if sys.version_info[0] == 3:
+        if sys.version_info[1] < 8:
+            _fatal("Need python version 3.8 or later.")
+    else:
+        _fatal("Need python version 3.8 or later.")
     # create an environment, parse args
     env = mbuild.env_t()
     standard_defaults = dict(    doxygen_install='',
@@ -92,8 +93,7 @@ def mkenv():
                                  xed_enc2_libs=[],
                                  xed_dir='',
                                  build_cpp_examples=False,
-                                 set_copyright=False,
-                                 pin_crt='')
+                                 set_copyright=False)
 
     env['xed_defaults'] = standard_defaults
     env.set_defaults(env['xed_defaults'])
@@ -204,11 +204,6 @@ def xed_args(env):
                           action="store",
                           dest="strip",
                           help="Path to strip binary. (Linux only)")
-    env.parser.add_option("--pin-crt", 
-                          action="store",
-                          dest="pin_crt",
-                          help="Compile for the Pin C-runtime. Specify" +
-                          " path to pin kit")
     env.parser.add_option("--lib-dir", 
                           action='store',
                           dest="xed_lib_dir",
@@ -309,14 +304,11 @@ def build_examples(env, work_queue):
        _add_libxed_rpath(env)
 
     # C vs C++: env is for C++ and env_c is for C programs.
-    if env['compiler'] in  ['gnu','clang', 'icc']:
+    if env['compiler'] in  ['gnu','clang']:
         env['LINK'] = env['CXX']
     env_c = copy.deepcopy(env)
     if env_c['compiler'] in ['gnu','clang']:
         env_c['LINK'] = '%(CC)s'
-        
-    if env['pin_crt']:
-        xbc.compile_with_pin_crt_lin_mac_common_cplusplus(env)
     
     # shared files
     cc_shared_files = env.src_dir_join([ 

@@ -1,4 +1,5 @@
-; Copyright (c) 2013-2022, Intel Corporation
+; Copyright (c) 2013-2024, Intel Corporation
+; SPDX-License-Identifier: BSD-3-Clause
 ;
 ; Redistribution and use in source and binary forms, with or without
 ; modification, are permitted provided that the following conditions are met:
@@ -85,6 +86,14 @@ bits 64
 ; @pt p52: pwrx(hw: c1, c6)
 ; @pt p53: ptw(0: 0x90abcdef, ip)
 ; @pt p54: ptw(1: 0x1234567890abcdef)
+; @pt p55: mode.exec(16bit, if)
+; @pt p56: mode.exec(32bit, if)
+; @pt p57: mode.exec(64bit, if)
+; @pt p58: cfe(2)
+; @pt p59: cfe(3, ip)
+; @pt p60: cfe(3: 0xf0, ip)
+; @pt p61: cfe(1: 14)
+; @pt p62: evd(2: 0xf00baa)
 
 ; @pt .exp(ptdump)
 ;%0p01  psbend
@@ -141,3 +150,11 @@ bits 64
 ;%0p52  pwrx       hw: c1, c6
 ;%0p53  ptw        0: 90abcdef, ip
 ;%0p54  ptw        1: 1234567890abcdef
+;%0p55  mode.exec  if
+;%0p56  mode.exec  cs.d, if
+;%0p57  mode.exec  cs.l, if
+;%0p58  cfe        2
+;%0p59  cfe        3, ip
+;%0p60  cfe        3, ip
+;%0p61  cfe        1: 14
+;%0p62  evd        2: f00baa

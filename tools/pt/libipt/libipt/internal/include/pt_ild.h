@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2013-2022, Intel Corporation
+ * Copyright (c) 2013-2024, Intel Corporation
+ * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -39,7 +40,10 @@ typedef enum {
 	PTI_MAP_1,	/* 2-byte opcodes (0x0f).    may have modrm */
 	PTI_MAP_2,	/* 3-byte opcodes (0x0f38).  has modrm */
 	PTI_MAP_3,	/* 3-byte opcodes (0x0f3a).  has modrm */
-	PTI_MAP_AMD3DNOW,	/* 3d-now opcodes (0x0f0f).  has modrm */
+	PTI_MAP_4,
+	PTI_MAP_5,
+	PTI_MAP_6,
+	PTI_MAP_7,
 	PTI_MAP_INVALID
 } pti_map_enum_t;
 
@@ -49,26 +53,21 @@ struct pt_ild {
 	uint8_t max_bytes;	/*1..15 bytes  */
 	enum pt_exec_mode mode;
 
-	union {
-		struct {
-			uint32_t osz:1;
-			uint32_t asz:1;
-			uint32_t lock:1;
-			uint32_t f3:1;
-			uint32_t f2:1;
-			uint32_t last_f2f3:2;	/* 2 or 3 */
-			/* The vex bit is set for c4/c5 VEX and EVEX. */
-			uint32_t vex:1;
-			/* The REX.R and REX.W bits in REX, VEX, or EVEX. */
-			uint32_t rex_r:1;
-			uint32_t rex_w:1;
-		} s;
-		uint32_t i;
-	} u;
+	uint32_t osz:1;
+	uint32_t asz:1;
+	uint32_t lock:1;
+	uint32_t f3:1;
+	uint32_t f2:1;
+	uint32_t last_f2f3:2;	/* 2 or 3 */
+	/* The R and W bits in REX, VEX, or EVEX. */
+	uint32_t rex_r:2;
+	uint32_t rex_w:1;
 	uint8_t imm1_bytes;	/* # of bytes in 1st immediate */
 	uint8_t imm2_bytes;	/* # of bytes in 2nd immediate */
 	uint8_t disp_bytes;	/* # of displacement bytes */
 	uint8_t modrm_byte;
+	/* 0=novex, 1=c4/c5 VEX, 2=EVEX. */
+	uint8_t vex;
 	/* 5b but valid values=  0,1,2,3 could be in bit union */
 	uint8_t map;
 	uint8_t rex;	/* 0b0100wrxb */

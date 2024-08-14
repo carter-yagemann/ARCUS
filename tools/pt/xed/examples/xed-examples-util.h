@@ -1,6 +1,6 @@
 /* BEGIN_LEGAL 
 
-Copyright (c) 2022 Intel Corporation
+Copyright (c) 2024 Intel Corporation
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -137,6 +137,12 @@ xed_uint_t disas_decode_encode_binary(xed_disas_info_t* di,
                                       xed_uint64_t runtime_address);
 
 
+void xed_decode_error(xed_uint64_t runtime_instruction_address,
+                      xed_uint64_t offset, 
+                      const xed_uint8_t* ptr, 
+                      xed_error_enum_t xed_error,
+                      xed_uint_t length);
+
 void xed_print_decode_stats(xed_disas_info_t* di);
 void xed_print_encode_stats(xed_disas_info_t* di);
 
@@ -172,6 +178,7 @@ typedef struct xed_str_list_s {
 
 xed_str_list_t* xed_tokenize(char const* const p, char const* const sep);
 xed_uint_t xed_str_list_size(xed_str_list_t* p); // counts chunks
+void xed_free_token_list(xed_str_list_t* token_list);
 
 void xed_print_intel_asm_emit(const xed_uint8_t* array, unsigned int olen);
 void xed_print_bytes_pseudo_op(const xed_uint8_t* array, unsigned int olen);

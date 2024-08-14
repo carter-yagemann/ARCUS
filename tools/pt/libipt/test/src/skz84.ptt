@@ -1,4 +1,5 @@
-; Copyright (c) 2020-2022, Intel Corporation
+; Copyright (c) 2020-2024, Intel Corporation
+; SPDX-License-Identifier: BSD-3-Clause
 ;
 ; Redistribution and use in source and binary forms, with or without
 ; modification, are permitted provided that the following conditions are met:
@@ -41,6 +42,9 @@
 ;   cpu 6/106
 ;   cpu 6/108
 ;   cpu 6/143
+;   cpu 6/173
+;   cpu 6/174
+;   cpu 6/207
 ;
 
 org 0x100000

@@ -17,7 +17,7 @@ Operands
 0   REG0            REG0=ST(0)   IMPLICIT  CW       F80   80    10     1     80 LONGDOUBLE        X87
 1   REG1            REG1=ST(0)   EXPLICIT   R       F80   80    10     1     80 LONGDOUBLE        X87
 2   REG2        REG2=X87STATUS SUPPRESSED   W    PSEUDO    0     0     1      0        INT  PSEUDOX87
-3   REG3           REG3=EFLAGS SUPPRESSED  RW         Y   32     4     1     32        INT      FLAGS
+3   REG3           REG3=EFLAGS SUPPRESSED  RW   INVALID   32     4     1     32        INT      FLAGS
 Memory Operands
   MemopBytes = 0
 FLAGS:
@@ -27,7 +27,8 @@ FLAGS:
   undefined:                   fc0 fc2 fc3  mask=0xd0000000
 ATTRIBUTES: NOTSX 
 ISA SET: [FCMOV]
-0	CPUID BIT NAME: [CMOV]
-	Leaf 0x00000001, subleaf 0x00000000, EDX[15]
-1	CPUID BIT NAME: [FPU]
-	Leaf 0x00000001, subleaf 0x00000000, EDX[0]
+0	CPUID GROUP NAME: [FCMOV]
+	0	CPUID RECORD NAME: [CMOV]
+		{Leaf 0x00000001, subleaf 0x00000000, EDX[15:15]} = 1
+	1	CPUID RECORD NAME: [FPU]
+		{Leaf 0x00000001, subleaf 0x00000000, EDX[0:0]} = 1

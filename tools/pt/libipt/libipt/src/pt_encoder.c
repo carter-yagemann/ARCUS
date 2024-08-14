@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2014-2022, Intel Corporation
+ * Copyright (c) 2014-2024, Intel Corporation
+ * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -384,6 +385,9 @@ int pt_enc_next(struct pt_encoder *encoder, const struct pt_packet *packet)
 
 			if (packet->payload.mode.bits.exec.csd)
 				mode |= pt_mob_exec_csd;
+
+			if (packet->payload.mode.bits.exec.iflag)
+				mode |= pt_mob_exec_iflag;
 			break;
 
 		case pt_mol_tsx:
@@ -680,6 +684,42 @@ int pt_enc_next(struct pt_encoder *encoder, const struct pt_packet *packet)
 		encoder->pos = pos;
 		return (int) (pos - begin);
 	}
+
+	case ppt_cfe: {
+		uint8_t type;
+
+		errcode = pt_reserve(encoder, ptps_cfe);
+		if (errcode < 0)
+			return errcode;
+
+		*pos++ = pt_opc_ext;
+		*pos++ = pt_ext_cfe;
+
+		type = packet->payload.cfe.type & pt_pl_cfe_type;
+		if (packet->payload.cfe.ip)
+			type |= pt_pl_cfe_ip;
+
+		*pos++ = type;
+		*pos++ = packet->payload.cfe.vector;
+
+		encoder->pos = pos;
+		return (int) (pos - begin);
+	}
+
+	case ppt_evd:
+		errcode = pt_reserve(encoder, ptps_evd);
+		if (errcode < 0)
+			return errcode;
+
+		*pos++ = pt_opc_ext;
+		*pos++ = pt_ext_evd;
+
+		*pos++ = packet->payload.evd.type & pt_pl_evd_type;
+		pos = pt_encode_int(pos, packet->payload.evd.payload,
+				    pt_pl_evd_pl_size);
+
+		encoder->pos = pos;
+		return (int) (pos - begin);
 
 	case ppt_unknown:
 	case ppt_invalid:

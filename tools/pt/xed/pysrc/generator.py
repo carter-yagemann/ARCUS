@@ -2,7 +2,7 @@
 # -*- python -*-
 #BEGIN_LEGAL
 #
-#Copyright (c) 2022 Intel Corporation
+#Copyright (c) 2024 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -65,22 +65,16 @@ import glob
 import re
 import optparse
 import collections
+from typing import Dict, List, Optional
 
-def find_dir(d):
-    directory = os.getcwd()
-    last = ''
-    while directory != last:
-        target_directory = os.path.join(directory,d)
-        if os.path.exists(target_directory):
-            return target_directory
-        last = directory
-        directory = os.path.split(directory)[0]
-    return None
+from genutil import add_mbuild_to_path, find_dir
 
 mbuild_install_path = os.path.join(os.path.dirname(sys.argv[0]), '..', 'mbuild')
-if not os.path.exists(mbuild_install_path):
-    mbuild_install_path =  find_dir('mbuild')
-sys.path=  [mbuild_install_path]  + sys.path
+if os.path.exists(mbuild_install_path):
+    sys.path = [mbuild_install_path]  + sys.path
+else:
+    add_mbuild_to_path()
+
 try:
    import mbuild
 except:
@@ -97,6 +91,7 @@ sys.path=  [ os.path.join(xed2_src_path,'pysrc') ]  + sys.path
 from genutil import *
 import genutil
 import operand_storage
+from operand_storage import operands_storage_t
 import slash_expand
 import flag_gen
 from verbosity import *
@@ -934,15 +929,15 @@ class partitionable_info_t(object):
       self.input_str = ''
 
       self.ipattern_input = ipattern_input
-      self.ipattern =  None # bits_list_t()
-      self.prebindings = None # dictionary 
+      self.ipattern : bits_list_t = None
+      self.prebindings : Dict[str, prebinding_t] = {}
 
       if operands_input:
           self.operands_input = operands_input
       else:
           self.operands_input = []
 
-      self.operands = [] # list of opnds.operand_info_t's 
+      self.operands : List[opnds.operand_info_t] = []
 
       # FOR HIERARCHICAL RECORDS -- THESE GET SPLIT OFF AFTER RECORD-READ
       self.extra_ipatterns = []
@@ -1456,8 +1451,21 @@ def mk_opnd(agi, s, default_vis='DEFAULT'):
                                  agi.widths_dict)
     return op
 
+def skip_flags_reg_gen(ii):
+   # do not duplicate the flags register for instructions with "implicit" flags reg
+   for op in ii.operands:
+      if op.bits in ['XED_REG_FLAGS', 'XED_REG_EFLAGS', 'XED_REG_RFLAGS']:
+         return True
+      if op.lookupfn_name == 'rFLAGS': # allow rflags NT as well
+         return True
+   return False
+
 def add_flags_register_operand(agi,ii):
    """If the instruction has flags, then add a flag register operand."""
+   
+   if skip_flags_reg_gen(ii):
+      return
+
    if field_check(ii,'flags_info') and \
            ii.flags_info and ii.flags_info.x86_flags():
       rw = ii.flags_info.rw_action()
@@ -2892,7 +2900,7 @@ def collect_immediate_operand_bit_positions(options, opnd, ii):
 
 ################################
          
-uninteresting_operand_types_list = ['imm_const', 'reg', 'relbr', 'ptr', 'error',
+uninteresting_operand_types_list = ['imm_const', 'reg', 'relbr', 'absbr', 'ptr', 'error',
                                     'nt_lookup_fn', 'mem', 'xed_reset', 
                                     'flag', 'agen']
 
@@ -3655,7 +3663,8 @@ def compute_iform(options,ii, operand_storage_dict):
             msge("IFORM SKIPPING SUPPRESSED %s" % (operand.name))
 
       elif operand.type == 'nt_lookup_fn':
-         s = operand.lookupfn_name_base 
+         s = operand.lookupfn_name_base
+         s = s.replace('VGPR', 'GPR') # Drop the 'v' (VGPR is a 16-regs VEX NT)
          if operand.oc2 and s not in ['X87'] :
             if operand.oc2 == 'v' and s[-1] == 'v': 
                pass # avoid duplicate v's
@@ -4851,36 +4860,43 @@ def expand_hierarchical_records(ii):
    return new_lines
 
 
-
 # $$ generator_common_t
 class generator_common_t(object):
-   """This is stuff that is common to every geneator and the
+   """
+   Items that are common to every generator and the
    agi. Basically all the globals that are needed by most generator
-   specific processing."""
+   specific processing.
+   """
 
    def __init__(self):
-      self.options = None
-      self.state_bits = None # dictionary of state_info_t's
-      self.state_space = None # dictionary of all values of each state
-                              # restriction (operand_decider)
+      self.options: Optional[object] = None
+      self.state_bits: Optional[Dict[str, state_info_t]] = None
 
-      self.enc_file = None
-      self.inst_file = None
-      self.operand_storage_hdr_file = None
-      self.operand_storage_src_file = None
-      
-      self.header_file_names = []
-      self.source_file_names = []
-      self.file_pointers = []
+      # dictionary of all values of each state restriction (operand_decider)
+      self.state_space: Optional[Dict[str, List[str]]] = None
 
-      self.inst_table_file_names = []
+      self.enc_file: Optional[xed_file_emitter_t] = None
+      self.inst_file: Optional[xed_file_emitter_t] = None
+      self.operand_storage_header_file: Optional[xed_file_emitter_t] = None
+      self.operand_storage_src_file: Optional[xed_file_emitter_t] = None
 
-   def get_state_space_values(self,od_token):
-       '''return the list of values associated with this token'''
+      self.header_file_names: List[str] = []
+      self.source_file_names: List[str] = []
+      self.file_pointers: List[xed_file_emitter_t] = []
+
+      self.inst_table_file_names: List[str] = []
+
+   def get_state_space_values(self, od_token: str) -> List[str]:
+       """
+       Get the list of values associated with `operand_decider_token`
+       """
+
        return self.state_space[od_token]
       
-   def open_file(self,fn, arg_shell_file=False, start=True):
-      'open and record the file pointers'
+   def open_file(self, fn: str, arg_shell_file=False, start=True) -> xed_file_emitter_t:
+      """
+      Open a file and record its file pointer
+      """
 
       fp = xed_file_emitter_t(self.options.xeddir,
                               self.options.gendir,
@@ -4896,8 +4912,11 @@ class generator_common_t(object):
       self.file_pointers.append(fp)
       return fp
 
-   def build_fn(self,tail,header=False):
-      'build and record the file names'
+   def build_file_name(self, tail: str, header=False) -> str:
+      """
+      Build and record a file name
+      """
+
       if True: # MJC2006-10-10
          fn = tail
       else:
@@ -4909,65 +4928,78 @@ class generator_common_t(object):
       return fn
    
    def open_all_files(self):
-      "Open the major output files"
+      """
+      Open all major output files
+      """
+
       msge("Opening output files")
 
       header = True
 
 
-      self.inst_file = self.open_file(self.build_fn(
+      self.inst_file = self.open_file(self.build_file_name(
                                           self.options.inst_init_file))
 
-   def open_new_inst_table_file(self):
+   def open_new_inst_table_file(self) -> xed_file_emitter_t:
+      """
+      Open a new XED instruction table init file
+      """
+
       i = len(self.inst_table_file_names)
       base_fn = 'xed-inst-table-init-'
-      fn = self.build_fn(base_fn + str(i) + ".c")
+      fn = self.build_file_name(base_fn + str(i) + ".c")
       self.inst_table_file_names.append(fn)
       fp = self.open_file(fn)
       return fp
 
          
    def close_output_files(self):
-      "Close the major output files"
+      """
+      Close all major output files
+      """
+
       for f in self.file_pointers:
          f.close()
 
 # $$ generator_info_t      
 class generator_info_t(generator_common_t):
-   """All the information that we collect and generate"""
+   """
+   All the information that we collect and generate
+   """
+
    def __init__(self, common):
-      super(generator_info_t,self).__init__()
-      self.common = common
-      
+      super().__init__()
+      self.common: generator_common_t = common
+
       if self.common.options == None:
-         die("Bad init")
-      #old style generator_common_t.__init__(self,generator_common)
-      self.parser_output = None # class parser_t
-      self.graph = None
-      # unique list of iclasses
-      self.iclasses = {}
+          die("Bad init")
+
+      self.parser_output: Optional[parser_t] = None
+      self.graph: Optional[graph_node] = None
+
+      # Unique list of iclasses
+      self.iclasses: Dict[str, bool] = {}
 
       # list of tuples of (nonterminal names, max count of how many
       # there are of this one per instruction)
-      self.nonterminals = []
+      self.nonterminals: List[Tuple[str, int]] = []
 
-      # list of opnds.operand_info_t's
-      self.operands = None
+      self.operands: Optional[List[opnds.operand_info_t]] = None
 
-      self.storage_class = None
-
-      #For thing that are directly translateable in to tables, we
-      #generate a table here.
-      self.luf_arrays =  []
-      self.marshalling_function = None
       
-   def nonterminal_name(self):
-      """The name of this subtree"""
+   def nonterminal_name(self) -> str:
+      """
+      The name of this subtree
+      """
+
       s =  self.parser_output.nonterminal_name
       return nonterminal_parens_pattern.sub('', s)
 
    def build_unique_iclass_list(self):
-      "build a unique list of iclasses"
+      """
+      Build a unique list of iclasses
+      """
+
       self.iclasses = {}
       for ii in self.parser_output.instructions:
          if field_check(ii,'iclass'):
@@ -4977,86 +5009,77 @@ class generator_info_t(generator_common_t):
 
 # $$ all_generator_info_t
 class all_generator_info_t(object):
-   """List of generators, each with its own graph"""
+   """
+   List of generators, each with its own graph
+   """
+
    def __init__(self,options):
       #common has mostly input and output files and names
       self.common = generator_common_t()
       self.common.options = options
       self.common.open_all_files()
-      
-      self.generator_list = []
-      self.generator_dict = {} # access by NT name
-      self.nonterminal_dict = nonterminal_dict_t()
 
-      self.src_files=[]
-      self.hdr_files=[]
+      self.generator_list: List[generator_info_t] = []
+      self.generator_dict: Dict[str, generator_info_t] = {} # access by NT name
+      self.nonterminal_dict: nonterminal_dict_t = nonterminal_dict_t()
+
+      self.src_files: List[str] = []
+      self.hdr_files: List[str] = []
 
       # list of map_info_rdr.map_info_t describing valid maps for this
       # build.
-      self.map_info = None 
-
+      self.map_info: List[map_info_rdr.map_info_t] = []
 
       # enum lists
-      self.operand_types = {} # typename -> True
-      self.operand_widths = {} # width -> True # oc2
-      self.operand_names = {} # name -> Type
-      self.iclasses  = []
-      self.categories = []
-      self.extensions = []
-      self.attributes = []
-      
+      self.operand_types: Dict[str, bool] = {} # typename -> True
+      self.operand_widths: Dict[str, bool] = {} # width -> True # oc2
+      self.operand_names: Dict[str, str] = {} # name -> Type
+      self.iclasses: List[str] = []
+      self.categories: List[str] = []
+      self.extensions: List[str] = []
+      self.attributes: List[str] = []
+
       # for emitting defines with limits
-      self.max_iclass_strings = 0
-      self.max_convert_patterns = 0
-      self.max_decorations_per_operand = 0
+      self.max_iclass_strings: int = 0
+      self.max_convert_patterns: int = 0
+      self.max_decorations_per_operand: int = 0
 
       # this is the iclasses in the order of the enumeration for us in
       # initializing other structures.
-      self.iclasses_enum_order = None
+      self.iclasses_enum_order: Optional[List[str]] = None
 
       # function_object_ts
-      self.itable_init_functions = table_init_object_t('xed-init-inst-table-',
-                                                       'xed_init_inst_table_')
-      self.encode_init_function_objects = []
-      
-      # dictionaries of code snippets that map to function names
-      self.extractors = {}
-      self.packers = {}
-      
-      self.operand_storage = None # operand_storage_t
-      
+      self.itable_init_functions: table_init_object_t = table_init_object_t('xed-init-inst-table-',
+                                                                    'xed_init_inst_table_')
+      self.encode_init_function_objects: List[function_object_t] = []
 
-      # function_object_t 
-      self.overall_lookup_init = None
+      self.operand_storage: Optional[operands_storage_t] = None
 
-      # functions called during decode traverals to capture required operands.
-      self.all_node_capture_functions = []
+      self.overall_lookup_init: Optional[function_object_t] = None
 
       # data for instruction table
-      self.inst_fp = None
+      self.inst_fp: Optional[xed_file_emitter_t] = None
 
-      # list of (index, initializer) tuples for all the entire decode graph
-      self.all_decode_graph_nodes=[]
-      
-      self.data_table_file=None
-      self.operand_sequence_file=None
+      self.data_table_file: Optional[xed_file_emitter_t] = None
+      self.operand_sequence_file: Optional[xed_file_emitter_t] = None
 
       # set by scan_maps
-      self.max_map_vex = 0
-      self.max_map_evex = 0
-      
+      self.max_map_vex: int = 0
+      self.max_map_evex: int = 0
+
       # dict "iclass:extension" -> ( iclass,extension, 
       #                               category, iform_enum, properties-list)
-      self.iform_info = {} 
+      self.iform_info: Dict[str, Tuple[str, str, str, str, List[str], int]] = {}
 
-      self.attributes_dict = {}
-      self.attr_next_pos  = 0
-      self.attributes_ordered  = None
-      self.sorted_attributes_dict = {}
-      # a dict of all the enum names to their values. 
-      # passed to operand storage in order to calculate 
+      self.attributes_dict: Dict[str, int] = {}
+      self.attr_next_pos: int  = 0
+      self.attributes_ordered: Optional[list[Tuple[int, str]]]  = None
+      self.sorted_attributes_dict: Dict[str, int] = {}
+
+      # a dict of all the enum names to their values.
+      # passed to operand storage in order to calculate
       # the number of required bits
-      self.all_enums = {} 
+      self.all_enums: Dict[str, list[str]] = {}
 
       # these are xed_file_emitter_t objects
       self.flag_simple_file = self.common.open_file("xed-flags-simple.c", start=False)
@@ -5126,52 +5149,51 @@ class all_generator_info_t(object):
       self.operand_sequence_file.close()
 
       
-   def add_file_name(self,fn,header=False):
-      if type(fn) in [bytes,str]:
-          fns = [fn]
-      elif type(fn) == list:
-          fns = fn
+   def add_file_name(self, file_name, header=False):
+      if type(file_name) in [bytes,str]:
+          file_names = [file_name]
+      elif type(file_name) == list:
+          file_names = file_name
       else:
           die("Need string or list")
       
-      for f in fns:
+      for file in file_names:
           if header:
-             self.hdr_files.append(f)
+             self.hdr_files.append(file)
           else:
-             self.src_files.append(f)
+             self.src_files.append(file)
 
    def dump_generated_files(self):
-       """For mbuild dependence checking, we need an accurate list of the
-          files the generator created. This file is read by xed_mbuild.py"""
+      """
+      For mbuild dependence checking, we need an accurate list of the
+      files the generator created. This file is read by xed_mbuild.py
+      """
        
-       output_file_list = mbuild.join(self.common.options.gendir, 
-                                      "DECGEN-OUTPUT-FILES.txt")
-       f = base_open_file(output_file_list,"w")
-       for fn in self.hdr_files + self.src_files:
-           f.write(fn+"\n")
-       f.close()
-   
-   def mk_fn(self,fn):
-      if True: #MJC2006-10-10
-         return fn
-      return self.real_mk_fn(fn)
-
-   def real_mk_fn(self,fn):
-      return os.path.join(self.common.options.gendir,fn)
+      output_file_list = mbuild.join(self.common.options.gendir,
+                                    "DECGEN-OUTPUT-FILES.txt")
+      f = base_open_file(output_file_list,"w")
+      for fn in self.hdr_files + self.src_files:
+         f.write(fn+"\n")
+      f.close()
       
    def close_output_files(self):
-      "Close the major output files"
+      """
+      Close the major output files
+      """
+
       self.common.close_output_files()
 
-   def make_generator(self, nt_name):
+   def make_generator(self, nt_name: str) -> generator_info_t:
       g = generator_info_t(self.common)
       self.generator_list.append(g)
       self.generator_dict[nt_name] = g
       return g
 
 
-   def open_file(self, fn, keeper=True, arg_shell_file=False, start=True, private=True):
-      'open and record the file pointers'
+   def open_file(self, fn: str, keeper=True, arg_shell_file=False, start=True, private=True) -> xed_file_emitter_t:
+      """
+      Open `file_name` and record the file pointer
+      """
 
       fp = xed_file_emitter_t(self.common.options.xeddir,
                               self.common.options.gendir,
@@ -5197,8 +5219,11 @@ class all_generator_info_t(object):
 
                         
    def code_gen_table_sizes(self):
-      """Write the file that has the declarations of the tables that we
-      fill in in the generator"""
+      """
+      Write the file that has the declarations of the tables that we
+      fill in the generator
+      """
+
       fn = "xed-gen-table-defs.h"
       # we do not put this in a namespace because it is included while
       # in the XED namespace.
@@ -5262,10 +5287,10 @@ class all_generator_info_t(object):
       fi.close()
 
       
-   def handle_prefab_enum(self,enum_fn):
+   def handle_prefab_enum(self, enum_file_name: str) -> List[str]:
       # parse the enum file and get the c and h file names
       gendir = self.common.options.gendir
-      m=metaenum.metaenum_t(enum_fn,gendir)
+      m=metaenum.metaenum_t(enum_file_name,gendir)
       m.run_enumer()
       # remember the c & h file names
       self.add_file_name(m.src_full_file_name)
@@ -5277,13 +5302,17 @@ class all_generator_info_t(object):
 
       
    def handle_prefab_enums(self):
-      """Gather up all the enum.txt files in the datafiles directory"""
+      """
+      Gather all the `enum.txt` files in the `datafiles` directory, and
+      generate the corresponding `.c` and `.h` files.
+      """
+
       prefab_enum_shell_pattern = os.path.join(self.common.options.xeddir,
                                                "datafiles/*enum.txt")
       prefab_enum_files = glob.glob( prefab_enum_shell_pattern )
-      for fn in prefab_enum_files:
-         msge("PREFAB-ENUM: " + fn)
-         self.handle_prefab_enum( fn )
+      for file_name in prefab_enum_files:
+         msge("PREFAB-ENUM: " + file_name)
+         self.handle_prefab_enum( file_name )
          
    def extend_operand_names_with_input_states(self):
       type ='xed_uint32_t'
@@ -5664,100 +5693,113 @@ def call_chipmodel(agi):
         agi.add_file_name(f,is_header(f))
 
 ################################################
-def read_cpuid_mappings(fn):
-    return cpuid_rdr.read_file(fn)
+def make_cpuid_mappings(agi,fn):
+    """
+    Make CPUID C tables and headers
 
-def make_cpuid_mappings(agi,mappings):
+    Args:
+        agi (all_generator_info_t): All generator info
+        fn (str): cpuid input file name
+    """    
+    isaset_cpuid_map : cpuid_rdr.isaset_cpuid_map_t = cpuid_rdr.read_file(fn)
+    cpuid_recs : cpuid_rdr.cpuid_rec_info_map_t = cpuid_rdr.make_cpuid_rec_info_map(isaset_cpuid_map)
+    cpuid_grps : cpuid_rdr.cpuid_group_info_map_t = cpuid_rdr.make_cpuid_group_info_map(isaset_cpuid_map)
+    cpuid_rec_string_names = sorted(cpuid_recs.keys())
+    cpuid_group_string_names = sorted(cpuid_grps.keys())
 
-    # 'mappings' is a dict of isa_set -> list of cpuid_bit_names 
-    
-    # collect all unique list of cpuid bit names
-    cpuid_bits = {}
-    for vlist in mappings.values():
-        for bit in vlist:
-            if bit == 'N/A':
-                data = bitname = 'INVALID'
-            else:
-                try:
-                    bitname,orgdata = bit.split('.',1)
-                    data = re.sub('[.]','_',orgdata)
-                except:
-                    die("splitting problem with {}".format(bit))
-                if bitname in cpuid_bits:
-                    if cpuid_bits[bitname] != data:
-                        die("Mismatch on cpuid bit specification for bit {}: {} vs {}".format(
-                            bitname, cpuid_bits[bitname], data))
-            cpuid_bits[bitname]=data
+    ### CPUID Record Enum ##
+    # Move INVALID to 0th element:
+    p = cpuid_rec_string_names.index('INVALID')
+    del cpuid_rec_string_names[p]
+    cpuid_rec_string_names = ['INVALID'] + cpuid_rec_string_names 
 
-    
-    cpuid_bit_string_names = sorted(cpuid_bits.keys())
-
-    # move INVALID to 0th element:
-    p = cpuid_bit_string_names.index('INVALID')
-    del cpuid_bit_string_names[p]
-    cpuid_bit_string_names = ['INVALID'] + cpuid_bit_string_names 
-
-    # emit enum for cpuid bit names
-    cpuid_bit_enum =  enum_txt_writer.enum_info_t(cpuid_bit_string_names,
+    # Emit enum for cpuid rec names
+    cpuid_rec_enum =  enum_txt_writer.enum_info_t(cpuid_rec_string_names,
                                                   agi.common.options.xeddir,
                                                   agi.common.options.gendir,
-                                                  'xed-cpuid-bit',
-                                                  'xed_cpuid_bit_enum_t',
-                                                  'XED_CPUID_BIT_', 
+                                                  'xed-cpuid-rec',
+                                                  'xed_cpuid_rec_enum_t',
+                                                  'XED_CPUID_REC_', 
                                                   cplusplus=False)
-    cpuid_bit_enum.print_enum()
-    cpuid_bit_enum.run_enumer()
-    agi.add_file_name(cpuid_bit_enum.src_full_file_name)
-    agi.add_file_name(cpuid_bit_enum.hdr_full_file_name,header=True)
+    cpuid_rec_enum.print_enum()
+    cpuid_rec_enum.run_enumer()
+    agi.add_file_name(cpuid_rec_enum.src_full_file_name)
+    agi.add_file_name(cpuid_rec_enum.hdr_full_file_name,header=True)
+
+    ### CPUID Group Enum ##
+    # Move INVALID to 0th element:
+    p = cpuid_group_string_names.index('INVALID')
+    del cpuid_group_string_names[p]
+    cpuid_group_string_names = ['INVALID'] + cpuid_group_string_names 
+
+    # Emit enum for cpuid group names
+    cpuid_grp_enum =  enum_txt_writer.enum_info_t(cpuid_group_string_names,
+                                                  agi.common.options.xeddir,
+                                                  agi.common.options.gendir,
+                                                  'xed-cpuid-group',
+                                                  'xed_cpuid_group_enum_t',
+                                                  'XED_CPUID_GROUP_', 
+                                                  cplusplus=False)
+    cpuid_grp_enum.print_enum()
+    cpuid_grp_enum.run_enumer()
+    agi.add_file_name(cpuid_grp_enum.src_full_file_name)
+    agi.add_file_name(cpuid_grp_enum.hdr_full_file_name,header=True)
 
     fp = agi.open_file('xed-cpuid-tables.c')
 
     fp.add_code('const xed_cpuid_rec_t xed_cpuid_info[] = {')
     # emit initialized structure mapping cpuid enum values to descriptive structures
-    for bitname in cpuid_bit_string_names:
-        cpuid_bit_data = cpuid_bits[bitname]
-        if bitname == 'INVALID':
-            leaf = subleaf = bit  = 0
-            reg = 'INVALID'
-        else:
-            (leaf,subleaf,reg,bit) = cpuid_bit_data.split('_')
+    for recname in cpuid_rec_string_names:
+        data : cpuid_rdr.cpuid_record_t = cpuid_recs[recname]
             
-        s = "/* {:18s} */ {{ 0x{}, {}, {}, XED_REG_{} }},".format(
-            bitname, leaf,subleaf, bit, reg)
+        s = "/* {:18s} */ {{ 0x{}, {}, XED_REG_{}, {}, {}, {} }},".format(
+            recname, data.leaf, data.s_leaf, data.reg, data.bit_start, 
+            data.bit_end, data.value)
         fp.add_code(s)
     fp.add_code('};')
 
     # check that each isa set in the cpuid files has a corresponding XED_ISA_SET_ value
     fail = False
-    for cisa in mappings.keys():
+    for cisa in isaset_cpuid_map.keys():
         t = re.sub('XED_ISA_SET_','',cisa)
         if t not in agi.all_enums['xed_isa_set_enum_t']:
             fail = True
             genutil.warn("bad isa_set referenced cpuid file: {}".format(cisa))
     if fail:
         die("Found bad isa_sets in cpuid input files.")
-                    
-
-        
     
-    # emit initialized structure of isa-set mapping to array of cpuid bit string enum.
+    # emit initialized structure of cpuid group mapping to array of cpuid rec string enum.
     n = 4
-    fp.add_code('const xed_cpuid_bit_enum_t xed_isa_set_to_cpuid_mapping[][XED_MAX_CPUID_BITS_PER_ISA_SET] = {')
+    fp.add_code('const xed_cpuid_rec_enum_t xed_cpuid_group_to_rec_mapping[][XED_MAX_CPUID_RECS_PER_GROUP] = {')
+    for group_name in cpuid_group_string_names:
+        print("CPUID Group: ", group_name)
+        raw = n*['XED_CPUID_REC_INVALID']
+        if group_name in cpuid_grps:
+            group: cpuid_rdr.group_record_t = cpuid_grps[group_name]
+            for i, rec in enumerate(group.get_records()):
+                rec_symbolic_name = rec.fname
+                if i >= n:
+                    die("Make XED_MAX_CPUID_RECS_PER_GROUP bigger")
+                raw[i] = 'XED_CPUID_REC_' + rec_symbolic_name
+        recs = ", ".join(raw)
+        s = '/* {} */ {{ {}  }} ,'.format(group_name, recs)
+        fp.add_code(s)
+    fp.add_code('};')
 
+    # emit initialized structure of isa-set mapping to array of cpuid group string enum.
+    n = 2
+    fp.add_code('const xed_cpuid_group_enum_t xed_isa_set_to_cpuid_group_mapping[][XED_MAX_CPUID_GROUPS_PER_ISA_SET] = {')
     for isaset in agi.all_enums['xed_isa_set_enum_t']:
         print("ISASET: ", isaset)
         x = 'XED_ISA_SET_' + isaset
-        raw = n*['XED_CPUID_BIT_INVALID']
-        if x in mappings:
-            for i,v in enumerate(mappings[x]):
-                if v == 'N/A':
-                    bit_symbolic_name = 'INVALID'
-                else:
-                    (bit_symbolic_name,leaf,subleaf,reg,bit) = v.split('.')
+        raw = n*['XED_CPUID_GROUP_INVALID']
+        if x in isaset_cpuid_map:
+            for i,v in enumerate(isaset_cpuid_map[x]):
+                grp_symbolic_name = v.get_name()
 
                 if i >= n:
-                    die("Make XED_MAX_CPUID_BITS_PER_ISA_SET bigger")
-                raw[i] = 'XED_CPUID_BIT_' + bit_symbolic_name
+                    die("Make XED_MAX_CPUID_GROUPS_PER_ISA_SET bigger")
+                raw[i] = 'XED_CPUID_GROUP_' + grp_symbolic_name
         bits = ", ".join(raw)
         s = '/* {} */ {{ {}  }} ,'.format(isaset, bits)
         fp.add_code(s)
@@ -5768,8 +5810,7 @@ def gen_cpuid_map(agi):
     fn = agi.common.options.cpuid_input_fn
     if fn:
         if os.path.exists(fn):
-            mappings = read_cpuid_mappings(fn)
-            make_cpuid_mappings(agi, mappings)
+            make_cpuid_mappings(agi, fn)
             return
     die("Could not read cpuid input file: {}".format(str(fn)))
     

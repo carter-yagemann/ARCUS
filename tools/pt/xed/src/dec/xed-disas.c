@@ -1,6 +1,6 @@
 /* BEGIN_LEGAL 
 
-Copyright (c) 2021 Intel Corporation
+Copyright (c) 2024 Intel Corporation
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -41,6 +41,7 @@ END_LEGAL */
 
 #include <string.h> // memset
 #define XED_HEX_BUFLEN 200
+#define MULTI_REG_BUF_LEN 4
 
 int
 xed_get_symbolic_disassembly(xed_print_info_t* pi,
@@ -200,8 +201,8 @@ xed_decoded_inst_dump_xed_format(const xed_decoded_inst_t* p,
     blen = xed_strncat(buf, " ", blen);
     s = buf + xed_strlen(buf);
     xed_operand_values_print_short(co,s,blen);
-    return 1;
     (void) runtime_address;
+    return 1;
 }
 
 static const char* xed_decoded_inst_print_ptr_size(xed_uint_t bytes) {
@@ -324,6 +325,8 @@ xed_decoded_inst_dump_common(xed_print_info_t* pi)
         xed_prefixes(pi,"hint-not-taken");
     else if (xed_operand_values_branch_taken_hint(ov))
         xed_prefixes(pi,"hint-taken");
+    else if (xed_operand_values_cet_no_track(ov))
+        xed_prefixes(pi,"notrack");
 
     if (xed_operand_values_has_address_size_prefix(ov)) {
         if (xed_decoded_inst_explicit_memop(pi->p) == 0) {
@@ -456,10 +459,18 @@ xed_print_operand_decorations(
         int i;
         for( i=0; i<XED_MAX_DECORATIONS_PER_OPERAND; i++ )  {
             xed_operand_convert_enum_t v = xed_operand_convert[cvt_idx][i];
-            if (v == XED_OPERAND_CONVERT_INVALID ||
-                v >=  XED_OPERAND_CONVERT_LAST    )
+            if (v == XED_OPERAND_CONVERT_INVALID || v >=  XED_OPERAND_CONVERT_LAST){
                 break;
-            pi->blen = xed_print_cvt(pi->p, pi->buf, pi->blen, v);
+            }
+            else if (v > XED_OPERAND_CONVERT_MULTIREG_START){ // print +N notation for sequential regs
+                char numStr[MULTI_REG_BUF_LEN];
+                xed_sprintf_uint32(numStr, v - XED_OPERAND_CONVERT_MULTIREG_START, MULTI_REG_BUF_LEN);
+                pi->blen = xed_strncat_lower(pi->buf, "+", pi->blen);
+                pi->blen = xed_strncat_lower(pi->buf, numStr, pi->blen);
+            }
+            else {
+                pi->blen = xed_print_cvt(pi->p, pi->buf, pi->blen, v);
+            }
         }
     }
 }
@@ -773,11 +784,13 @@ static void xed_print_operand( xed_print_info_t* pi )
                   xml_tag_pi(pi, "MEM", bytes << 3);
           }
 
-          if (xed_operand_name(op) != XED_OPERAND_AGEN)
-              pi->blen = xed_strncat_lower(
-                  pi->buf,
-                  xed_decoded_inst_print_ptr_size(bytes),
-                  pi->blen);
+          if (xed_operand_name(op) != XED_OPERAND_AGEN &&
+              xed_operand_width(op) != XED_OPERAND_WIDTH_MPREFETCH) {
+                pi->blen = xed_strncat_lower(
+                    pi->buf,
+                    xed_decoded_inst_print_ptr_size(bytes),
+                    pi->blen);
+          }
 
           xed_pi_strcat(pi,"ptr ");
           if (seg != XED_REG_INVALID &&
@@ -961,10 +974,10 @@ static void xed_print_operand( xed_print_info_t* pi )
       }
 
       case XED_OPERAND_PTR: {        
-          unsigned int disp =(unsigned int)
-                        xed_operand_values_get_branch_displacement_int32(ov);
+          xed_int64_t disp =
+                        xed_operand_values_get_branch_displacement_int64(ov);
           
-          xed_uint_t bits_to_print = xed_operand_values_get_effective_operand_width(ov);
+          xed_uint_t bits_to_print = xed_decoded_inst_get_branch_displacement_width_bits(ov);
               
           if (pi->format_options.xml_a)
               xed_pi_strcat(pi,"<PTR>");
@@ -978,13 +991,34 @@ static void xed_print_operand( xed_print_info_t* pi )
                                            pi->format_options.lowercase_hex);
           xml_print_end(pi,"PTR");
           break;
-
       }
-      case XED_OPERAND_RELBR:
+
+      case XED_OPERAND_ABSBR: {
+          xed_int64_t disp =
+                        xed_operand_values_get_branch_displacement_int64(ov);
+          
+          xed_uint_t bits_to_print = xed_decoded_inst_get_branch_displacement_width_bits(ov);
+              
+          if (pi->format_options.xml_a)
+              xed_pi_strcat(pi,"<ABSBR>");
+
+          xed_pi_strcat(pi,"0x");
+          pi->blen = xed_itoa_hex_ul(pi->buf+xed_strlen(pi->buf),
+                                           disp,
+                                           bits_to_print,
+                                           leading_zeros,
+                                           pi->blen,
+                                           pi->format_options.lowercase_hex);
+          xml_print_end(pi,"ABSBR");
+          break;
+      }
+
+      case XED_OPERAND_RELBR: {
         if (xed_inst_iclass(xi) == XED_ICLASS_XBEGIN)
             pi->truncate_eip_eosz16 = 0;
         print_relbr(pi);
         break;
+      }
 
       default: {
           xed_operand_ctype_enum_t  ctype = xed_operand_get_ctype(op_name);
@@ -1418,10 +1452,11 @@ xed_decoded_inst_dump_att_format_internal(
               break;
           }
 
+          case XED_OPERAND_ABSBR:
           case XED_OPERAND_PTR: {
-              unsigned int disp =
+              xed_int64_t disp =
                   xed_decoded_inst_get_branch_displacement(pi->p);
-              xed_uint_t bits_to_print = xed_operand_values_get_effective_operand_width(ov);
+              xed_uint_t bits_to_print = xed_decoded_inst_get_branch_displacement_width_bits(ov);
               
               xed_pi_strcat(pi,"$0x");                      
               pi->blen = xed_itoa_hex_ul(pi->buf+xed_strlen(pi->buf),
@@ -1433,11 +1468,12 @@ xed_decoded_inst_dump_att_format_internal(
               break;
           }
 
-          case XED_OPERAND_RELBR:
+          case XED_OPERAND_RELBR: {
             if (xed_inst_iclass(xi) == XED_ICLASS_XBEGIN)
                 pi->truncate_eip_eosz16 = 0;
             print_relbr(pi);
             break;
+          }
 
           default: {
               xed_operand_ctype_enum_t  ctype = xed_operand_get_ctype(op_name);

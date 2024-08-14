@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2013-2022, Intel Corporation
+ * Copyright (c) 2013-2024, Intel Corporation
+ * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -121,6 +122,15 @@ struct pt_insn_decoder {
 
 	/* - a ptwrite event has already been bound to @insn/@iext. */
 	uint32_t bound_ptwrite:1;
+
+	/* - an iret event has already been bound to @insn/@iext. */
+	uint32_t bound_iret:1;
+
+	/* - a vmentry event has already been bound to @insn/@iext. */
+	uint32_t bound_vmentry:1;
+
+	/* - an uiret event has already been bound to @insn/@iext. */
+	uint32_t bound_uiret:1;
 };
 
 

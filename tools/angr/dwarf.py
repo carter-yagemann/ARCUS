@@ -19,7 +19,6 @@ import logging
 import os
 import sys
 
-from elftools.common.py3compat import maxint, bytes2str
 from elftools.dwarf.descriptions import describe_form_class
 from elftools.elf.elffile import ELFFile
 
