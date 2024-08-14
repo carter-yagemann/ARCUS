@@ -1,6 +1,7 @@
-angr==9.2.56
+angr>=9.2.56,<=9.2.115
 construct>=2.9.45
 ipython>=7.8.0
 redis>=3.4.1
 # fills in gaps in angr's current riscv64 support
-git+https://github.com/carter-yagemann/angr-platforms.git@riscv64-linux
+# angr-platforms (including main upstream branch) only supports Python 3.9 and earlier
+git+https://github.com/carter-yagemann/angr-platforms.git@riscv64-linux; python_version < '3.10'
