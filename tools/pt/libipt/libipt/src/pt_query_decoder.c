@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2014-2022, Intel Corporation
+ * Copyright (c) 2014-2024, Intel Corporation
+ * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -50,6 +51,8 @@ static int pt_qry_init_evt_flags(struct pt_conf_flags *eflags,
 	memset(eflags, 0, sizeof(*eflags));
 	eflags->variant.event.keep_tcal_on_ovf =
 		flags->variant.query.keep_tcal_on_ovf;
+	eflags->variant.event.enable_iflags_events =
+		flags->variant.query.enable_iflags_events;
 
 	return 0;
 }
@@ -166,10 +169,9 @@ static int pt_qry_status_flags(const struct pt_query_decoder *decoder)
 	 * not indicate the next event until the TNT cache is empty.
 	 */
 	if (pt_tnt_cache_is_empty(&decoder->tnt)) {
-		if (decoder->status < 0) {
-			if (decoder->status == -pte_eos)
-				flags |= pts_eos;
-		} else {
+		if (decoder->status == -pte_eos)
+			flags |= pts_eos;
+		else {
 			errcode = pt_qry_event_pending(&decoder->event);
 			if (errcode != 0) {
 				if (errcode < 0)
@@ -178,7 +180,6 @@ static int pt_qry_status_flags(const struct pt_query_decoder *decoder)
 				flags |= pts_event_pending;
 			}
 		}
-
 	}
 
 	return flags;

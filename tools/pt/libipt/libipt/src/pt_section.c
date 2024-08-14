@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2013-2022, Intel Corporation
+ * Copyright (c) 2013-2024, Intel Corporation
+ * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -268,7 +269,7 @@ static int pt_section_unlock_attach(struct pt_section *section)
 int pt_section_attach(struct pt_section *section,
 		      struct pt_image_section_cache *iscache)
 {
-	uint16_t acount, ucount;
+	uint16_t acount;
 	int errcode;
 
 	if (!section || !iscache)
@@ -278,10 +279,25 @@ int pt_section_attach(struct pt_section *section,
 	if (errcode < 0)
 		return errcode;
 
-	ucount = section->ucount;
 	acount = section->acount;
 	if (!acount) {
-		if (section->iscache || !ucount)
+		if (section->iscache) {
+			errcode = -pte_internal;
+			goto out_unlock;
+		}
+
+		errcode = pt_section_lock(section);
+		if (errcode < 0)
+			goto out_unlock;
+
+		if (!section->ucount) {
+			(void) pt_section_unlock(section);
+			errcode = -pte_internal;
+			goto out_unlock;
+		}
+
+		errcode = pt_section_unlock(section);
+		if (errcode < 0)
 			goto out_unlock;
 
 		section->iscache = iscache;
@@ -292,14 +308,27 @@ int pt_section_attach(struct pt_section *section,
 
 	acount += 1;
 	if (!acount) {
-		(void) pt_section_unlock_attach(section);
-		return -pte_overflow;
+		errcode = -pte_overflow;
+		goto out_unlock;
 	}
 
-	if (ucount < acount)
+	if (section->iscache != iscache) {
+		errcode = -pte_internal;
+		goto out_unlock;
+	}
+
+	errcode = pt_section_lock(section);
+	if (errcode < 0)
 		goto out_unlock;
 
-	if (section->iscache != iscache)
+	if (section->ucount < acount) {
+		(void) pt_section_unlock(section);
+		errcode = -pte_internal;
+		goto out_unlock;
+	}
+
+	errcode = pt_section_unlock(section);
+	if (errcode < 0)
 		goto out_unlock;
 
 	section->acount = acount;
@@ -308,13 +337,13 @@ int pt_section_attach(struct pt_section *section,
 
  out_unlock:
 	(void) pt_section_unlock_attach(section);
-	return -pte_internal;
+	return errcode;
 }
 
 int pt_section_detach(struct pt_section *section,
 		      struct pt_image_section_cache *iscache)
 {
-	uint16_t acount, ucount;
+	uint16_t acount;
 	int errcode;
 
 	if (!section || !iscache)
@@ -324,16 +353,30 @@ int pt_section_detach(struct pt_section *section,
 	if (errcode < 0)
 		return errcode;
 
-	if (section->iscache != iscache)
+	if (section->iscache != iscache) {
+		errcode = -pte_internal;
 		goto out_unlock;
+	}
 
 	acount = section->acount;
-	if (!acount)
+	if (!acount) {
+		errcode = -pte_internal;
+		goto out_unlock;
+	}
+	acount -= 1;
+
+	errcode = pt_section_lock(section);
+	if (errcode < 0)
 		goto out_unlock;
 
-	acount -= 1;
-	ucount = section->ucount;
-	if (ucount < acount)
+	if (section->ucount < acount) {
+		(void) pt_section_unlock(section);
+		errcode = -pte_internal;
+		goto out_unlock;
+	}
+
+	errcode = pt_section_unlock(section);
+	if (errcode < 0)
 		goto out_unlock;
 
 	section->acount = acount;
@@ -344,7 +387,7 @@ int pt_section_detach(struct pt_section *section,
 
  out_unlock:
 	(void) pt_section_unlock_attach(section);
-	return -pte_internal;
+	return errcode;
 }
 
 const char *pt_section_filename(const struct pt_section *section)
@@ -363,7 +406,7 @@ uint64_t pt_section_size(const struct pt_section *section)
 	return section->size;
 }
 
-static int pt_section_bcache_memsize(const struct pt_section *section,
+static int pt_section_bcache_memsize(struct pt_section *section,
 				     uint64_t *psize)
 {
 	struct pt_block_cache *bcache;
@@ -371,7 +414,7 @@ static int pt_section_bcache_memsize(const struct pt_section *section,
 	if (!section || !psize)
 		return -pte_internal;
 
-	bcache = section->bcache;
+	bcache = pt_section_bcache(section);
 	if (!bcache) {
 		*psize = 0ull;
 		return 0;
@@ -383,7 +426,7 @@ static int pt_section_bcache_memsize(const struct pt_section *section,
 	return 0;
 }
 
-static int pt_section_memsize_locked(const struct pt_section *section,
+static int pt_section_memsize_locked(struct pt_section *section,
 				     uint64_t *psize)
 {
 	uint64_t msize, bcsize;
@@ -440,6 +483,27 @@ uint64_t pt_section_offset(const struct pt_section *section)
 	return section->offset;
 }
 
+static struct pt_block_cache *
+pt_exchange_bcache(struct pt_section *section, struct pt_block_cache *bcache)
+{
+	if (!section)
+		return NULL;
+
+#if !defined(__STDC_NO_ATOMICS__)
+	return atomic_exchange(&section->bcache, bcache);
+#else
+	/* The section has been locked by the caller.  */
+	{
+		struct pt_block_cache *orig;
+
+		orig = section->bcache;
+		section->bcache = bcache;
+
+		return orig;
+	}
+#endif
+}
+
 int pt_section_alloc_bcache(struct pt_section *section)
 {
 	struct pt_image_section_cache *iscache;
@@ -449,9 +513,6 @@ int pt_section_alloc_bcache(struct pt_section *section)
 	int errcode;
 
 	if (!section)
-		return -pte_internal;
-
-	if (!section->mcount)
 		return -pte_internal;
 
 	ssize = pt_section_size(section);
@@ -478,6 +539,11 @@ int pt_section_alloc_bcache(struct pt_section *section)
 	if (errcode < 0)
 		goto out_alock;
 
+	if (!section->mcount) {
+		errcode = -pte_internal;
+		goto out_lock;
+	}
+
 	bcache = pt_section_bcache(section);
 	if (bcache) {
 		errcode = 0;
@@ -496,7 +562,11 @@ int pt_section_alloc_bcache(struct pt_section *section)
 	 * If we fail later on, we leave the block cache and report the error to
 	 * the allocating decoder thread.
 	 */
-	section->bcache = bcache;
+	bcache = pt_exchange_bcache(section, bcache);
+	if (bcache) {
+		errcode = -pte_bad_lock;
+		goto out_lock;
+	}
 
 	errcode = pt_section_memsize_locked(section, &memsize);
 	if (errcode < 0)
@@ -590,6 +660,7 @@ int pt_section_map_share(struct pt_section *section)
 
 int pt_section_unmap(struct pt_section *section)
 {
+	struct pt_block_cache *bcache;
 	uint16_t mcount;
 	int errcode, status;
 
@@ -616,8 +687,8 @@ int pt_section_unmap(struct pt_section *section)
 
 	status = section->unmap(section);
 
-	pt_bcache_free(section->bcache);
-	section->bcache = NULL;
+	bcache = pt_exchange_bcache(section, NULL);
+	pt_bcache_free(bcache);
 
 	errcode = pt_section_unlock(section);
 	if (errcode < 0)

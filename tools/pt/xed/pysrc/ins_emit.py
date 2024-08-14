@@ -1,6 +1,6 @@
 #BEGIN_LEGAL
 #
-#Copyright (c) 2020 Intel Corporation
+#Copyright (c) 2024 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import codegen
 import encutil
 import genutil
 import actions
+from actions import ActionType, ActionEmitType
 import verbosity
 
 max_in_byte = 256 #max unsigned int per byte
@@ -130,6 +131,8 @@ class instructions_group_t(object):
         groups = []
         #1. generate the groups
         for iclass,iforms in list(iarray.items()):
+            if not iforms:
+                continue # iclass with no iforms (probably u-deleted)
             iforms.sort(key=key_iform_by_bind_ptrn)
             self._put_iclass_in_group(groups,iclass,iforms)
         
@@ -316,14 +319,23 @@ class instruction_codegen_t(object):
         
     def _emit_legacy_map(self, fo, iform):
         # obj_str is the function parameters for the emit function
+        indent = 4*' '
         def _xemit(bits, v):
-            fo.add_code_eol('xed_encoder_request_emit_bytes({},{},0x{:02x})'.format(
+            fo.add_code_eol(indent+'xed_encoder_request_emit_bytes({},{},0x{:02x})'.format(
                 encutil.enc_strings['obj_str'], bits, v))
 
         if iform.legacy_map.legacy_escape != 'N/A':
             bits = 8
-            _xemit(bits, iform.legacy_map.legacy_escape_int)
-            if iform.legacy_map.legacy_opcode != 'N/A':
+            escape_byte = iform.legacy_map.legacy_escape_int
+            if iform.legacy_map.legacy_opcode == 'N/A': # LEGACY_MAP1
+                # No need (and illegal) to emit escape byte if REX2 was emitted
+                obj_name = encutil.enc_strings['obj_str']
+                rex2_getter = "{}_get_rex2({})".format(encutil.enc_strings['op_accessor'], 
+                                                          obj_name)
+                fo.add_code(f'{indent}if (!{rex2_getter})')
+                fo.add_code_eol(f'{indent*2}xed_encoder_request_emit_bytes({obj_name},{bits},0x{escape_byte:02x})')
+            else:
+                _xemit(bits, escape_byte)
                 _xemit(bits, iform.legacy_map.legacy_opcode_int)
 
                 
@@ -716,12 +728,12 @@ class instruction_codegen_t(object):
             
         bind_actions = []
         for action in iform.rule.actions:
-            if action.type == 'nt':
+            if action.type == ActionType.NONTERMINAL:
                 pass
-            elif action.type == 'FB':
+            elif action.type == ActionType.FIELD_BINDING:
                 bind_actions.append(action.field_name)
-            elif action.type == 'emit':
-                if action.emit_type == 'numeric' and action.field_name:
+            elif action.type == ActionType.EMIT:
+                if action.emit_type == ActionEmitType.NUMERIC and action.field_name:
                     bind_actions.append(action.field_name)
                 else:
                     pass
@@ -743,7 +755,7 @@ class instruction_codegen_t(object):
     def _make_emit_pattern_low(self,iform):
         emit_pattern = []
         for action in iform.rule.actions:
-            if action.type == 'emit':
+            if action.type == ActionType.EMIT:
                 # if no field_name, then we must differentiate the
                 # emit patterns using the value to avoid collisions.
                 if action.field_name == None:
@@ -756,14 +768,14 @@ class instruction_codegen_t(object):
                         action.field_name,
                         action.nbits))
 
-            elif action.type == 'nt':
+            elif action.type == ActionType.NONTERMINAL:
                 emit_pattern.append(str(action))
-            elif action.type == 'FB':
+            elif action.type == ActionType.FIELD_BINDING:
                 # FB are not used in emit phase so we do not factor them 
                 # in to the string that represents the pattern
                 pass
             else:
-                genutil.die("unexpected action type: %s" % action.type)    
+                genutil.die("unexpected action type: %s" % str(action.type))
         emit_actions_str = ', '.join(emit_pattern)
         return emit_actions_str
         
@@ -772,7 +784,7 @@ class instruction_codegen_t(object):
             
         bind_ptrn = [ str(iform.rule.conditions) ]
         for action in iform.rule.actions:
-            if action.type == 'nt':
+            if action.type == ActionType.NONTERMINAL:
                 bind_ptrn.append(str(action))
                                   
         iform.bind_ptrn =  ''

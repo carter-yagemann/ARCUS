@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2019-2022, Intel Corporation
+ * Copyright (c) 2019-2024, Intel Corporation
+ * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -157,6 +158,8 @@ static struct ptunit_result get_offset_null(void)
 	uint64_t offset;
 	int errcode;
 
+	memset(&decoder, 0, sizeof(decoder));
+
 	errcode = pt_insn_get_offset(NULL, &offset);
 	ptu_int_eq(errcode, -pte_invalid);
 
@@ -182,6 +185,8 @@ static struct ptunit_result get_sync_offset_null(void)
 	struct pt_insn_decoder decoder;
 	uint64_t offset;
 	int errcode;
+
+	memset(&decoder, 0, sizeof(decoder));
 
 	errcode = pt_insn_get_sync_offset(NULL, &offset);
 	ptu_int_eq(errcode, -pte_invalid);

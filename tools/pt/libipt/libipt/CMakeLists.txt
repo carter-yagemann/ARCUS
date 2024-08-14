@@ -1,4 +1,5 @@
-# Copyright (c) 2013-2022, Intel Corporation
+# Copyright (c) 2013-2024, Intel Corporation
+# SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
@@ -98,9 +99,12 @@ configure_file(
 
 set_target_properties(libipt PROPERTIES
   PREFIX ""
+  IMPORT_PREFIX ""
   PUBLIC_HEADER ${CMAKE_CURRENT_BINARY_DIR}/include/intel-pt.h
   VERSION   ${PT_VERSION}
   SOVERSION ${PT_VERSION_MAJOR}
+  C_STANDARD 11
+  C_STANDARD_REQUIRED ON
 )
 
 install(TARGETS libipt
@@ -127,7 +131,7 @@ add_ptunit_std_test(event_queue)
 add_ptunit_std_test(image src/pt_asid.c)
 add_ptunit_std_test(sync src/pt_packet.c)
 add_ptunit_std_test(config)
-add_ptunit_std_test(image_section_cache)
+add_ptunit_std_test(image_section_cache ${LIBIPT_SECTION_FILES})
 add_ptunit_std_test(block_cache)
 add_ptunit_std_test(msec_cache)
 

@@ -2,7 +2,7 @@
 # -*- python -*-
 #BEGIN_LEGAL
 #
-#Copyright (c) 2022 Intel Corporation
+#Copyright (c) 2024 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -35,7 +35,7 @@ class xed_exception_t(Exception):
         self.value = value
         self.msg = msg
     def __str__(self):
-        return "KIND: %s VALUE: %d MSG: %s" % (kind, value, msg)
+        return "KIND: %s VALUE: %d MSG: %s" % (self.kind, self.value, self.msg)
 
 def handle_exception_and_die(e):
     if hasattr(e,'kind'):
@@ -65,125 +65,10 @@ def add_to_flags(env,s):
     env.add_to_var('CCFLAGS',s)
     env.add_to_var('CXXFLAGS',s)
 
-def compile_with_pin_crt_lin_mac_common_cplusplus(env):
-    env.add_to_var('LINKFLAGS','-lc++abi')
-    env.add_to_var('LINKFLAGS','-lc++')
-    env.add_to_var('CXXFLAGS','-fno-exceptions')
-    env.add_to_var('CXXFLAGS', '-fno-rtti')
-    
-def _compile_with_pin_crt_lin_mac_common(env):    
-    env.add_system_include_dir('%(pin_root)s/extras/cxx/include')
-    env.add_system_include_dir('%(pin_root)s/extras/crt/include')
-    env.add_system_include_dir(
-        '%(pin_root)s/extras/crt/include/arch-%(bionic_arch)s')
-    env.add_system_include_dir(
-        '%(pin_root)s/extras/crt/include/kernel/uapi')
-    env.add_system_include_dir(
-        '%(pin_root)s/extras/crt/include/kernel/uapi/asm-x86')
+def security_level_match(env: dict, level: int) -> bool:
+    ''' Return True if the "level" argument matches the build's security level '''
+    return env['security_level'] >= level
 
-    env.add_to_var('LINKFLAGS','-nostdlib')
-    env.add_to_var('LINKFLAGS','-lc-dynamic')
-    env.add_to_var('LINKFLAGS','-lm-dynamic')
-    env.add_to_var('LINKFLAGS','-L%(pin_crt_dir)s')
-
-    # FIXME: if we ever support kits with Pin CRT, we'll need to copy
-    # the PINCRT to the XED kit and use a different rpath.
-    env.add_to_var('example_linkflags','-Wl,-rpath,%(pin_crt_dir)s')
-
-    # -lpin3dwarf FIXME
-
-    if env['shared']:
-        # when building dynamic library
-        env['first_lib'] = '%(pin_crt_dir)s/crtbeginS%(OBJEXT)s'
-    env['first_example_lib'] = '%(pin_crt_dir)s/crtbegin%(OBJEXT)s'
-
-    _add_to_flags(env,'-funwind-tables')
-    
-def _compile_with_pin_crt_lin(env):
-    _compile_with_pin_crt_lin_mac_common(env)
-    env.add_define('TARGET_LINUX')
-    if env['shared']:
-        env['last_lib'] = '%(pin_crt_dir)s/crtendS%(OBJEXT)s' 
-    env['last_example_lib'] = '%(pin_crt_dir)s/crtend%(OBJEXT)s'    
-    
-def _compile_with_pin_crt_mac(env):
-    _compile_with_pin_crt_lin_mac_common(env)
-    env.add_define('TARGET_MAC')
-    env.add_to_var('LINKFLAGS','-Wl,-no_new_main')
-    
-def _compile_with_pin_crt_win(env):
-    env.add_include_dir('%(pin_root)s/extras/stlport/include')
-    env.add_include_dir('%(pin_root)s/extras')
-    env.add_include_dir('%(pin_root)s/extras/libstdc++/include')
-    env.add_include_dir('%(pin_root)s/extras/crt/include')
-    env.add_include_dir('%(pin_root)s/extras/crt')
-    env.add_include_dir('%(pin_root)s/extras/crt/include/arch-%(bionic_arch)s')
-    env.add_include_dir('%(pin_root)s/extras/crt/include/kernel/uapi')
-    env.add_include_dir('%(pin_root)s/extras/crt/include/kernel/uapi/asm-x86')
-
-    env.add_to_var('LINKFLAGS','/NODEFAULTLIB')
-    env.add_to_var('LINKFLAGS','stlport-static.lib')
-    env.add_to_var('LINKFLAGS','m-static.lib')
-    env.add_to_var('LINKFLAGS','c-static.lib')
-    env.add_to_var('LINKFLAGS','os-apis.lib')
-    env.add_to_var('LINKFLAGS','ntdll-%(arch)s.lib')
-    env.add_to_var('LINKFLAGS','/IGNORE:4210')
-    env.add_to_var('LINKFLAGS','/IGNORE:4049')
-    env.add_to_var('LINKFLAGS','/LIBPATH:%(pin_crt_dir)s')
-    env.add_to_var('LINKFLAGS','/LIBPATH:%(pin_root)s/%(pin_arch)s/lib-ext')
-
-    # for DLLs
-    if env['shared']:
-        env['first_lib'] = '%(pin_crt_dir)s/crtbeginS%(OBJEXT)s'
-
-    # for EXEs
-    env['first_example_lib'] = '%(pin_crt_dir)s/crtbegin%(OBJEXT)s'
-
-    _add_to_flags(env,'/GR-')
-    _add_to_flags(env,'/GS-')
-
-    env['original_windows_h_path'] = mbuild.join(
-                                   os.environ['WindowsSdkDir'], 'Include','um')
-    env.add_define('_WINDOWS_H_PATH_="%(original_windows_h_path)s"')
-    _add_to_flags(env,'/FIinclude/msvc_compat.h')
-    env.add_define('TARGET_WINDOWS')
-       
-def _compile_with_pin_crt(env):
-   if env['arch'] == '32':
-       env['pin_arch'] = 'ia32'
-       env['bionic_arch'] = 'x86'       
-       env.add_define('TARGET_IA32')
-   else:
-       env['pin_arch'] = 'intel64'
-       env['bionic_arch'] = 'x86_64'
-       env.add_define('TARGET_IA32E')
-
-   env['pin_root'] = env['pin_crt']
-   env['pin_crt_dir'] = '%(pin_root)s/%(pin_arch)s/runtime/pincrt'
-   env.add_define('__PIN__=1')
-   env.add_define('PIN_CRT=1')
-
-   env.add_include_dir('%(pin_root)s/extras/stlport/include')
-   env.add_include_dir('%(pin_root)s/extras')
-   env.add_include_dir('%(pin_root)s/extras/libstdc++/include')
-   env.add_include_dir('%(pin_root)s/extras/crt/include')
-   env.add_include_dir('%(pin_root)s/extras/crt')
-   env.add_include_dir('%(pin_root)s/extras/crt/include/arch-%(bionic_arch)s')
-   env.add_include_dir('%(pin_root)s/extras/crt/include/kernel/uapi')
-   env.add_include_dir('%(pin_root)s/extras/crt/include/kernel/uapi/asm-x86')
-
-   if get_arch(env) == '32':
-       env.add_define('__i386__')
-   else:
-       env.add_define('__LP64__')   
-    
-   if env.on_linux():
-       _compile_with_pin_crt_lin(env)
-   elif env.on_mac():
-       _compile_with_pin_crt_mac(env)
-   elif env.on_windows():
-       _compile_with_pin_crt_win(env)
-       
 def  _gcc_version_string(env):
     gcc = env.expand('%(CC)s')
     vstr = mbuild.get_gcc_version(gcc)
@@ -194,22 +79,81 @@ def  _clang_version_string(env):
     vstr = mbuild.get_clang_version(gcc)
     return vstr
 
-def  _greater_than_gcc(env,amaj,amin,aver):
+def  _greater_than_gcc(env:dict, amaj:int, amin:int, aver:int) -> bool:
     vstr = _gcc_version_string(env)
     try:
+        vstr = re.sub(r"[^\d\.]", "", vstr)
         (vmaj, vmin, vver) = vstr.split('.')
     except:
         return False
+    
     vmaj = int(vmaj)
-    vmin = int(vmin)
-    vver = int(vver)
     if vmaj > amaj:
         return True
+    
+    vmin = int(vmin)
     if vmaj == amaj and vmin > amin:
         return True
+    
+    vver = int(vver)
     if vmaj == amaj and vmin == amin and vver >= aver:
         return True
+    
     return False
+
+
+def gnu_secured_build(env: dict) -> str:
+    """ Example of extending the GNU environment for compilation """
+    flags = ''
+    if security_level_match(env, 2):
+        ### Compiler Warnings and Error Detection ###
+        flags += ' -Wextra'
+        # codegen.py puts assert to check bounded value. if the range type is unsigned,
+        # and the lower bound is zero, then we need not to check it because sometimes it
+        # is hard to tell the operand type.
+        flags += ' -Wno-error=type-limits'
+
+        ### Format String Defense ###
+        # Treats format string security warnings as errors
+        if not env['debug']:
+            flags += ' -Werror=format-security'
+
+        ### Pre-processor Macros ###
+        # enables the fortified source code features provided by the compiler, triggering
+        # additional security checks and modifications in the generated code
+        flags += ' -D_FORTIFY_SOURCE=2'
+
+        ### Stack Protection ###
+        if env['debug']:
+            # Enables stack protection by adding a stack canary to detect buffer overflows
+            flags += ' -fstack-protector'
+        else:
+            # Enables stronger stack protection with a stronger stack canary
+            flags += ' -fstack-protector-strong'
+
+        if not env.on_windows():
+            ### Position Independent Code ###
+            # Generates position-independent code during the compilation phase
+            flags += ' -fPIC'
+            if not env['debug']:
+                ### Stack and Heap Overlap Protection ###
+                # Enables Read-Only Relocation (RELRO) and Immediate Binding protections
+                env.add_to_var('LINKFLAGS','-Wl,-z,relro,-z,now')
+                ### Inexecutable Stack ###
+                # Specifies that the stack memory should be marked as non-executable
+                env.add_to_var('LINKFLAGS','-z noexecstack')
+        else:  # Windows
+            # Enables Data Execution Prevention (DEP) for executables.
+            env.add_to_var('LINKFLAGS','-z /NXCOMPAT')
+            # Enables address space layout randomization (ASLR) for executables.
+            env.add_to_var('LINKFLAGS','-z /DYNAMICBASE')
+            # Warnings as errors (Linker specific)
+            env.add_to_var('LINKFLAGS','-z /WX')
+            # Enables Link-Time Code Generation
+            env.add_to_var('LINKFLAGS', '-z /LTCG')
+
+    return flags
+
 
 def set_env_gnu(env):
     """Example of setting up the GNU GCC environment for compilation"""
@@ -231,58 +175,38 @@ def set_env_gnu(env):
 
     if env['use_werror']:
         flags += ' -Werror'
-    if env['compiler'] != 'icc':
-        flags += ' -Wno-long-long'
-        flags += ' -Wno-unknown-pragmas'
-        flags += ' -fmessage-length=0'
-        flags += ' -pipe'
+
+    flags += ' -Wno-long-long'
+    flags += ' -Wno-unknown-pragmas'
+    flags += ' -fmessage-length=0'
+    flags += ' -pipe'
+    flags += ' -fno-exceptions'
+    flags += ' -Wformat-security'
+    flags += ' -Wformat'
 
     # -pg is incompatible with -fomit-frame-pointer
     if (re.search(r' -pg', env['CXXFLAGS']) == None and 
-        re.search(r' -pg', env['CCFLAGS']) == None  and 
-        (env['compiler'] != 'icc' or env['icc_version'] not in ['7','8'])):
+        re.search(r' -pg', env['CCFLAGS']) == None):
         flags += ' -fomit-frame-pointer'
 
-    if env['compiler'] != 'icc' or (env['compiler'] == 'icc' and 
-                                    env['icc_version'] != '7'):
-        flags += ' -fno-exceptions'
-
-    # 2019-06-05: disabled - no longer needed
-    # required for gcc421 xcode to avoidundefined symbols when linking tools.
-    #if env.on_mac():
-    #    flags += ' -fno-common'
-
-    if env['build_os'] == 'win' or _greater_than_gcc(env,4,9,0):
-        flags += ' -Wformat-security'
-        flags += ' -Wformat'
-    else:
-        # gcc3.4.4 on windows has problems with %x for xed_int32_t.
-        # gcc4.9.2 works well.
-        flags += ' -Wno-format'
-        flags += ' -Wno-format-security'
-
-    if env['compiler'] != 'icc':
-        # c99 is required for c++ style comments.
-        env['CSTD'] = 'c99'
-        env['CCFLAGS'] += ' -std=%(CSTD)s '
-        if env['pedantic']:
-            env['CCFLAGS'] += ' -pedantic '
+    # c99 is required for c++ style comments.
+    env['CSTD'] = 'c99'
+    env['CCFLAGS'] += ' -std=%(CSTD)s '
+    if env['pedantic']:
+        env['CCFLAGS'] += ' -pedantic '
 
     if env['shared']:
-        if not env.on_windows():
-            # -fvisibility=hidden only works on gcc>4. If not gcc,
-            # assume it works. Really only a problem for older icc
-            # compilers.
-            if env['compiler'] != 'gcc' or _greater_than_gcc(env,4,0,0):
-                hidden = ' -fvisibility=hidden' 
-                env['LINKFLAGS'] += hidden
-                flags += hidden
-        
+        hidden = ' -fvisibility=hidden' 
+        env['LINKFLAGS'] += hidden
+        flags += hidden
+
+    if env['compiler'] in ['gnu', 'clang']:
+        flags += gnu_secured_build(env)
+
     env['CCFLAGS'] += flags
     env['CCFLAGS'] += ' -Wstrict-prototypes'
     env['CCFLAGS'] += ' -Wwrite-strings'
-    if env['compiler'] != 'icc':
-        env['CCFLAGS'] += ' -Wredundant-decls'
+    env['CCFLAGS'] += ' -Wredundant-decls'
 
     # Disabled the following. Generates too many silly errors/warnings
     #env['CCFLAGS'] += ' -Wmissing-prototypes'
@@ -291,8 +215,8 @@ def set_env_gnu(env):
 
 
 def set_env_clang(env):
-   set_env_gnu(env)
-   env['CXXFLAGS'] += ' -Wno-unused-function'
+    set_env_gnu(env)
+    env['CXXFLAGS'] += ' -Wno-unused-function'
         
 def set_env_ms(env):
     """Set up the MSVS environment for compilation"""
@@ -335,7 +259,25 @@ def set_env_ms(env):
         flags += ' /wd4244'     # Disable warnings about changing widths.
         # Disable warnings about compiler limit in MSVC7(.NET / 2003)
         flags += ' /wd4292'
-        
+        if security_level_match(env, 2):
+            env.add_to_var('LINKFLAGS','/WX')  # Warnings as errors (Linker specific)
+
+            ## Position Independent Code ##
+            # Enables function-level linking, which can improve code sharing and optimization
+            flags += ' /Gy'
+
+            ## Control Flow Integrity ##
+            env.add_to_var('LINKFLAGS', '/LTCG')  # Enables Link-Time Code Generation
+            flags += ' /sdl'   # Enables the "Additional Security Check" feature
+
+            ## Stack Protection ##
+            flags += ' /GS' # Enables buffer security checks with a stack canary
+        if security_level_match(env, 3):
+            ############## NOTE: Major performance impact ##############
+            ## Spectre Protection ##
+            # Enables Spectre variant 1 and variant 2 mitigations
+            flags += ' /Qspectre'
+
     # /Zm200 is required on VC98 for xed-decode.cpp to avoid
     # internal compiler error
     #flags += ' /Zm200'
@@ -422,7 +364,9 @@ def init(env):
     
     env['mfile'] = env.src_dir_join('mfile.py')
     env['arch'] = get_arch(env)
-    
+
+    mbuild.msgb("SECURITY BUILD LEVEL", env['security_level'])
+
     if env['compiler'] == 'gnu':
         set_env_gnu(env)
         mbuild.msgb("GNU/GCC VERSION", _gcc_version_string(env))
@@ -432,15 +376,10 @@ def init(env):
     elif env['compiler'] == 'ms':
         set_env_ms(env)
         mbuild.msgb("MS VERSION", env['msvs_version'])
-    elif env['compiler'] == 'icc':
-        set_env_icc(env)
-    elif env['compiler'] == 'icl':
-        set_env_icl(env)
+    elif env['compiler'] in ['icc', 'icl']:
+        cdie(f'"{env["compiler"]}" is no longer supported')
     else:
         cdie("Unknown compiler: " + env['compiler'])
-        
-    if env['pin_crt']:
-        _compile_with_pin_crt(env)
     
     if env['xed_messages']:
         env.add_define('XED_MESSAGES')

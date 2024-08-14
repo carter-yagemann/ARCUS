@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2013-2022, Intel Corporation
+ * Copyright (c) 2013-2024, Intel Corporation
+ * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -27,11 +28,8 @@
  */
 
 #include "pt_ild.h"
-#include "pti-imm-defs.h"
 #include "pti-imm.h"
-#include "pti-modrm-defs.h"
 #include "pti-modrm.h"
-#include "pti-disp-defs.h"
 #include "pti-disp.h"
 #include "pti-disp_default.h"
 #include "pti-sib.h"
@@ -86,11 +84,11 @@ static inline enum pt_exec_mode
 pti_get_nominal_eosz_non64(const struct pt_ild *ild)
 {
 	if (mode_32b(ild)) {
-		if (ild->u.s.osz)
+		if (ild->osz)
 			return ptem_16bit;
 		return ptem_32bit;
 	}
-	if (ild->u.s.osz)
+	if (ild->osz)
 		return ptem_32bit;
 	return ptem_16bit;
 }
@@ -99,9 +97,9 @@ static inline enum pt_exec_mode
 pti_get_nominal_eosz(const struct pt_ild *ild)
 {
 	if (mode_64b(ild)) {
-		if (ild->u.s.rex_w)
+		if (ild->rex_w)
 			return ptem_64bit;
-		if (ild->u.s.osz)
+		if (ild->osz)
 			return ptem_16bit;
 		return ptem_32bit;
 	}
@@ -112,9 +110,9 @@ static inline enum pt_exec_mode
 pti_get_nominal_eosz_df64(const struct pt_ild *ild)
 {
 	if (mode_64b(ild)) {
-		if (ild->u.s.rex_w)
+		if (ild->rex_w)
 			return ptem_64bit;
-		if (ild->u.s.osz)
+		if (ild->osz)
 			return ptem_16bit;
 		/* only this next line of code is different relative
 		   to pti_get_nominal_eosz(), above */
@@ -127,11 +125,11 @@ static inline enum pt_exec_mode
 pti_get_nominal_easz_non64(const struct pt_ild *ild)
 {
 	if (mode_32b(ild)) {
-		if (ild->u.s.asz)
+		if (ild->asz)
 			return ptem_16bit;
 		return ptem_32bit;
 	}
-	if (ild->u.s.asz)
+	if (ild->asz)
 		return ptem_32bit;
 	return ptem_16bit;
 }
@@ -140,7 +138,7 @@ static inline enum pt_exec_mode
 pti_get_nominal_easz(const struct pt_ild *ild)
 {
 	if (mode_64b(ild)) {
-		if (ild->u.s.asz)
+		if (ild->asz)
 			return ptem_32bit;
 		return ptem_64bit;
 	}
@@ -183,24 +181,31 @@ static inline int resolve_v(uint8_t *pbytes, enum pt_exec_mode eosz)
 
 static int set_imm_bytes(struct pt_ild *ild)
 {
-	/*: set ild->imm1_bytes and  ild->imm2_bytes for maps 0/1 */
-	static uint8_t const *const map_map[] = {
-		/* map 0 */ imm_bytes_map_0x0,
-		/* map 1 */ imm_bytes_map_0x0F
-	};
-	uint8_t map, imm_code;
+	const struct pti_imm_desc *imm_desc;
+	const uint8_t *imm_table;
+	enum pti_imm imm;
+	uint8_t map, width;
 
 	if (!ild)
 		return -pte_internal;
 
 	map = ild->map;
+	if (PTI_MAP_INVALID <= map)
+		return -pte_bad_insn;
 
-	if ((sizeof(map_map) / sizeof(*map_map)) <= map)
+	imm_desc = &imm_bytes_desc[ild->vex][map];
+	imm_table = imm_desc->table;
+	if (!imm_table) {
+		width = imm_desc->width;
+		if (width == 0xff)
+			return -pte_bad_insn;
+
+		ild->imm1_bytes = width;
 		return 0;
+	}
 
-	imm_code = map_map[map][ild->nominal_opcode];
-	switch (imm_code) {
-	case PTI_IMM_NONE:
+	imm = imm_table[ild->nominal_opcode];
+	switch (imm) {
 	case PTI_0_IMM_WIDTH_CONST_l2:
 	default:
 		return 0;
@@ -230,21 +235,21 @@ static int set_imm_bytes(struct pt_ild *ild)
 		return resolve_z(&ild->imm1_bytes,
 				 pti_get_nominal_eosz_df64(ild));
 
-	case PTI_RESOLVE_BYREG_IMM_WIDTH_map0x0_op0xf7_l1:
+	case PTI_RESOLVE_BYREG_IMM_WIDTH_maplegacy_map0_op0xf7_l1:
 		if (ild->map == PTI_MAP_0 && pti_get_modrm_reg(ild) < 2) {
 			return resolve_z(&ild->imm1_bytes,
 					 pti_get_nominal_eosz(ild));
 		}
 		return 0;
 
-	case PTI_RESOLVE_BYREG_IMM_WIDTH_map0x0_op0xc7_l1:
+	case PTI_RESOLVE_BYREG_IMM_WIDTH_maplegacy_map0_op0xc7_l1:
 		if (ild->map == PTI_MAP_0 && pti_get_modrm_reg(ild) == 0) {
 			return resolve_z(&ild->imm1_bytes,
 					 pti_get_nominal_eosz(ild));
 		}
 		return 0;
 
-	case PTI_RESOLVE_BYREG_IMM_WIDTH_map0x0_op0xf6_l1:
+	case PTI_RESOLVE_BYREG_IMM_WIDTH_maplegacy_map0_op0xf6_l1:
 		if (ild->map == PTI_MAP_0 && pti_get_modrm_reg(ild) < 2)
 			ild->imm1_bytes = 1;
 
@@ -263,11 +268,24 @@ static int set_imm_bytes(struct pt_ild *ild)
 		 * (no prefixes)
 		 */
 		if (ild->map == PTI_MAP_1) {
-			if (ild->u.s.osz || ild->u.s.last_f2f3 == 2) {
+			if (ild->osz || ild->last_f2f3 == 2) {
 				ild->imm1_bytes = 1;
 				ild->imm2_bytes = 1;
 			}
 		}
+		return 0;
+
+	case PTI_RESOLVE_BYREG_IMM_WIDTH_mapevex_map4_op0xf6_l1:
+		if (pti_get_modrm_reg(ild) < 2)
+			ild->imm1_bytes = 1;
+
+		return 0;
+
+	case PTI_RESOLVE_BYREG_IMM_WIDTH_mapevex_map4_op0xf7_l1:
+		if (pti_get_modrm_reg(ild) < 2)
+			return resolve_z(&ild->imm1_bytes,
+					 pti_get_nominal_eosz(ild));
+
 		return 0;
 	}
 }
@@ -278,14 +296,6 @@ static int imm_dec(struct pt_ild *ild, uint8_t length)
 
 	if (!ild)
 		return -pte_internal;
-
-	if (ild->map == PTI_MAP_AMD3DNOW) {
-		if (ild->max_bytes <= length)
-			return -pte_bad_insn;
-
-		ild->nominal_opcode = get_byte(ild, length);
-		return length + 1;
-	}
 
 	errcode = set_imm_bytes(ild);
 	if (errcode < 0)
@@ -299,14 +309,15 @@ static int imm_dec(struct pt_ild *ild, uint8_t length)
 	return length;
 }
 
-static int compute_disp_dec(struct pt_ild *ild)
+static int compute_legacy_disp(struct pt_ild *ild)
 {
-	/* set ild->disp_bytes for maps 0 and 1. */
+	/* set ild->disp_bytes for legacy maps 0 and 1. */
 	static uint8_t const *const map_map[] = {
 		/* map 0 */ disp_bytes_map_0x0,
 		/* map 1 */ disp_bytes_map_0x0F
 	};
-	uint8_t map, disp_kind;
+	enum pti_disp disp;
+	uint8_t map;
 
 	if (!ild)
 		return -pte_internal;
@@ -319,8 +330,8 @@ static int compute_disp_dec(struct pt_ild *ild)
 	if ((sizeof(map_map) / sizeof(*map_map)) <= map)
 		return 0;
 
-	disp_kind = map_map[map][ild->nominal_opcode];
-	switch (disp_kind) {
+	disp = map_map[map][ild->nominal_opcode];
+	switch (disp) {
 	case PTI_DISP_NONE:
 		ild->disp_bytes = 0;
 		return 0;
@@ -372,9 +383,11 @@ static int disp_dec(struct pt_ild *ild, uint8_t length)
 	if (!ild)
 		return -pte_internal;
 
-	errcode = compute_disp_dec(ild);
-	if (errcode < 0)
-		return errcode;
+	if (!ild->vex) {
+		errcode = compute_legacy_disp(ild);
+		if (errcode < 0)
+			return errcode;
+	}
 
 	disp_bytes = ild->disp_bytes;
 	if (disp_bytes == 0)
@@ -409,47 +422,53 @@ static int sib_dec(struct pt_ild *ild, uint8_t length)
 
 static int modrm_dec(struct pt_ild *ild, uint8_t length)
 {
-	static uint8_t const *const has_modrm_2d[2] = {
-		has_modrm_map_0x0,
-		has_modrm_map_0x0F
-	};
-	int has_modrm = PTI_MODRM_FALSE;
+	const struct pti_modrm_desc *desc;
+	const uint8_t *table;
+	enum pti_modrm has_modrm;
 	pti_map_enum_t map;
 
 	if (!ild)
 		return -pte_internal;
 
 	map = pti_get_map(ild);
-	if (map >= PTI_MAP_2)
-		has_modrm = PTI_MODRM_TRUE;
-	else
-		has_modrm = has_modrm_2d[map][ild->nominal_opcode];
-
-	if (has_modrm == PTI_MODRM_FALSE || has_modrm == PTI_MODRM_UNDEF)
-		return disp_dec(ild, length);
-
-	/* really >= here because we have not eaten the byte yet */
-	if (length >= ild->max_bytes)
+	if (PTI_MAP_INVALID <= map)
 		return -pte_bad_insn;
 
-	ild->modrm_byte = get_byte(ild, length);
+	desc = &has_modrm_table[ild->vex][map];
+	table = desc->table;
+	has_modrm = table ? table[ild->nominal_opcode] : desc->has_modrm;
+	switch (has_modrm) {
+	case PTI_MODRM_FALSE:
+	case PTI_MODRM_UNDEF:
+		return disp_dec(ild, length);
 
-	if (has_modrm != PTI_MODRM_IGNORE_MOD) {
-		/* set disp_bytes and sib using simple tables */
+	case PTI_MODRM_IGNORE_MOD:
+		if (length >= ild->max_bytes)
+			return -pte_bad_insn;
 
-		uint8_t eamode = eamode_table[ild->u.s.asz][ild->mode];
-		uint8_t mod = (uint8_t) pti_get_modrm_mod(ild);
-		uint8_t rm = (uint8_t) pti_get_modrm_rm(ild);
-		uint8_t sib;
+		ild->modrm_byte = get_byte(ild, length);
+		return disp_dec(ild, length + 1);
+
+	case PTI_MODRM_TRUE: {
+		uint8_t eamode = eamode_table[ild->asz][ild->mode];
+		uint8_t mod, rm, sib;
+
+		if (length >= ild->max_bytes)
+			return -pte_bad_insn;
+
+		ild->modrm_byte = get_byte(ild, length);
+		mod = pti_get_modrm_mod(ild);
+		rm = pti_get_modrm_rm(ild);
 
 		ild->disp_bytes = disp_default[eamode][mod][rm];
-
 		sib = has_sib[eamode][mod][rm];
 		if (sib)
 			return sib_dec(ild, length + 1);
 	}
+		return disp_dec(ild, length + 1);
+	}
 
-	return disp_dec(ild, length + 1);
+	return -pte_bad_insn;
 }
 
 static inline int get_next_as_opcode(struct pt_ild *ild, uint8_t length)
@@ -501,14 +520,6 @@ static int opcode_dec(struct pt_ild *ild, uint8_t length)
 		ild->map = PTI_MAP_INVALID;
 
 		return get_next_as_opcode(ild, length + 1);
-	} else if (m == 0x0F) {	/* 3dNow */
-		ild->map = PTI_MAP_AMD3DNOW;
-		ild->imm1_bytes = 1;
-		/* real opcode is in immediate later on, but we need an
-		 * opcode now. */
-		ild->nominal_opcode = 0x0F;
-
-		return modrm_dec(ild, length + 1);
 	} else {	/* map 1 (simple two byte opcodes) */
 		ild->nominal_opcode = m;
 		ild->map = PTI_MAP_1;
@@ -832,7 +843,7 @@ static int prefix_osz(struct pt_ild *ild, uint8_t length, uint8_t rex)
 	if (!ild)
 		return -pte_internal;
 
-	ild->u.s.osz = 1;
+	ild->osz = 1;
 
 	return prefix_next(ild, length, 0);
 }
@@ -844,7 +855,7 @@ static int prefix_asz(struct pt_ild *ild, uint8_t length, uint8_t rex)
 	if (!ild)
 		return -pte_internal;
 
-	ild->u.s.asz = 1;
+	ild->asz = 1;
 
 	return prefix_next(ild, length, 0);
 }
@@ -856,7 +867,7 @@ static int prefix_lock(struct pt_ild *ild, uint8_t length, uint8_t rex)
 	if (!ild)
 		return -pte_internal;
 
-	ild->u.s.lock = 1;
+	ild->lock = 1;
 
 	return prefix_next(ild, length, 0);
 }
@@ -868,8 +879,8 @@ static int prefix_f2(struct pt_ild *ild, uint8_t length, uint8_t rex)
 	if (!ild)
 		return -pte_internal;
 
-	ild->u.s.f2 = 1;
-	ild->u.s.last_f2f3 = 2;
+	ild->f2 = 1;
+	ild->last_f2f3 = 2;
 
 	return prefix_next(ild, length, 0);
 }
@@ -881,8 +892,8 @@ static int prefix_f3(struct pt_ild *ild, uint8_t length, uint8_t rex)
 	if (!ild)
 		return -pte_internal;
 
-	ild->u.s.f3 = 1;
-	ild->u.s.last_f2f3 = 3;
+	ild->f3 = 1;
+	ild->last_f2f3 = 3;
 
 	return prefix_next(ild, length, 0);
 }
@@ -899,10 +910,8 @@ static int prefix_done(struct pt_ild *ild, uint8_t length, uint8_t rex)
 	if (!ild)
 		return -pte_internal;
 
-	if (rex & 0x04)
-		ild->u.s.rex_r = 1;
-	if (rex & 0x08)
-		ild->u.s.rex_w = 1;
+	ild->rex_r = (rex >> 2) & 0x01;
+	ild->rex_w = (rex >> 3) & 0x01;
 
 	return opcode_dec(ild, length);
 }
@@ -928,6 +937,25 @@ static inline int prefix_vex_done(struct pt_ild *ild, uint8_t length)
 	ild->nominal_opcode = get_byte(ild, length);
 
 	return modrm_dec(ild, length + 1);
+}
+
+static void resolve_vex_pp(struct pt_ild *ild, uint8_t pp)
+{
+	switch (pp) {
+	case 0x01:
+		ild->osz = 1;
+		break;
+
+	case 0x02:
+		ild->f3 = 1;
+		ild->last_f2f3 = 3;
+		break;
+
+	case 0x03:
+		ild->f2 = 1;
+		ild->last_f2f3 = 2;
+		break;
+	}
 }
 
 static int prefix_vex_c5(struct pt_ild *ild, uint8_t length, uint8_t rex)
@@ -959,9 +987,10 @@ static int prefix_vex_c5(struct pt_ild *ild, uint8_t length, uint8_t rex)
 	if (max_bytes < (length + 3))
 		return -pte_bad_insn;
 
-	ild->u.s.vex = 1;
-	if (p1 & 0x80)
-		ild->u.s.rex_r = 1;
+	ild->vex = 1;
+	ild->rex_r = (~p1 >> 7) & 0x01;
+
+	resolve_vex_pp(ild, p1 & 0x03);
 
 	ild->map = PTI_MAP_1;
 
@@ -1001,19 +1030,15 @@ static int prefix_vex_c4(struct pt_ild *ild, uint8_t length, uint8_t rex)
 
 	p2 = get_byte(ild, length + 2);
 
-	ild->u.s.vex = 1;
-	if (p1 & 0x80)
-		ild->u.s.rex_r = 1;
-	if (p2 & 0x80)
-		ild->u.s.rex_w = 1;
+	ild->vex = 1;
+	ild->rex_r = (~p1 >> 7) & 0x01;
+	ild->rex_w = (p2 >> 7) & 0x01;
 
-	map = p1 & 0x1f;
+	resolve_vex_pp(ild, p2 & 0x03);
+
+	ild->map = map = p1 & 0x1f;
 	if (PTI_MAP_INVALID <= map)
 		return -pte_bad_insn;
-
-	ild->map = map;
-	if (map == PTI_MAP_3)
-		ild->imm1_bytes = 1;
 
 	/* Eat the VEX. */
 	length += 3;
@@ -1051,17 +1076,13 @@ static int prefix_evex(struct pt_ild *ild, uint8_t length, uint8_t rex)
 
 	p2 = get_byte(ild, length + 2);
 
-	ild->u.s.vex = 1;
-	if (p1 & 0x80)
-		ild->u.s.rex_r = 1;
-	if (p2 & 0x80)
-		ild->u.s.rex_w = 1;
+	ild->vex = 2;
+	ild->rex_r = ((~p1 >> 7) & 0x01) | ((~p1 >> 3) & 0x02);
+	ild->rex_w = (p2 >> 7) & 0x01;
 
-	map = p1 & 0x03;
-	ild->map = map;
+	resolve_vex_pp(ild, p2 & 0x03);
 
-	if (map == PTI_MAP_3)
-		ild->imm1_bytes = 1;
+	ild->map = map = p1 & 0x07;
 
 	/* Eat the EVEX. */
 	length += 4;
@@ -1101,24 +1122,6 @@ static int set_branch_target(struct pt_insn_ext *iext, const struct pt_ild *ild)
 	return 0;
 }
 
-static int pt_instruction_length_decode(struct pt_ild *ild)
-{
-	if (!ild)
-		return -pte_internal;
-
-	ild->u.i = 0;
-	ild->imm1_bytes = 0;
-	ild->imm2_bytes = 0;
-	ild->disp_bytes = 0;
-	ild->modrm_byte = 0;
-	ild->map = PTI_MAP_INVALID;
-
-	if (!ild->mode)
-		return -pte_bad_insn;
-
-	return decode(ild);
-}
-
 static int pt_instruction_decode(struct pt_insn *insn, struct pt_insn_ext *iext,
 				 const struct pt_ild *ild)
 {
@@ -1137,7 +1140,7 @@ static int pt_instruction_decode(struct pt_insn *insn, struct pt_insn_ext *iext,
 
 	if (map > PTI_MAP_1)
 		return 0;	/* uninteresting */
-	if (ild->u.s.vex)
+	if (ild->vex)
 		return 0;	/* uninteresting */
 
 	/* PTI_INST_JCC,   70...7F, 0F (0x80...0x8F) */
@@ -1162,7 +1165,7 @@ static int pt_instruction_decode(struct pt_insn *insn, struct pt_insn_ext *iext,
 
 	switch (ild->nominal_opcode) {
 	case 0x9A:
-		if (map == PTI_MAP_0) {
+		if ((map == PTI_MAP_0) && !mode_64b(ild)) {
 			insn->iclass = ptic_far_call;
 			iext->iclass = PTI_INST_CALL_9A;
 		}
@@ -1214,7 +1217,7 @@ static int pt_instruction_decode(struct pt_insn *insn, struct pt_insn_ext *iext,
 		return 0;
 
 	case 0xCE:
-		if (map == PTI_MAP_0) {
+		if ((map == PTI_MAP_0) && !mode_64b(ild)) {
 			insn->iclass = ptic_far_call;
 			iext->iclass = PTI_INST_INTO;
 		}
@@ -1246,7 +1249,7 @@ static int pt_instruction_decode(struct pt_insn *insn, struct pt_insn_ext *iext,
 		return 0;
 
 	case 0xEA:
-		if (map == PTI_MAP_0) {
+		if ((map == PTI_MAP_0) && !mode_64b(ild)) {
 			/* Far jumps are treated as indirect jumps. */
 			insn->iclass = ptic_far_jump;
 			iext->iclass = PTI_INST_JMP_EA;
@@ -1301,7 +1304,7 @@ static int pt_instruction_decode(struct pt_insn *insn, struct pt_insn_ext *iext,
 	case 0x22:
 		if (map == PTI_MAP_1)
 			if (pti_get_modrm_reg(ild) == 3)
-				if (!ild->u.s.rex_r)
+				if (!ild->rex_r)
 					iext->iclass = PTI_INST_MOV_CR3;
 
 		return 0;
@@ -1400,7 +1403,7 @@ static int pt_instruction_decode(struct pt_insn *insn, struct pt_insn_ext *iext,
 		return 0;
 
 	case 0xae:
-		if (map == PTI_MAP_1 && ild->u.s.f3 && !ild->u.s.osz &&
+		if (map == PTI_MAP_1 && ild->f3 && !ild->osz &&
 		    pti_get_modrm_reg(ild) == 4) {
 			insn->iclass = ptic_ptwrite;
 			iext->iclass = PTI_INST_PTWRITE;
@@ -1420,11 +1423,13 @@ int pt_ild_decode(struct pt_insn *insn, struct pt_insn_ext *iext)
 	if (!insn || !iext)
 		return -pte_internal;
 
+	memset(&ild, 0, sizeof(ild));
 	ild.mode = insn->mode;
 	ild.itext = insn->raw;
 	ild.max_bytes = insn->size;
+	ild.map = PTI_MAP_INVALID;
 
-	size = pt_instruction_length_decode(&ild);
+	size = decode(&ild);
 	if (size < 0)
 		return size;
 

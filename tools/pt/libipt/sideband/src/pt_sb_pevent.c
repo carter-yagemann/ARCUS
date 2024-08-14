@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2017-2022, Intel Corporation
+ * Copyright (c) 2017-2024, Intel Corporation
+ * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -27,8 +28,6 @@
  */
 
 #include "libipt-sb.h"
-
-#include "intel-pt.h"
 
 
 #ifndef FEATURE_PEVENT
@@ -351,6 +350,11 @@ int pt_sb_pevent_init(struct pt_sb_pevent_priv *priv,
 	priv->kernel_start = config->kernel_start;
 	priv->tsc_offset = config->tsc_offset;
 	priv->location = ploc_unknown;
+
+#if (LIBIPT_SB_VERSION >= 0x201)
+	if (pev_config_has(config, sample_config))
+		priv->pev.sample_config = config->sample_config;
+#endif
 
 	return 0;
 }
@@ -880,12 +884,10 @@ static int pt_sb_pevent_print(struct pt_sb_pevent_priv *priv, FILE *stream,
 	if (errcode < 0)
 		return errcode;
 
-	/* Print samples if configured. */
-	if (priv->pev.sample_type) {
-		errcode = pt_sb_pevent_print_samples(event, stream, flags);
-		if (errcode < 0)
-			return errcode;
-	}
+	/* Print samples that were configured for the record. */
+	errcode = pt_sb_pevent_print_samples(event, stream, flags);
+	if (errcode < 0)
+		return errcode;
 
 	if (flags)
 		fprintf(stream, "\n");
@@ -1542,6 +1544,85 @@ static int ploc_from_event(enum pt_sb_pevent_loc *loc,
 
 	case ptev_tip:
 		return ploc_from_ip(loc, priv, event->variant.tip.ip);
+
+#if (LIBIPT_VERSION >= 0x201)
+	case ptev_iflags:
+		if (!event->ip_suppressed)
+			return ploc_from_ip(loc, priv,
+					    event->variant.iflags.ip);
+
+		break;
+
+	case ptev_interrupt:
+		if (!event->ip_suppressed)
+			return ploc_from_ip(loc, priv,
+					    event->variant.interrupt.ip);
+
+		break;
+
+	case ptev_iret:
+		if (!event->ip_suppressed)
+			return ploc_from_ip(loc, priv,
+					    event->variant.iret.ip);
+
+		break;
+
+	case ptev_smi:
+		if (!event->ip_suppressed)
+			return ploc_from_ip(loc, priv,
+					    event->variant.smi.ip);
+
+		break;
+
+	case ptev_rsm:
+		if (!event->ip_suppressed)
+			return ploc_from_ip(loc, priv,
+					    event->variant.rsm.ip);
+
+		break;
+
+	case ptev_init:
+		if (!event->ip_suppressed)
+			return ploc_from_ip(loc, priv,
+					    event->variant.init.ip);
+
+		break;
+
+	case ptev_vmentry:
+		if (!event->ip_suppressed)
+			return ploc_from_ip(loc, priv,
+					    event->variant.vmentry.ip);
+
+		break;
+
+	case ptev_vmexit:
+		if (!event->ip_suppressed)
+			return ploc_from_ip(loc, priv,
+					    event->variant.vmexit.ip);
+
+		break;
+
+	case ptev_shutdown:
+		if (!event->ip_suppressed)
+			return ploc_from_ip(loc, priv,
+					    event->variant.shutdown.ip);
+
+		break;
+
+	case ptev_uintr:
+		if (!event->ip_suppressed)
+			return ploc_from_ip(loc, priv,
+					    event->variant.uintr.ip);
+
+		break;
+
+	case ptev_uiret:
+		if (!event->ip_suppressed)
+			return ploc_from_ip(loc, priv,
+					    event->variant.uiret.ip);
+
+		break;
+#endif
 	}
 
 	*loc = ploc_unknown;
@@ -1640,7 +1721,7 @@ static int pt_sb_pevent_apply(struct pt_sb_session *session,
 		}
 
 		break;
-	};
+	}
 
 	return 0;
 }

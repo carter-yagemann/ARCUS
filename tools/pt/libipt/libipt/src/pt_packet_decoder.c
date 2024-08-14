@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2014-2022, Intel Corporation
+ * Copyright (c) 2014-2024, Intel Corporation
+ * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -222,7 +223,8 @@ static inline int pkt_to_user(struct pt_packet *upkt, size_t size,
 
 	/* Zero out any unknown bytes. */
 	if (sizeof(*pkt) < size) {
-		memset(upkt + sizeof(*pkt), 0, size - sizeof(*pkt));
+		memset(((uint8_t *) upkt) + sizeof(*pkt), 0,
+		       size - sizeof(*pkt));
 
 		size = sizeof(*pkt);
 	}
@@ -767,6 +769,44 @@ static int pt_pkt_decode_ptw(struct pt_packet_decoder *decoder,
 	return size;
 }
 
+static int pt_pkt_decode_cfe(struct pt_packet_decoder *decoder,
+			     struct pt_packet *packet)
+{
+	int size;
+
+	if (!decoder || !packet)
+		return -pte_internal;
+
+	size = pt_pkt_read_cfe(&packet->payload.cfe, decoder->pos,
+			       &decoder->config);
+	if (size < 0)
+		return size;
+
+	packet->type = ppt_cfe;
+	packet->size = (uint8_t) size;
+
+	return size;
+}
+
+static int pt_pkt_decode_evd(struct pt_packet_decoder *decoder,
+			     struct pt_packet *packet)
+{
+	int size;
+
+	if (!decoder || !packet)
+		return -pte_internal;
+
+	size = pt_pkt_read_evd(&packet->payload.evd, decoder->pos,
+			       &decoder->config);
+	if (size < 0)
+		return size;
+
+	packet->type = ppt_evd;
+	packet->size = (uint8_t) size;
+
+	return size;
+}
+
 static int pt_pkt_decode(struct pt_packet_decoder *decoder,
 			 struct pt_packet *packet)
 {
@@ -875,6 +915,12 @@ static int pt_pkt_decode(struct pt_packet_decoder *decoder,
 
 		case pt_ext_tnt_64:
 			return pt_pkt_decode_tnt_64(decoder, packet);
+
+		case pt_ext_cfe:
+			return pt_pkt_decode_cfe(decoder, packet);
+
+		case pt_ext_evd:
+			return pt_pkt_decode_evd(decoder, packet);
 
 		case pt_ext_ext2:
 			if (end <= pos)

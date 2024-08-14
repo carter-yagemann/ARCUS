@@ -5,7 +5,7 @@
 ########################################################
 #BEGIN_LEGAL
 #
-#Copyright (c) 2022 Intel Corporation
+#Copyright (c) 2023 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -57,19 +57,18 @@ def warn(m):
 
 ############################################################################
 
-# Require python 2.4 (or later) for this script
 def check_python_version():
    tup = sys.version_info
    major = tup[0]
    minor = tup[1]
-   if (major > 2 ) or \
-      (major == 2 and minor >= 4):
+   if (major > 3 ) or \
+      (major == 3 and minor >= 8):
        return 
-   die('Need Python version 2.4 or later.')
+   die('Need Python version 3.8 or later.')
    
 check_python_version()
 
-from optparse import OptionParser # requires python 2.3
+from optparse import OptionParser
 
 parser = OptionParser()
 

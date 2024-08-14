@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2013-2022, Intel Corporation
+ * Copyright (c) 2013-2024, Intel Corporation
+ * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -25,6 +26,19 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
+
+#if !defined(PTI_DISP_H)
+#define PTI_DISP_H
+
+enum pti_disp {
+	PTI_DISP_NONE,
+	PTI_PRESERVE_DEFAULT,
+	PTI_BRDISP8,
+	PTI_DISP_BUCKET_0_l1,
+	PTI_MEMDISPv_DISP_WIDTH_ASZ_NONTERM_EASZ_l2,
+	PTI_BRDISPz_BRDISP_WIDTH_OSZ_NONTERM_EOSZ_l2,
+	PTI_RESOLVE_BYREG_DISP_map0x0_op0xc7_l1,
+};
 
 static uint8_t disp_bytes_map_0x0[256] = {
 /*opcode 0x0*/ PTI_PRESERVE_DEFAULT,
@@ -542,3 +556,5 @@ static uint8_t disp_bytes_map_0x0F[256] = {
 /*opcode 0xfe*/ PTI_PRESERVE_DEFAULT,
 /*opcode 0xff*/ 0,
 };
+
+#endif /* PTI_DISP_H */

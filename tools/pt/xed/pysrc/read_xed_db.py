@@ -2,7 +2,7 @@
 # -*- python -*-
 #BEGIN_LEGAL
 #
-#Copyright (c) 2023 Intel Corporation
+#Copyright (c) 2024 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@
 import sys
 import re
 import collections
+from typing import List
 import patterns
 import slash_expand
 import genutil
@@ -29,11 +30,6 @@ import opnds
 import cpuid_rdr
 import map_info_rdr
 
-def die(s):
-    sys.stdout.write("ERROR: {0}\n".format(s))
-    sys.exit(1)
-def msgb(b,s=''):
-    sys.stderr.write("[{0}] {1}\n".format(b,s))
 
 class inst_t(object):
     def __init__(self):
@@ -63,8 +59,8 @@ class inst_t(object):
                     return [32]
                 if self.eosz == 'o64':
                     return [64]
-                die("Could not handle eosz {}".format(self.eosz))
-            die("Did not find eosz for {}".format(self.iclass))
+                genutil.die("Could not handle eosz {}".format(self.eosz))
+            genutil.die("Did not find eosz for {}".format(self.iclass))
         else: #  vex, evex, xop
             return None
             
@@ -124,7 +120,22 @@ def _get_mempop_width_code(v):
     for op in v.parsed_operands:
         if op.name == 'MEM0':
             return op.oc2
-    die("Could not find evex memop for {}".format(v.iclass))
+    genutil.die("Could not find evex memop for {}".format(v.iclass))
+
+def get_scc_value(v) -> int:
+    """Retrieve SCC value (SC3...SC0 bits) for APX SCC instructions (VEXDEST4 and MASK)"""
+    v4_pattern = re.compile(r'VEXDEST4=([0-1])')
+    mask_pattern = re.compile(r'MASK=([0-7])')
+
+    v4_match =  v4_pattern.search(v.pattern)
+    mask_match =  mask_pattern.search(v.pattern)
+    assert v4_match and mask_match, 'APX SCC instruction with no SCC value'
+
+    v4 = not int(v4_match.group(1)) # v4 is inverted
+    mask = int(mask_match.group(1))
+    scc = (v4 << 3) | mask
+    return scc
+
 
 def _set_eosz(v):
     eosz = 'oszall'
@@ -135,7 +146,7 @@ def _set_eosz(v):
             eosz = 'o32'
         elif 'EOSZ=3' in v.pattern:
             eosz =  'o64'
-        elif 'EOSZ!=1' in v.pattern:
+        elif 'EOSZ!=1' in v.pattern or 'IMMUNE66_LOOP64' in v.pattern: #EOSZ=3 for latter NT
             eosz = 'osznot16'
         elif 'EOSZ!=3' in v.pattern:
             eosz = 'osznot64'
@@ -165,6 +176,7 @@ def _set_eosz(v):
                     eosz = 'o16'
                 else:
                     eosz = 'o32'
+
     v.eosz = eosz
 
 def is_positive_integer(s):
@@ -209,7 +221,7 @@ class xed_reader_t(object):
         self._summarize_vsib()
         self._summarize_sibmem()
         
-        self.cpuid_map = {}
+        self.cpuid_map : cpuid_rdr.isaset_cpuid_map_t = {}
         if cpuid_filename:
             self.cpuid_map = cpuid_rdr.read_file(cpuid_filename)
             self._add_cpuid()
@@ -243,7 +255,7 @@ class xed_reader_t(object):
              width8='0'
              (name,  dtype, width16, width32, width64) = wrds
           else:
-             die("Bad number of tokens on line: " + line)
+              genutil.die("Bad number of tokens on line: " + line)
 
           # convert from bytes to bits, unless in explicit bits form "b'[0-9]+"
           bit_widths = {}
@@ -315,7 +327,7 @@ class xed_reader_t(object):
                     continue
                 s = op.name
             else:
-                msbg("UNHANDLED","{}".format(op))
+                genutil.msgb("UNHANDLED","{}".format(op))
                 
             if s:
                 if op.visibility in ['IMPLICIT','SUPPRESSED']:
@@ -374,13 +386,14 @@ class xed_reader_t(object):
                     if op.oc2:
                         s += op.oc2
                 else:
-                    msgb("IFORM SKIPPING ","{} for {}".format(op, v.iclass))
+                    genutil.msgb("IFORM SKIPPING ","{} for {}".format(op, v.iclass))
                 if s:
                     tokens.append(s)
                     
         iform = v.iclass
         if tokens:
             iform += '_' + "_".join(tokens)
+        iform = iform.replace('VGPR', 'GPR')
         return iform
 
         
@@ -396,10 +409,10 @@ class xed_reader_t(object):
     def _add_cpuid(self):
         '''set v.cpuid with list of cpuid bits for this instr'''
         for v in self.recs:
-            v.cpuid = []
+            v.cpuid_groups: List[cpuid_rdr.group_record_t] = []
             ky = 'XED_ISA_SET_{}'.format(v.isa_set.upper())
             if ky in self.cpuid_map:
-                v.cpuid = self.cpuid_map[ky]
+                v.cpuid_groups = self.cpuid_map[ky]
                 
     def _add_broadcasting(self):
         broadcast_attr  = re.compile(r'BROADCAST_ENABLED')
@@ -425,7 +438,7 @@ class xed_reader_t(object):
                         if e:
                             v.element_size = int(e.group('esize'))
                         else:
-                            die("Need an element size")
+                            genutil.die("Need an element size")
                         v.memop_width_code = _get_mempop_width_code(v)
 
                         # if the oc2=vv), we get two widths depend on
@@ -460,11 +473,13 @@ class xed_reader_t(object):
             
             elif 'FIX_ROUND_LEN512' in pattern:
                 return '512'
+            elif 'FIX_ROUND_LEN256' in pattern:
+                return '256'
             elif space == 'vex':
                 return 'LIG'
             elif space == 'evex':
                 return 'LLIG'
-            die("Not reached")
+            genutil.die("Not reached")
 
         for v in self.recs:
             if v.space in ['vex','evex']:
@@ -477,6 +492,7 @@ class xed_reader_t(object):
             v.has_imm8 = False
             v.has_immz = False #  16/32b imm. (32b in 64b EOSZ)
             v.has_imm8_2 = False
+            v.has_imm16 = False
             v.has_imm32 = False
             v.imm_sz = '0'
             for op in v.parsed_operands:
@@ -492,6 +508,7 @@ class xed_reader_t(object):
                     v.has_imm32 = True
                     v.imm_sz = '4'
                 elif _op_immw(op):
+                    v.has_imm16 = True
                     v.imm_sz = '2'
                 elif op.name == 'IMM1':
                     v.has_imm8_2 = True
@@ -637,6 +654,9 @@ class xed_reader_t(object):
                     v.f2_required = True
                 elif rep.group('prefix') == '3':
                     v.f3_required = True
+            
+            if 'REP!=0' in v.pattern:   # pick F2 prefix for instruction variants that must have rep
+                v.f2_required = True
 
             if v.space in ['evex','vex', 'xop']: 
                 vexp = vex_prefix.search(v.pattern)
@@ -714,7 +734,20 @@ class xed_reader_t(object):
                 easz = 'asznot16'
             v.easz = easz
 
+            v.nf, v.nd = 0, 0
+            if 'NF=1' in v.pattern or 'NF1' in v.pattern:
+                v.nf=1
+            if 'ND=1' in v.pattern:
+                v.nd=1
 
+            v.is_apx_scc: bool = False
+            if 'EVAPX_SCC()' in v.pattern:
+                v.is_apx_scc = True
+                v.scc_val: int = get_scc_value(v)
+
+            v.rex2_required: bool = False
+            if 'REX2=1' in v.pattern:
+                v.rex2_required = True
 
             v.default_64b = False
             if 'DF64()' in v.pattern or 'CR_WIDTH()' in v.pattern:
@@ -759,7 +792,7 @@ class xed_reader_t(object):
                 pattern = re.compile(s) 
                 d.append( (pattern, p.group('value')) )
             else:
-                die("Bad state line: %s"  % line)
+                genutil.die("Bad state line: %s"  % line)
         return d
 
     def _expand_state_bits_one_line(self,line):
@@ -793,9 +826,9 @@ class xed_reader_t(object):
                     iclass_dct[r.iclass].append(r) # more of same
                 elif iclass_version[r.iclass] > version:
                     # drop this record, version number too low
-                    dropped += 1  
+                    dropped += 1
 
-        msgb("VERSION DELETES", "dropped {} versioned records".format(dropped))
+        genutil.msgb("VERSION DELETES", "dropped {} versioned records".format(dropped))
         # add the versioned ones to the list of records
         for iclass in iclass_dct.keys():
             for r in iclass_dct[iclass]:
@@ -811,13 +844,13 @@ class xed_reader_t(object):
                     dropped += 1
                     continue
             n.append(r)
-        msgb("UDELETES", "dropped {} udelete records".format(dropped))
+        genutil.msgb("UDELETES", "dropped {} udelete records".format(dropped))
         return n
     
     def _expand_compound_value(self, in_rec):
         """ v is dictionary of lists. return a list of those with one element per list"""
         if len(in_rec['OPERANDS']) !=  len(in_rec['PATTERN']):
-            die("Mismatched number of patterns and operands lines")
+            genutil.die("Mismatched number of patterns and operands lines")
         x = len(in_rec['PATTERN']) 
         res = []
         for i in range(0,x):
@@ -827,7 +860,7 @@ class xed_reader_t(object):
                     setattr(d,k.lower(),v[0])
                 else:
                     if i >= len(v):
-                        die("k = {0} v = {1}".format(k,v))
+                        genutil.die("k = {0} v = {1}".format(k,v))
                     setattr(d,k.lower(),v[i])
             res.append(d)
         
@@ -896,7 +929,7 @@ class xed_reader_t(object):
 
             if patterns.left_curly_pattern.match(line):
                 if started:
-                    die("Nested instructions")
+                    genutil.die("Nested instructions")
                 started = True
                 d = collections.defaultdict(list)
                 d['NTNAME'].append(nt_name)
@@ -904,7 +937,7 @@ class xed_reader_t(object):
 
             if patterns.right_curly_pattern.match(line):
                 if not started:
-                    die("Mis-nested instructions")
+                    genutil.die("Mis-nested instructions")
                 started = False
                 recs.append(d)
                 continue
@@ -914,7 +947,7 @@ class xed_reader_t(object):
                 key = key.strip()
                 value = value.strip()
                 if value.startswith(':'):
-                    die("Double colon error {}".format(line))
+                    genutil.die("Double colon error {}".format(line))
                 if key == 'PATTERN':
                     # Since some patterns/operand sequences have
                     # iforms and others do not, we can avoid tripping
@@ -930,7 +963,7 @@ class xed_reader_t(object):
                     # for normal tokens we just append them
                     d[key].append(value)
             else:
-                die("Unexpected: [{0}]".format(line))
+                genutil.die("Unexpected: [{0}]".format(line))
         sys.stderr.write("\n")
         return recs
 

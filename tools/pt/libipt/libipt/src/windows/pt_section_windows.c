@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2015-2022, Intel Corporation
+ * Copyright (c) 2015-2024, Intel Corporation
+ * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -265,9 +266,9 @@ int pt_section_map(struct pt_section *section)
 		 * We will detect changes to the file via fstat().
 		 */
 
-		fh = CreateFileA(filename, GENERIC_READ, FILE_SHARE_WRITE,
-				 NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL,
-				 NULL);
+		fh = CreateFileA(filename, GENERIC_READ,
+				 FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+				 OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 		if (fh == INVALID_HANDLE_VALUE) {
 			errcode = -pte_bad_file;
 			goto out_unlock;
@@ -312,7 +313,7 @@ int pt_section_map(struct pt_section *section)
 
 out_fd:
 	_close(fd);
-	return errcode;
+	goto out_unlock;
 
 out_fh:
 	CloseHandle(fh);

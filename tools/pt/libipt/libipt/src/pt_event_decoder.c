@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2018-2022, Intel Corporation
+ * Copyright (c) 2018-2024, Intel Corporation
+ * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -59,6 +60,7 @@ static int pt_evt_reset(struct pt_event_decoder *decoder)
 	decoder->event = NULL;
 	decoder->enabled = 0;
 	decoder->bound = 0;
+	decoder->mode_exec_valid = 0;
 
 	pt_last_ip_init(&decoder->ip);
 	pt_time_init(&decoder->time);
@@ -676,19 +678,59 @@ static int pt_evt_header_mode(struct pt_event_decoder *decoder,
 	if (!decoder || !packet)
 		return -pte_internal;
 
-	ev = pt_evq_enqueue(&decoder->evq, evb_psbend);
-	if (!ev)
-		return -pte_nomem;
-
-	ev->status_update = 1;
 	switch (packet->leaf) {
 	case pt_mol_exec:
+		/* If our mode.exec state is already initialized, we can use
+		 * the status update packet to diagnose inconsistencies.
+		 *
+		 * Use it to initialize our state, otherwise.
+		 */
+		if (decoder->mode_exec_valid) {
+			/* The iflag status may be inconsistent unless Event
+			 * Tracing is enabled as we would not get all updates.
+			 */
+			if (decoder->flags.variant.event.enable_iflags_events &&
+			    (decoder->iflag != packet->bits.exec.iflag))
+				return -pte_bad_status_update;
+
+			if (decoder->csd != packet->bits.exec.csd)
+				return -pte_bad_status_update;
+
+			if (decoder->csl != packet->bits.exec.csl)
+				return -pte_bad_status_update;
+		} else {
+			decoder->mode_exec_valid = 1;
+			decoder->iflag = packet->bits.exec.iflag;
+			decoder->csd = packet->bits.exec.csd;
+			decoder->csl = packet->bits.exec.csl;
+		}
+
+		ev = pt_evq_enqueue(&decoder->evq, evb_psbend);
+		if (!ev)
+			return -pte_nomem;
+
+		ev->status_update = 1;
 		ev->type = ptev_exec_mode;
 		ev->variant.exec_mode.mode =
 			pt_get_exec_mode(&packet->bits.exec);
+
+		if (decoder->flags.variant.event.enable_iflags_events) {
+			ev = pt_evq_enqueue(&decoder->evq, evb_psbend);
+			if (!ev)
+				return -pte_nomem;
+
+			ev->status_update = 1;
+			ev->type = ptev_iflags;
+			ev->variant.iflags.iflag = packet->bits.exec.iflag;
+		}
 		break;
 
 	case pt_mol_tsx:
+		ev = pt_evq_enqueue(&decoder->evq, evb_psbend);
+		if (!ev)
+			return -pte_nomem;
+
+		ev->status_update = 1;
 		ev->type = ptev_tsx;
 		ev->variant.tsx.speculative = packet->bits.tsx.intx;
 		ev->variant.tsx.aborted = packet->bits.tsx.abrt;
@@ -702,17 +744,64 @@ static int pt_evt_decode_mode_exec(struct pt_event_decoder *decoder,
 				   const struct pt_packet_mode_exec *packet)
 {
 	struct pt_event *ev;
+	int nevents;
 
 	if (!decoder || !packet)
 		return -pte_internal;
 
-	ev = pt_evq_enqueue(&decoder->evq, evb_tip);
-	if (!ev)
-		return -pte_nomem;
+	/* Mode.exec contains two pieces of information:
+	 *
+	 * - the execution mode
+	 * - the interrupt flag
+	 *
+	 * Split this into exec_mode or iflags events depending on which of the
+	 * pieces was changed.
+	 *
+	 * If nothing changed, e.g. because the h/w did not suppress a
+	 * mode.exec after a tracing pause, we may end up without an event.
+	 * Since we still need to bind the mode.exec packet, add an
+	 * internal-only ignore event that will be dropped at the binding
+	 * packet.
+	 */
+	nevents = 0;
+	if (!decoder->mode_exec_valid ||
+	    (decoder->csl != packet->csl) || (decoder->csd != packet->csd)) {
+		ev = pt_evq_enqueue(&decoder->evq, evb_tip | evb_fup_bound);
+		if (!ev)
+			return -pte_nomem;
 
-	ev->type = ptev_exec_mode;
-	ev->variant.exec_mode.mode = pt_get_exec_mode(packet);
+		ev->type = ptev_exec_mode;
+		ev->variant.exec_mode.mode = pt_get_exec_mode(packet);
 
+		decoder->csl = packet->csl;
+		decoder->csd = packet->csd;
+
+		nevents += 1;
+	}
+
+	if (decoder->flags.variant.event.enable_iflags_events &&
+	    (!decoder->mode_exec_valid || (decoder->iflag != packet->iflag))) {
+		ev = pt_evq_enqueue(&decoder->evq, evb_tip | evb_fup_bound);
+		if (!ev)
+			return -pte_nomem;
+
+		ev->type = ptev_iflags;
+		ev->variant.iflags.iflag = packet->iflag;
+
+		decoder->iflag = packet->iflag;
+
+		nevents += 1;
+	}
+
+	if (!nevents) {
+		ev = pt_evq_enqueue(&decoder->evq, evb_tip | evb_fup_bound);
+		if (!ev)
+			return -pte_nomem;
+
+		ev->type = ptev_ignore;
+	}
+
+	decoder->mode_exec_valid = 1;
 	return 1;
 }
 
@@ -726,7 +815,10 @@ static int pt_evt_decode_mode_tsx(struct pt_event_decoder *decoder,
 		return -pte_internal;
 
 	if (decoder->enabled) {
-		ev = pt_evq_enqueue(&decoder->evq, evb_fup);
+		uint32_t evb;
+
+		evb = packet->abrt ? evb_fup : evb_fup_bound;
+		ev = pt_evq_enqueue(&decoder->evq, evb);
 		if (!ev)
 			return -pte_nomem;
 
@@ -1006,7 +1098,8 @@ static int pt_evt_decode_exstop(struct pt_event_decoder *decoder,
 			if (packet->ip) {
 				struct pt_event *mwait;
 
-				mwait = pt_evq_enqueue(&decoder->evq, evb_fup);
+				mwait = pt_evq_enqueue(&decoder->evq,
+						       evb_fup_bound);
 				if (!mwait)
 					return -pte_nomem;
 
@@ -1034,7 +1127,7 @@ static int pt_evt_decode_exstop(struct pt_event_decoder *decoder,
 
 	/* If EXSTOP.IP is set, it binds to a subsequent FUP. */
 	if (packet->ip) {
-		ev = pt_evq_enqueue(&decoder->evq, evb_fup);
+		ev = pt_evq_enqueue(&decoder->evq, evb_fup_bound);
 		if (!ev)
 			return -pte_nomem;
 
@@ -1151,7 +1244,7 @@ static int pt_evt_decode_ptw(struct pt_event_decoder *decoder,
 
 	/* If PTW.IP is set, it binds to a subsequent FUP. */
 	if (packet->ip) {
-		ev = pt_evq_enqueue(&decoder->evq, evb_fup);
+		ev = pt_evq_enqueue(&decoder->evq, evb_fup_bound);
 		if (!ev)
 			return -pte_nomem;
 
@@ -1213,9 +1306,7 @@ static int pt_evt_decode_psb(struct pt_event_decoder *decoder)
 		return -pte_internal;
 
 	/* We must not carry partial events across PSB. */
-	if (!pt_evq_empty(&decoder->evq, evb_psbend) ||
-	    !pt_evq_empty(&decoder->evq, evb_tip) ||
-	    !pt_evq_empty(&decoder->evq, evb_fup))
+	if (pt_evq_pending(&decoder->evq, UINT32_MAX))
 		return -pte_bad_context;
 
 	pt_last_ip_init(&decoder->ip);
@@ -1372,14 +1463,6 @@ static int pt_evt_start(struct pt_event_decoder *decoder)
 	}
 }
 
-static int pt_evt_sync_reset(struct pt_event_decoder *decoder)
-{
-	if (!decoder)
-		return -pte_internal;
-
-	return pt_evt_reset(decoder);
-}
-
 int pt_evt_sync_forward(struct pt_event_decoder *decoder)
 {
 	int errcode;
@@ -1387,7 +1470,7 @@ int pt_evt_sync_forward(struct pt_event_decoder *decoder)
 	if (!decoder)
 		return -pte_invalid;
 
-	errcode = pt_evt_sync_reset(decoder);
+	errcode = pt_evt_reset(decoder);
 	if (errcode < 0)
 		return errcode;
 
@@ -1415,7 +1498,7 @@ int pt_evt_sync_backward(struct pt_event_decoder *decoder)
 
 	sync = start;
 	for (;;) {
-		errcode = pt_evt_sync_reset(decoder);
+		errcode = pt_evt_reset(decoder);
 		if (errcode < 0)
 			return errcode;
 
@@ -1444,7 +1527,7 @@ int pt_evt_sync_set(struct pt_event_decoder *decoder, uint64_t offset)
 	if (!decoder)
 		return -pte_invalid;
 
-	errcode = pt_evt_sync_reset(decoder);
+	errcode = pt_evt_reset(decoder);
 	if (errcode < 0)
 		return errcode;
 
@@ -1515,6 +1598,11 @@ static int pt_evt_decode_psbend(struct pt_event_decoder *decoder)
 					  &decoder->ip);
 		break;
 
+	case ptev_iflags:
+		errcode = pt_evt_event_ip(&ev->variant.iflags.ip, ev,
+					  &decoder->ip);
+		break;
+
 	case ptev_tsx:
 		errcode = pt_evt_event_ip(&ev->variant.tsx.ip, ev,
 					  &decoder->ip);
@@ -1551,7 +1639,7 @@ static int pt_evt_decode_fup(struct pt_event_decoder *decoder,
 			     const struct pt_packet_ip *packet)
 {
 	struct pt_event *ev;
-	int errcode;
+	int errcode, status;
 
 	if (!decoder || !packet)
 		return -pte_internal;
@@ -1561,7 +1649,15 @@ static int pt_evt_decode_fup(struct pt_event_decoder *decoder,
 	if (errcode < 0)
 		return errcode;
 
-	ev = pt_evq_dequeue(&decoder->evq, evb_fup);
+	status = pt_evq_pending(&decoder->evq, evb_fup_bound);
+	if (status != 0) {
+		if (status < 0)
+			return status;
+
+		decoder->bound = 1;
+	}
+
+	ev = pt_evq_dequeue(&decoder->evq, evb_fup | evb_fup_bound);
 	if (!ev) {
 		uint64_t from;
 
@@ -1603,7 +1699,6 @@ static int pt_evt_decode_fup(struct pt_event_decoder *decoder,
 					  &decoder->ip);
 
 		decoder->enabled = 1;
-		decoder->bound = 1;
 		break;
 
 	case ptev_tsx:
@@ -1613,10 +1708,6 @@ static int pt_evt_decode_fup(struct pt_event_decoder *decoder,
 
 		errcode = pt_evt_event_ip(&ev->variant.tsx.ip, ev,
 					  &decoder->ip);
-
-		if (!(ev->variant.tsx.aborted))
-			decoder->bound = 1;
-
 		break;
 
 	case ptev_exstop:
@@ -1626,8 +1717,6 @@ static int pt_evt_decode_fup(struct pt_event_decoder *decoder,
 
 		errcode = pt_evt_event_ip(&ev->variant.exstop.ip, ev,
 					  &decoder->ip);
-
-		decoder->bound = 1;
 		break;
 
 	case ptev_mwait:
@@ -1637,8 +1726,6 @@ static int pt_evt_decode_fup(struct pt_event_decoder *decoder,
 
 		errcode = pt_evt_event_ip(&ev->variant.mwait.ip, ev,
 					  &decoder->ip);
-
-		decoder->bound = 1;
 		break;
 
 	case ptev_ptwrite:
@@ -1648,9 +1735,131 @@ static int pt_evt_decode_fup(struct pt_event_decoder *decoder,
 
 		errcode = pt_evt_event_ip(&ev->variant.ptwrite.ip, ev,
 					  &decoder->ip);
-
-		decoder->bound = 1;
 		break;
+
+	case ptev_exec_mode:
+		errcode = pt_evt_event_time(ev, &decoder->time);
+		if (errcode < 0)
+			break;
+
+		errcode = pt_evt_event_ip(&ev->variant.exec_mode.ip, ev,
+					  &decoder->ip);
+		break;
+
+	case ptev_iflags:
+		errcode = pt_evt_event_time(ev, &decoder->time);
+		if (errcode < 0)
+			break;
+
+		errcode = pt_evt_event_ip(&ev->variant.iflags.ip, ev,
+					  &decoder->ip);
+		break;
+
+	case ptev_interrupt:
+		errcode = pt_evt_event_time(ev, &decoder->time);
+		if (errcode < 0)
+			break;
+
+		errcode = pt_evt_event_ip(&ev->variant.interrupt.ip, ev,
+					  &decoder->ip);
+		break;
+
+	case ptev_iret:
+		errcode = pt_evt_event_time(ev, &decoder->time);
+		if (errcode < 0)
+			break;
+
+		errcode = pt_evt_event_ip(&ev->variant.iret.ip, ev,
+					  &decoder->ip);
+		break;
+
+	case ptev_smi:
+		errcode = pt_evt_event_time(ev, &decoder->time);
+		if (errcode < 0)
+			break;
+
+		errcode = pt_evt_event_ip(&ev->variant.smi.ip, ev,
+					  &decoder->ip);
+		break;
+
+	case ptev_rsm:
+		errcode = pt_evt_event_time(ev, &decoder->time);
+		if (errcode < 0)
+			break;
+
+		if (!ev->ip_suppressed)
+			return -pte_internal;
+
+		break;
+
+	case ptev_sipi:
+		errcode = pt_evt_event_time(ev, &decoder->time);
+		if (errcode < 0)
+			break;
+
+		if (!ev->ip_suppressed)
+			return -pte_internal;
+
+		break;
+
+	case ptev_init:
+		errcode = pt_evt_event_time(ev, &decoder->time);
+		if (errcode < 0)
+			break;
+
+		errcode = pt_evt_event_ip(&ev->variant.init.ip, ev,
+					  &decoder->ip);
+		break;
+
+	case ptev_vmentry:
+		errcode = pt_evt_event_time(ev, &decoder->time);
+		if (errcode < 0)
+			break;
+
+		errcode = pt_evt_event_ip(&ev->variant.vmentry.ip, ev,
+					  &decoder->ip);
+		break;
+
+	case ptev_vmexit:
+		errcode = pt_evt_event_time(ev, &decoder->time);
+		if (errcode < 0)
+			break;
+
+		errcode = pt_evt_event_ip(&ev->variant.vmexit.ip, ev,
+					  &decoder->ip);
+		break;
+
+	case ptev_shutdown:
+		errcode = pt_evt_event_time(ev, &decoder->time);
+		if (errcode < 0)
+			break;
+
+		errcode = pt_evt_event_ip(&ev->variant.shutdown.ip, ev,
+					  &decoder->ip);
+		break;
+
+	case ptev_uintr:
+		errcode = pt_evt_event_time(ev, &decoder->time);
+		if (errcode < 0)
+			break;
+
+		errcode = pt_evt_event_ip(&ev->variant.uintr.ip, ev,
+					  &decoder->ip);
+		break;
+
+	case ptev_uiret:
+		errcode = pt_evt_event_time(ev, &decoder->time);
+		if (errcode < 0)
+			break;
+
+		errcode = pt_evt_event_ip(&ev->variant.uiret.ip, ev,
+					  &decoder->ip);
+		break;
+
+	case ptev_ignore:
+		decoder->event = NULL;
+
+		return pt_evt_decode_fup(decoder, packet);
 
 	default:
 		errcode = -pte_bad_context;
@@ -1721,6 +1930,8 @@ static int pt_evt_find_ovf_fup(const struct pt_packet_decoder *pacdec)
 		case ppt_pwre:
 		case ppt_pwrx:
 		case ppt_ptw:
+		case ppt_cfe:
+		case ppt_evd:
 			return 0;
 
 		case ppt_psbend:
@@ -2093,7 +2304,8 @@ static int pt_evt_handle_skd010(struct pt_event_decoder *decoder)
 			 * the next iteration.
 			 */
 			if (mode_tsx.found) {
-				ev = pt_evq_enqueue(&decoder->evq, evb_fup);
+				ev = pt_evq_enqueue(&decoder->evq,
+						    evb_fup_bound);
 				if (!ev)
 					return -pte_nomem;
 
@@ -2168,6 +2380,7 @@ static int pt_evt_handle_skd010(struct pt_event_decoder *decoder)
 		case ppt_mnt:
 		case ppt_pwre:
 		case ppt_pwrx:
+		case ppt_evd:
 			/* Ignore this packet. */
 			break;
 
@@ -2243,6 +2456,16 @@ static int pt_evt_handle_skd010(struct pt_event_decoder *decoder)
 				return errcode;
 
 			break;
+
+		case ppt_cfe:
+			/* We may skip a stand-alone CFE. */
+			if (!packet.payload.cfe.ip)
+				break;
+
+			/* To skip this packet, we'd need to take care of the
+			 * FUP it binds to.  This is getting complicated.
+			 */
+			return 1;
 
 		case ppt_unknown:
 		case ppt_invalid:
@@ -2374,6 +2597,8 @@ static int pt_evt_handle_apl11(struct pt_event_decoder *decoder)
 
 		case ppt_pad:
 		case ppt_mnt:
+		case ppt_cfe:
+		case ppt_evd:
 			/* Skip those packets. */
 			break;
 
@@ -2492,6 +2717,8 @@ static int pt_evt_handle_apl12(struct pt_event_decoder *decoder,
 		case ppt_pip:
 		case ppt_vmcs:
 		case ppt_mode:
+		case ppt_cfe:
+		case ppt_evd:
 			/* Skip those packets. */
 			break;
 
@@ -2621,7 +2848,7 @@ static int pt_evt_decode_ovf(struct pt_event_decoder *decoder)
 			return errcode;
 	}
 
-	ev = pt_evq_enqueue(&decoder->evq, evb_fup);
+	ev = pt_evq_enqueue(&decoder->evq, evb_fup_bound);
 	if (!ev)
 		return -pte_nomem;
 
@@ -2736,6 +2963,16 @@ static int pt_evt_decode_tip(struct pt_event_decoder *decoder,
 					  &decoder->ip);
 		break;
 
+	case ptev_iflags:
+		errcode = pt_evt_event_ip(&ev->variant.iflags.ip, ev,
+					  &decoder->ip);
+		break;
+
+	case ptev_ignore:
+		decoder->event = NULL;
+
+		return pt_evt_decode_tip(decoder, packet);
+
 	default:
 		errcode = -pte_bad_context;
 		break;
@@ -2796,6 +3033,16 @@ static int pt_evt_decode_tip_pge(struct pt_event_decoder *decoder,
 		errcode = pt_evt_event_ip(&ev->variant.exec_mode.ip, ev,
 					  &decoder->ip);
 		break;
+
+	case ptev_iflags:
+		errcode = pt_evt_event_ip(&ev->variant.iflags.ip, ev,
+					  &decoder->ip);
+		break;
+
+	case ptev_ignore:
+		decoder->event = NULL;
+
+		return pt_evt_decode_tip_pge(decoder, packet);
 
 	default:
 		errcode = -pte_bad_context;
@@ -2940,6 +3187,484 @@ static int pt_evt_decode_tnt(struct pt_event_decoder *decoder,
 	return pt_evt_fetch_packet(decoder);
 }
 
+static int pt_evt_decode_cfe(struct pt_event_decoder *decoder,
+			     const struct pt_packet_cfe *packet)
+{
+	struct pt_event *ev;
+	int errcode;
+
+	if (!decoder || !packet)
+		return -pte_internal;
+
+	/* Let's see if we already got an EVD and enqueued an expected CFE. */
+	ev = pt_evq_dequeue(&decoder->evq, evb_cfe);
+
+	switch (packet->type) {
+	case pt_cfe_intr:
+		if (!ev) {
+			ev = pt_evq_standalone(&decoder->evq);
+			if (!ev)
+				return -pte_internal;
+
+			ev->type = ptev_interrupt;
+		}
+
+		if (ev->type != ptev_interrupt)
+			return -pte_bad_context;
+
+		ev->variant.interrupt.vector = packet->vector;
+
+		if (packet->ip) {
+			ev = pt_evq_requeue(&decoder->evq, ev, evb_fup_bound);
+			if (!ev)
+				return -pte_nomem;
+
+			return 1;
+		}
+
+		if (decoder->enabled) {
+			ev = pt_evq_requeue(&decoder->evq, ev, evb_fup);
+			if (!ev)
+				return -pte_nomem;
+
+			return 1;
+		}
+
+		errcode = pt_evt_event_time(ev, &decoder->time);
+		if (errcode < 0)
+			return errcode;
+
+		ev->ip_suppressed = 1;
+
+		decoder->event = ev;
+		return pt_evt_fetch_packet(decoder);
+
+	case pt_cfe_iret:
+		if (ev)
+			return -pte_bad_context;
+
+		if (packet->ip) {
+			ev = pt_evq_enqueue(&decoder->evq, evb_fup_bound);
+			if (!ev)
+				return -pte_nomem;
+
+			ev->type = ptev_iret;
+			return 1;
+		}
+
+		ev = pt_evq_standalone(&decoder->evq);
+		if (!ev)
+			return -pte_internal;
+
+		ev->type = ptev_iret;
+		ev->ip_suppressed = 1;
+
+		errcode = pt_evt_event_time(ev, &decoder->time);
+		if (errcode < 0)
+			return errcode;
+
+		decoder->event = ev;
+		return pt_evt_fetch_packet(decoder);
+
+	case pt_cfe_smi:
+		if (ev)
+			return -pte_bad_context;
+
+		if (packet->ip) {
+			ev = pt_evq_enqueue(&decoder->evq, evb_fup_bound);
+			if (!ev)
+				return -pte_nomem;
+
+			ev->type = ptev_smi;
+			return 1;
+		}
+
+		if (decoder->enabled) {
+			ev = pt_evq_enqueue(&decoder->evq, evb_fup);
+			if (!ev)
+				return -pte_nomem;
+
+			ev->type = ptev_smi;
+			return 1;
+		}
+
+		ev = pt_evq_standalone(&decoder->evq);
+		if (!ev)
+			return -pte_internal;
+
+		ev->type = ptev_smi;
+		ev->ip_suppressed = 1;
+
+		errcode = pt_evt_event_time(ev, &decoder->time);
+		if (errcode < 0)
+			return errcode;
+
+		decoder->event = ev;
+		return pt_evt_fetch_packet(decoder);
+
+	case pt_cfe_rsm:
+		if (ev)
+			return -pte_bad_context;
+
+		if (packet->ip)
+			return -pte_bad_packet;
+
+		if (decoder->enabled) {
+			ev = pt_evq_enqueue(&decoder->evq, evb_fup);
+			if (!ev)
+				return -pte_nomem;
+
+			ev->ip_suppressed = 1;
+			ev->type = ptev_rsm;
+			return 1;
+		}
+
+		ev = pt_evq_standalone(&decoder->evq);
+		if (!ev)
+			return -pte_internal;
+
+		ev->ip_suppressed = 1;
+		ev->type = ptev_rsm;
+
+		errcode = pt_evt_event_time(ev, &decoder->time);
+		if (errcode < 0)
+			return errcode;
+
+		decoder->event = ev;
+		return pt_evt_fetch_packet(decoder);
+
+	case pt_cfe_sipi:
+		if (ev)
+			return -pte_bad_context;
+
+		if (packet->ip)
+			return -pte_bad_packet;
+
+		if (decoder->enabled) {
+			ev = pt_evq_enqueue(&decoder->evq, evb_fup);
+			if (!ev)
+				return -pte_nomem;
+
+			ev->ip_suppressed = 1;
+			ev->type = ptev_sipi;
+			ev->variant.sipi.vector = packet->vector;
+			return 1;
+		}
+
+		ev = pt_evq_standalone(&decoder->evq);
+		if (!ev)
+			return -pte_internal;
+
+		ev->ip_suppressed = 1;
+		ev->type = ptev_sipi;
+		ev->variant.sipi.vector = packet->vector;
+
+		errcode = pt_evt_event_time(ev, &decoder->time);
+		if (errcode < 0)
+			return errcode;
+
+		decoder->event = ev;
+		return pt_evt_fetch_packet(decoder);
+
+	case pt_cfe_init:
+		if (ev)
+			return -pte_bad_context;
+
+		if (packet->ip) {
+			ev = pt_evq_enqueue(&decoder->evq, evb_fup_bound);
+			if (!ev)
+				return -pte_nomem;
+
+			ev->type = ptev_init;
+			return 1;
+		}
+
+		if (decoder->enabled) {
+			ev = pt_evq_enqueue(&decoder->evq, evb_fup);
+			if (!ev)
+				return -pte_nomem;
+
+			ev->type = ptev_init;
+			return 1;
+		}
+
+		ev = pt_evq_standalone(&decoder->evq);
+		if (!ev)
+			return -pte_internal;
+
+		ev->type = ptev_init;
+		ev->ip_suppressed = 1;
+
+		errcode = pt_evt_event_time(ev, &decoder->time);
+		if (errcode < 0)
+			return errcode;
+
+		decoder->event = ev;
+		return pt_evt_fetch_packet(decoder);
+
+	case pt_cfe_vmentry:
+		if (ev)
+			return -pte_bad_context;
+
+		if (packet->ip) {
+			ev = pt_evq_enqueue(&decoder->evq, evb_fup_bound);
+			if (!ev)
+				return -pte_nomem;
+
+			ev->type = ptev_vmentry;
+			return 1;
+		}
+
+		ev = pt_evq_standalone(&decoder->evq);
+		if (!ev)
+			return -pte_internal;
+
+		ev->type = ptev_vmentry;
+		ev->ip_suppressed = 1;
+
+		errcode = pt_evt_event_time(ev, &decoder->time);
+		if (errcode < 0)
+			return errcode;
+
+		decoder->event = ev;
+		return pt_evt_fetch_packet(decoder);
+
+	case pt_cfe_vmexit:
+	case pt_cfe_vmexit_intr:
+		if (!ev) {
+			ev = pt_evq_standalone(&decoder->evq);
+			if (!ev)
+				return -pte_internal;
+
+			ev->type = ptev_vmexit;
+		}
+
+		if (ev->type != ptev_vmexit)
+			return -pte_bad_context;
+
+		if (packet->type == pt_cfe_vmexit_intr) {
+			ev->variant.vmexit.has_vector = 1;
+			ev->variant.vmexit.vector = packet->vector;
+		}
+
+		if (packet->ip) {
+			ev = pt_evq_requeue(&decoder->evq, ev, evb_fup_bound);
+			if (!ev)
+				return -pte_nomem;
+
+			return 1;
+		}
+
+		if (decoder->enabled) {
+			ev = pt_evq_requeue(&decoder->evq, ev, evb_fup);
+			if (!ev)
+				return -pte_nomem;
+
+			return 1;
+		}
+
+		errcode = pt_evt_event_time(ev, &decoder->time);
+		if (errcode < 0)
+			return errcode;
+
+		ev->ip_suppressed = 1;
+
+		decoder->event = ev;
+		return pt_evt_fetch_packet(decoder);
+
+	case pt_cfe_shutdown:
+		if (ev)
+			return -pte_bad_context;
+
+		if (packet->ip) {
+			ev = pt_evq_enqueue(&decoder->evq, evb_fup_bound);
+			if (!ev)
+				return -pte_nomem;
+
+			ev->type = ptev_shutdown;
+			return 1;
+		}
+
+		ev = pt_evq_standalone(&decoder->evq);
+		if (!ev)
+			return -pte_internal;
+
+		ev->type = ptev_shutdown;
+		ev->ip_suppressed = 1;
+
+		errcode = pt_evt_event_time(ev, &decoder->time);
+		if (errcode < 0)
+			return errcode;
+
+		decoder->event = ev;
+		return pt_evt_fetch_packet(decoder);
+
+	case pt_cfe_uintr:
+		if (ev)
+			return -pte_bad_context;
+
+		if (packet->ip) {
+			ev = pt_evq_enqueue(&decoder->evq, evb_fup_bound);
+			if (!ev)
+				return -pte_nomem;
+
+			ev->type = ptev_uintr;
+			ev->variant.uintr.vector = packet->vector;
+			return 1;
+		}
+
+		if (decoder->enabled) {
+			ev = pt_evq_enqueue(&decoder->evq, evb_fup);
+			if (!ev)
+				return -pte_nomem;
+
+			ev->type = ptev_uintr;
+			ev->variant.uintr.vector = packet->vector;
+			return 1;
+		}
+
+		ev = pt_evq_standalone(&decoder->evq);
+		if (!ev)
+			return -pte_internal;
+
+		ev->type = ptev_uintr;
+		ev->variant.uintr.vector = packet->vector;
+		ev->ip_suppressed = 1;
+
+		errcode = pt_evt_event_time(ev, &decoder->time);
+		if (errcode < 0)
+			return errcode;
+
+		decoder->event = ev;
+		return pt_evt_fetch_packet(decoder);
+
+	case pt_cfe_uiret:
+		if (ev)
+			return -pte_bad_context;
+
+		if (packet->ip) {
+			ev = pt_evq_enqueue(&decoder->evq, evb_fup_bound);
+			if (!ev)
+				return -pte_nomem;
+
+			ev->type = ptev_uiret;
+			return 1;
+		}
+
+		ev = pt_evq_standalone(&decoder->evq);
+		if (!ev)
+			return -pte_internal;
+
+		ev->type = ptev_uiret;
+		ev->ip_suppressed = 1;
+
+		errcode = pt_evt_event_time(ev, &decoder->time);
+		if (errcode < 0)
+			return errcode;
+
+		decoder->event = ev;
+		return pt_evt_fetch_packet(decoder);
+	}
+
+	/* Decoding EVD is supposed to only enqueue supported CFE types. */
+	if (ev)
+		return -pte_internal;
+
+	/* Ignore unknown CFE types.
+	 *
+	 * They provide additional information but they are not essential for
+	 * decoding the trace.  It is better to continue without that
+	 * information than to fail.
+	 *
+	 * Since CFE may consume a subsequent FUP, we need to ignore that, too.
+	 */
+	if (packet->ip) {
+		ev = pt_evq_enqueue(&decoder->evq, evb_fup_bound);
+		if (!ev)
+			return -pte_nomem;
+
+		ev->type = ptev_ignore;
+	}
+
+	return 1;
+}
+
+static int pt_evt_decode_evd(struct pt_event_decoder *decoder,
+			     const struct pt_packet_evd *packet)
+{
+	struct pt_event *ev;
+
+	if (!decoder || !packet)
+		return -pte_internal;
+
+	/* Let's see if we already got an EVD and enqueued an expected CFE. */
+	ev = pt_evq_peek(&decoder->evq, evb_cfe);
+
+	switch (packet->type) {
+	case pt_evd_cr2:
+		if (ev)
+			return -pte_bad_context;
+
+		ev = pt_evq_enqueue(&decoder->evq, evb_cfe);
+		if (!ev)
+			return -pte_nomem;
+
+		ev->type = ptev_interrupt;
+		ev->variant.interrupt.has_cr2 = 1;
+		ev->variant.interrupt.cr2 = packet->payload;
+
+		return 1;
+
+	case pt_evd_vmxq:
+		if (!ev) {
+			ev = pt_evq_enqueue(&decoder->evq, evb_cfe);
+			if (!ev)
+				return -pte_nomem;
+
+			ev->type = ptev_vmexit;
+		}
+
+		if (ev->type != ptev_vmexit)
+			return -pte_bad_context;
+
+		if (ev->variant.vmexit.has_vmxq)
+			return -pte_bad_context;
+
+		ev->variant.vmexit.has_vmxq = 1;
+		ev->variant.vmexit.vmxq = packet->payload;
+
+		return 1;
+
+	case pt_evd_vmxr:
+		if (!ev) {
+			ev = pt_evq_enqueue(&decoder->evq, evb_cfe);
+			if (!ev)
+				return -pte_nomem;
+
+			ev->type = ptev_vmexit;
+		}
+
+		if (ev->type != ptev_vmexit)
+			return -pte_bad_context;
+
+		if (ev->variant.vmexit.has_vmxr)
+			return -pte_bad_context;
+
+		ev->variant.vmexit.has_vmxr = 1;
+		ev->variant.vmexit.vmxr = packet->payload;
+
+		return 1;
+	}
+
+	/* Ignore unknown EVD types.
+	 *
+	 * They provide additional information but they are not essential for
+	 * decoding the trace.  It is better to continue without that
+	 * information than to fail.
+	 */
+	return 1;
+}
+
 static int pt_evt_decode_unknown(struct pt_event_decoder *decoder,
 				 const struct pt_packet_unknown *packet)
 {
@@ -3036,6 +3761,12 @@ static int pt_evt_decode_packet(struct pt_event_decoder *decoder)
 	case ppt_mnt:
 		return pt_evt_decode_mnt(decoder, &packet->payload.mnt);
 
+	case ppt_cfe:
+		return pt_evt_decode_cfe(decoder, &packet->payload.cfe);
+
+	case ppt_evd:
+		return pt_evt_decode_evd(decoder, &packet->payload.evd);
+
 	case ppt_invalid:
 		if (decoder->status < 0)
 			return decoder->status;
@@ -3116,7 +3847,7 @@ static inline int pt_evt_to_user(struct pt_event *uev, size_t size,
 
 	/* Zero out any unknown bytes. */
 	if (sizeof(*ev) < size) {
-		memset(uev + sizeof(*ev), 0, size - sizeof(*ev));
+		memset(((uint8_t *) uev) + sizeof(*ev), 0, size - sizeof(*ev));
 
 		size = sizeof(*ev);
 	}

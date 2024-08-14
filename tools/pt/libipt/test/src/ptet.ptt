@@ -1,0 +1,179 @@
+; Copyright (c) 2022-2024, Intel Corporation
+; SPDX-License-Identifier: BSD-3-Clause
+;
+; Redistribution and use in source and binary forms, with or without
+; modification, are permitted provided that the following conditions are met:
+;
+;  * Redistributions of source code must retain the above copyright notice,
+;    this list of conditions and the following disclaimer.
+;  * Redistributions in binary form must reproduce the above copyright notice,
+;    this list of conditions and the following disclaimer in the documentation
+;    and/or other materials provided with the distribution.
+;  * Neither the name of Intel Corporation nor the names of its contributors
+;    may be used to endorse or promote products derived from this software
+;    without specific prior written permission.
+;
+; THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+; IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+; ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+; LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+; CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+; SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+; INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+; CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+; ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+; POSSIBILITY OF SUCH DAMAGE.
+
+; Test Event Tracing with BranchEn=0
+;
+; We do not stick to a fixed context.  The trace contains in-context
+; packets as well as context-transition packets in both directions.
+;
+; opt:ptxed --event:iflags --event:ip
+;
+
+org 0x100000
+bits 64
+
+; @pt p0:   psb()
+; @pt p1:   mode.exec(64bit, if)
+; @pt p2:   psbend()
+; @pt p3:   mode.exec(32bit)
+; @pt p4:   fup(3: %l0)
+l0: nop
+; @pt p5:   mode.exec(64bit, if)
+; @pt p6:   fup(1: %l1)
+l1: nop
+; @pt p7:   evd(0: 0xf00baa)
+; @pt p8:   cfe(1: 14, ip)
+; @pt p9:   fup(1: %l2)
+l2: nop
+; @pt p10:  cfe(2)
+; @pt p11:  cfe(1: 0x80)
+; @pt p12:  cfe(2, ip)
+; @pt p13:  fup(1: %l3)
+l3: nop
+; @pt p14:  cfe(3, ip)
+; @pt p15:  fup(1: %l4)
+l4: nop
+; @pt p16:  cfe(4)
+; @pt p17:  cfe(6, ip)
+; @pt p18:  fup(1: %l5)
+l5: nop
+; @pt p19:  cfe(5: 0xce)
+; @pt p20:  evd(1: 0xf00baa)
+; @pt p21:  evd(2: 0)
+; @pt p22:  cfe(9: 14, ip)
+; @pt p23:  fup(1: %l6)
+l6: nop
+; @pt p24:  cfe(7, ip)
+; @pt p25:  fup(1: %l6)
+; @pt p26:  evd(2: 10)
+; @pt p27:  cfe(8, ip)
+; @pt p28:  fup(1: %l7)
+l7: nop
+; @pt p29:  cfe(7, ip)
+; @pt p30:  fup(1: %l8)
+l8: nop
+; @pt p31:  cfe(10, ip)
+; @pt p32:  fup(1: %l9)
+l9: nop
+; @pt p33:  cfe(12: 4, ip)
+; @pt p34:  fup(1: %l10)
+l10: nop
+; @pt p35:  cfe(13, ip)
+; @pt p36:  fup(1: %l11)
+l11: nop
+; @pt p37:  evd(31: 0)
+; @pt p38:  cfe(1: 128, ip)
+; @pt p39:  fup(1: %l12)
+l12: nop
+; @pt p40:  evd(31: 0)
+; @pt p41:  evd(1: 0xf00)
+; @pt p42:  evd(31: 0)
+; @pt p43:  evd(2: 0xbaa)
+; @pt p44:  evd(31: 0)
+; @pt p45:  cfe(9: 14, ip)
+; @pt p46:  fup(1: %l13)
+l13: nop
+; @pt p47:  cfe(31, ip)
+; @pt p48:  fup(1: %l14)
+l14: nop
+; @pt p49:  cfe(31)
+
+; @pt .exp(ptdump)
+;%0p0   psb
+;%0p1   mode.exec  cs.l, if
+;%0p2   psbend
+;%0p3   mode.exec  cs.d
+;%0p4   fup        3: %?l0
+;%0p5   mode.exec  cs.l, if
+;%0p6   fup        1: %?l1.2
+;%0p7   evd        0: f00baa
+;%0p8   cfe        1: 14, ip
+;%0p9   fup        1: %?l2.2
+;%0p10  cfe        2
+;%0p11  cfe        1: 128
+;%0p12  cfe        2, ip
+;%0p13  fup        1: %?l3.2
+;%0p14  cfe        3, ip
+;%0p15  fup        1: %?l4.2
+;%0p16  cfe        4
+;%0p17  cfe        6, ip
+;%0p18  fup        1: %?l5.2
+;%0p19  cfe        5: ce
+;%0p20  evd        1: f00baa
+;%0p21  evd        2: 0
+;%0p22  cfe        9: 14, ip
+;%0p23  fup        1: %?l6.2
+;%0p24  cfe        7, ip
+;%0p25  fup        1: %?l6.2
+;%0p26  evd        2: a
+;%0p27  cfe        8, ip
+;%0p28  fup        1: %?l7.2
+;%0p29  cfe        7, ip
+;%0p30  fup        1: %?l8.2
+;%0p31  cfe        10, ip
+;%0p32  fup        1: %?l9.2
+;%0p33  cfe        12: 4, ip
+;%0p34  fup        1: %?l10.2
+;%0p35  cfe        13, ip
+;%0p36  fup        1: %?l11.2
+;%0p37  evd        31: 0
+;%0p38  cfe        1: 128, ip
+;%0p39  fup        1: %?l12.2
+;%0p40  evd        31: 0
+;%0p41  evd        1: f00
+;%0p42  evd        31: 0
+;%0p43  evd        2: baa
+;%0p44  evd        31: 0
+;%0p45  cfe        9: 14, ip
+;%0p46  fup        1: %?l13.2
+;%0p47  cfe        31, ip
+;%0p48  fup        1: %?l14.2
+;%0p49  cfe        31
+
+
+; @pt .exp(ptxed)
+;[exec mode: 32-bit, ip: %0l0]
+;[interrupts disabled, ip: %0l0]
+;[exec mode: 64-bit, ip: %0l1]
+;[interrupts enabled, ip: %0l1]
+;[interrupt 14, cr2: 0000000000f00baa, ip: %0l2]
+;[iret]
+;[interrupt 128]
+;[iret, ip: %0l3]
+;[smi, ip: %0l4]
+;[rsm]
+;[init, ip: %0l5]
+;[sipi: ce]
+;[vmexit, intr: 14, vmxr: 0000000000000000, vmxq: 0000000000f00baa, ip: %0l6]
+;[vmentry, ip: %0l6]
+;[vmexit, vmxr: 000000000000000a, ip: %0l7]
+;[vmentry, ip: %0l8]
+;[shutdown, ip: %0l9]
+;[uintr 4, ip: %0l10]
+;[uiret, ip: %0l11]
+;[interrupt 128, ip: %0l12]
+;[vmexit, intr: 14, vmxr: 0000000000000baa, vmxq: 0000000000000f00, ip: %0l13]

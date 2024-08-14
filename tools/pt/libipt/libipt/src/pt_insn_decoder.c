@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2013-2022, Intel Corporation
+ * Copyright (c) 2013-2024, Intel Corporation
+ * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -58,6 +59,9 @@ static void pt_insn_reset(struct pt_insn_decoder *decoder)
 	decoder->bound_paging = 0;
 	decoder->bound_vmcs = 0;
 	decoder->bound_ptwrite = 0;
+	decoder->bound_iret = 0;
+	decoder->bound_vmentry = 0;
+	decoder->bound_uiret = 0;
 
 	pt_retstack_init(&decoder->retstack);
 	pt_asid_init(&decoder->asid);
@@ -101,6 +105,8 @@ static int pt_insn_init_qry_flags(struct pt_conf_flags *qflags,
 	memset(qflags, 0, sizeof(*qflags));
 	qflags->variant.query.keep_tcal_on_ovf =
 		flags->variant.insn.keep_tcal_on_ovf;
+	qflags->variant.query.enable_iflags_events =
+		flags->variant.insn.enable_iflags_events;
 
 	return 0;
 }
@@ -760,6 +766,9 @@ static int pt_insn_clear_postponed(struct pt_insn_decoder *decoder)
 	decoder->bound_paging = 0;
 	decoder->bound_vmcs = 0;
 	decoder->bound_ptwrite = 0;
+	decoder->bound_iret = 0;
+	decoder->bound_vmentry = 0;
+	decoder->bound_uiret = 0;
 
 	return 0;
 }
@@ -840,6 +849,15 @@ static int pt_insn_check_insn_event(struct pt_insn_decoder *decoder,
 	case ptev_tick:
 	case ptev_cbr:
 	case ptev_mnt:
+	case ptev_iflags:
+	case ptev_interrupt:
+	case ptev_smi:
+	case ptev_rsm:
+	case ptev_sipi:
+	case ptev_init:
+	case ptev_vmexit:
+	case ptev_shutdown:
+	case ptev_uintr:
 		/* We're only interested in events that bind to instructions. */
 		return 0;
 
@@ -945,6 +963,99 @@ static int pt_insn_check_insn_event(struct pt_insn_decoder *decoder,
 		 * ptwrite events to this instruction.
 		 */
 		decoder->bound_ptwrite = 1;
+
+		return pt_insn_postpone(decoder, insn, iext);
+
+	case ptev_iret:
+		/* We bind at most one iret event to an instruction. */
+		if (decoder->bound_iret)
+			return 0;
+
+		if (ev->ip_suppressed) {
+			if (!pt_insn_is_iret(insn, iext))
+				return 0;
+
+			/* Fill in the event IP. */
+			ev->variant.iret.ip = decoder->ip;
+			ev->ip_suppressed = 0;
+		} else {
+			/* The iret event contains the IP of the iret
+			 * instruction (CLIP) unlike most events that contain
+			 * the IP of the first instruction that did not
+			 * complete (NLIP).
+			 *
+			 * It's easier to handle this case here, as well.
+			 */
+			if (decoder->ip != ev->variant.iret.ip)
+				return 0;
+		}
+
+		/* We bound an iret event.  Make sure we do not bind further
+		 * iret events to this instruction.
+		 */
+		decoder->bound_iret = 1;
+
+		return pt_insn_postpone(decoder, insn, iext);
+
+	case ptev_vmentry:
+		/* We bind at most one vmentry event to an instruction. */
+		if (decoder->bound_vmentry)
+			return 0;
+
+		if (ev->ip_suppressed) {
+			if (!pt_insn_is_vmentry(insn, iext))
+				return 0;
+
+			/* Fill in the event IP. */
+			ev->variant.vmentry.ip = decoder->ip;
+			ev->ip_suppressed = 0;
+		} else {
+			/* The vmentry event contains the IP of the vmentry
+			 * instruction (CLIP) unlike most events that contain
+			 * the IP of the first instruction that did not
+			 * complete (NLIP).
+			 *
+			 * It's easier to handle this case here, as well.
+			 */
+			if (decoder->ip != ev->variant.vmentry.ip)
+				return 0;
+		}
+
+		/* We bound a vmentry event.  Make sure we do not bind further
+		 * vmentry events to this instruction.
+		 */
+		decoder->bound_vmentry = 1;
+
+		return pt_insn_postpone(decoder, insn, iext);
+
+	case ptev_uiret:
+		/* We bind at most one uiret event to an instruction. */
+		if (decoder->bound_uiret)
+			return 0;
+
+		if (ev->ip_suppressed) {
+			if (!pt_insn_is_uiret(insn, iext))
+				return 0;
+
+			/* Fill in the event IP. */
+			ev->variant.uiret.ip = decoder->ip;
+			ev->ip_suppressed = 0;
+		} else {
+			/* The uiret event contains the IP of the uiret
+			 * instruction (CLIP) unlike most events that contain
+			 * the IP of the first instruction that did not
+			 * complete (NLIP).
+			 *
+			 * It's easier to handle this case here, as well.
+			 */
+			if (decoder->ip != ev->variant.uiret.ip)
+				return 0;
+		}
+
+		/* We bound an uiret event.  Make sure we do not bind further
+		 * uiret events to this instruction.
+		 */
+		decoder->bound_uiret = 1;
 
 		return pt_insn_postpone(decoder, insn, iext);
 	}
@@ -1135,7 +1246,7 @@ static int pt_insn_check_ip_event(struct pt_insn_decoder *decoder,
 		return pt_insn_status(decoder, pts_event_pending);
 
 	case ptev_exec_mode:
-		if (!ev->ip_suppressed &&
+		if (decoder->enabled && !ev->ip_suppressed &&
 		    ev->variant.exec_mode.ip != decoder->ip)
 			break;
 
@@ -1212,6 +1323,115 @@ static int pt_insn_check_ip_event(struct pt_insn_decoder *decoder,
 	case ptev_tip:
 	case ptev_tnt:
 		return -pte_internal;
+
+	case ptev_iflags:
+		if (decoder->enabled && !ev->ip_suppressed &&
+		    ev->variant.iflags.ip != decoder->ip)
+			break;
+
+		return pt_insn_status(decoder, pts_event_pending);
+
+	case ptev_interrupt:
+		if (decoder->enabled && !ev->ip_suppressed &&
+		    ev->variant.interrupt.ip != decoder->ip)
+			break;
+
+		return pt_insn_status(decoder, pts_event_pending);
+
+	case ptev_iret:
+		/* Any event binding to the current IRET instruction is handled
+		 * in pt_insn_check_insn_event().
+		 *
+		 * Any subsequent iret event binds to a different instruction
+		 * and must wait until the next iteration - as long as tracing
+		 * is enabled.
+		 *
+		 * When tracing is disabled, we forward all iret events
+		 * immediately to the user.
+		 */
+		if (decoder->enabled)
+			break;
+
+		return pt_insn_status(decoder, pts_event_pending);
+
+	case ptev_smi:
+		if (decoder->enabled && !ev->ip_suppressed &&
+		    ev->variant.smi.ip != decoder->ip)
+			break;
+
+		return pt_insn_status(decoder, pts_event_pending);
+
+	case ptev_rsm:
+		if (!ev->ip_suppressed)
+			return -pte_internal;
+
+		return pt_insn_status(decoder, pts_event_pending);
+
+	case ptev_init:
+		if (decoder->enabled && !ev->ip_suppressed &&
+		    ev->variant.init.ip != decoder->ip)
+			break;
+
+		return pt_insn_status(decoder, pts_event_pending);
+
+	case ptev_sipi:
+		if (!ev->ip_suppressed)
+			return -pte_internal;
+
+		return pt_insn_status(decoder, pts_event_pending);
+
+	case ptev_vmentry:
+		/* Any event binding to the current vmentry instruction is
+		 * handled in pt_insn_check_insn_event().
+		 *
+		 * Any subsequent vmentry event binds to a different
+		 * instruction and must wait until the next iteration - as long
+		 * as tracing is enabled.
+		 *
+		 * When tracing is disabled, we forward all vmentry events
+		 * immediately to the user.
+		 */
+		if (decoder->enabled)
+			break;
+
+		return pt_insn_status(decoder, pts_event_pending);
+
+	case ptev_vmexit:
+		if (decoder->enabled && !ev->ip_suppressed &&
+		    ev->variant.vmexit.ip != decoder->ip)
+			break;
+
+		return pt_insn_status(decoder, pts_event_pending);
+
+	case ptev_shutdown:
+		if (decoder->enabled && !ev->ip_suppressed &&
+		    ev->variant.shutdown.ip != decoder->ip)
+			break;
+
+		return pt_insn_status(decoder, pts_event_pending);
+
+	case ptev_uintr:
+		if (decoder->enabled && !ev->ip_suppressed &&
+		    ev->variant.uintr.ip != decoder->ip)
+			break;
+
+		return pt_insn_status(decoder, pts_event_pending);
+
+	case ptev_uiret:
+		/* Any event binding to the current UIRET instruction is
+		 * handled in pt_insn_check_insn_event().
+		 *
+		 * Any subsequent uiret event binds to a different instruction
+		 * and must wait until the next iteration - as long as tracing
+		 * is enabled.
+		 *
+		 * When tracing is disabled, we forward all uiret events
+		 * immediately to the user.
+		 */
+		if (decoder->enabled)
+			break;
+
+		return pt_insn_status(decoder, pts_event_pending);
 	}
 
 	return pt_insn_status(decoder, 0);
@@ -1228,7 +1448,8 @@ static inline int insn_to_user(struct pt_insn *uinsn, size_t size,
 
 	/* Zero out any unknown bytes. */
 	if (sizeof(*insn) < size) {
-		memset(uinsn + sizeof(*insn), 0, size - sizeof(*insn));
+		memset(((uint8_t *) uinsn) + sizeof(*insn), 0,
+		       size - sizeof(*insn));
 
 		size = sizeof(*insn);
 	}
@@ -1758,11 +1979,75 @@ int pt_insn_event(struct pt_insn_decoder *decoder, struct pt_event *uevent,
 	case ptev_tick:
 	case ptev_cbr:
 	case ptev_mnt:
+	case ptev_iret:
+	case ptev_vmentry:
+	case ptev_uiret:
 		break;
 
 	case ptev_tip:
 	case ptev_tnt:
 		return -pte_internal;
+
+	case ptev_iflags:
+		if (!ev->ip_suppressed && decoder->enabled &&
+		    decoder->ip != ev->variant.iflags.ip)
+			return -pte_bad_query;
+
+		break;
+
+	case ptev_interrupt:
+		if (!ev->ip_suppressed && decoder->enabled &&
+		    decoder->ip != ev->variant.interrupt.ip)
+			return -pte_bad_query;
+
+		break;
+
+	case ptev_smi:
+		if (!ev->ip_suppressed && decoder->enabled &&
+		    decoder->ip != ev->variant.smi.ip)
+			return -pte_bad_query;
+
+		break;
+
+	case ptev_rsm:
+		if (!ev->ip_suppressed)
+			return -pte_internal;
+
+		break;
+
+
+	case ptev_sipi:
+		if (!ev->ip_suppressed)
+			return -pte_internal;
+
+		break;
+	case ptev_init:
+		if (!ev->ip_suppressed && decoder->enabled &&
+		    decoder->ip != ev->variant.init.ip)
+			return -pte_bad_query;
+
+		break;
+
+	case ptev_vmexit:
+		if (!ev->ip_suppressed && decoder->enabled &&
+		    decoder->ip != ev->variant.vmexit.ip)
+			return -pte_bad_query;
+
+		break;
+
+	case ptev_shutdown:
+		if (!ev->ip_suppressed && decoder->enabled &&
+		    decoder->ip != ev->variant.shutdown.ip)
+			return -pte_bad_query;
+
+		break;
+
+	case ptev_uintr:
+		if (!ev->ip_suppressed && decoder->enabled &&
+		    decoder->ip != ev->variant.uintr.ip)
+			return -pte_bad_query;
+
+		break;
 	}
 
 	/* Copy the event to the user.  Make sure we're not writing beyond the

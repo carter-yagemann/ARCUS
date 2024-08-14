@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2013-2022, Intel Corporation
+ * Copyright (c) 2013-2024, Intel Corporation
+ * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -61,7 +62,8 @@ static struct ptunit_result ptunit_ild_decode(uint8_t *raw, uint8_t size,
 /* Check that an instruction is decoded and classified correctly. */
 static struct ptunit_result ptunit_ild_classify(uint8_t *raw, uint8_t size,
 						enum pt_exec_mode mode,
-						pti_inst_enum_t iclass)
+						enum pt_insn_class iclass,
+						pti_inst_enum_t xclass)
 {
 	struct pt_insn_ext iext;
 	struct pt_insn insn;
@@ -78,7 +80,8 @@ static struct ptunit_result ptunit_ild_classify(uint8_t *raw, uint8_t size,
 	ptu_int_eq(errcode, 0);
 
 	ptu_uint_eq(insn.size, size);
-	ptu_int_eq(iext.iclass, iclass);
+	ptu_int_eq(insn.iclass, iclass);
+	ptu_int_eq(iext.iclass, xclass);
 
 	return ptu_passed();
 }
@@ -113,15 +116,15 @@ static struct ptunit_result ptunit_ild_invalid(uint8_t *raw, uint8_t size,
 #define ptu_decode(insn, size, mode)		\
 	ptu_check(ptunit_ild_decode, insn, size, mode)
 
-#define ptu_classify(insn, size, mode, iclass)			\
-	ptu_check(ptunit_ild_classify, insn, size, mode, iclass)
+#define ptu_classify(insn, size, mode, iclass, xclass)			\
+	ptu_check(ptunit_ild_classify, insn, size, mode, iclass, xclass)
 
 /* Macros to also automatically supply the instruction size. */
 #define ptu_decode_s(insn, mode)			\
 	ptu_decode(insn, sizeof(insn), mode)
 
-#define ptu_classify_s(insn, mode, iclass)		\
-	ptu_classify(insn, sizeof(insn), mode, iclass)
+#define ptu_classify_s(insn, mode, iclass, xclass)		\
+	ptu_classify(insn, sizeof(insn), mode, iclass, xclass)
 
 #define ptu_invalid_s(insn, mode)				\
 	ptu_check(ptunit_ild_invalid, insn, sizeof(insn), mode)
@@ -140,7 +143,7 @@ static struct ptunit_result jmp_rel(void)
 {
 	uint8_t insn[] = { 0xE9, 0x60, 0xF9, 0xFF, 0xFF };
 
-	ptu_classify_s(insn, ptem_64bit, PTI_INST_JMP_E9);
+	ptu_classify_s(insn, ptem_64bit, ptic_jump, PTI_INST_JMP_E9);
 
 	return ptu_passed();
 }
@@ -253,7 +256,7 @@ static struct ptunit_result syscall(void)
 {
 	uint8_t insn[] = { 0x0f, 0x05 };
 
-	ptu_classify_s(insn, ptem_64bit, PTI_INST_SYSCALL);
+	ptu_classify_s(insn, ptem_64bit, ptic_far_call, PTI_INST_SYSCALL);
 
 	return ptu_passed();
 }
@@ -262,7 +265,7 @@ static struct ptunit_result sysret(void)
 {
 	uint8_t insn[] = { 0x0f, 0x07 };
 
-	ptu_classify_s(insn, ptem_64bit, PTI_INST_SYSRET);
+	ptu_classify_s(insn, ptem_64bit, ptic_far_return, PTI_INST_SYSRET);
 
 	return ptu_passed();
 }
@@ -271,7 +274,7 @@ static struct ptunit_result sysenter(void)
 {
 	uint8_t insn[] = { 0x0f, 0x34 };
 
-	ptu_classify_s(insn, ptem_64bit, PTI_INST_SYSENTER);
+	ptu_classify_s(insn, ptem_64bit, ptic_far_call, PTI_INST_SYSENTER);
 
 	return ptu_passed();
 }
@@ -280,7 +283,7 @@ static struct ptunit_result sysexit(void)
 {
 	uint8_t insn[] = { 0x0f, 0x35 };
 
-	ptu_classify_s(insn, ptem_64bit, PTI_INST_SYSEXIT);
+	ptu_classify_s(insn, ptem_64bit, ptic_far_return, PTI_INST_SYSEXIT);
 
 	return ptu_passed();
 }
@@ -289,7 +292,7 @@ static struct ptunit_result int3(void)
 {
 	uint8_t insn[] = { 0xcc };
 
-	ptu_classify_s(insn, ptem_64bit, PTI_INST_INT3);
+	ptu_classify_s(insn, ptem_64bit, ptic_far_call, PTI_INST_INT3);
 
 	return ptu_passed();
 }
@@ -298,7 +301,7 @@ static struct ptunit_result intn(void)
 {
 	uint8_t insn[] = { 0xcd, 0x06 };
 
-	ptu_classify_s(insn, ptem_64bit, PTI_INST_INT);
+	ptu_classify_s(insn, ptem_64bit, ptic_far_call, PTI_INST_INT);
 
 	return ptu_passed();
 }
@@ -307,7 +310,7 @@ static struct ptunit_result iret(void)
 {
 	uint8_t insn[] = { 0xcf };
 
-	ptu_classify_s(insn, ptem_64bit, PTI_INST_IRET);
+	ptu_classify_s(insn, ptem_64bit, ptic_far_return, PTI_INST_IRET);
 
 	return ptu_passed();
 }
@@ -316,7 +319,7 @@ static struct ptunit_result call_9a_cd(void)
 {
 	uint8_t insn[] = { 0x9a, 0x00, 0x00, 0x00, 0x00 };
 
-	ptu_classify_s(insn, ptem_16bit, PTI_INST_CALL_9A);
+	ptu_classify_s(insn, ptem_16bit, ptic_far_call, PTI_INST_CALL_9A);
 
 	return ptu_passed();
 }
@@ -325,7 +328,7 @@ static struct ptunit_result call_9a_cp(void)
 {
 	uint8_t insn[] = { 0x9a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
-	ptu_classify_s(insn, ptem_32bit, PTI_INST_CALL_9A);
+	ptu_classify_s(insn, ptem_32bit, ptic_far_call, PTI_INST_CALL_9A);
 
 	return ptu_passed();
 }
@@ -334,7 +337,7 @@ static struct ptunit_result call_ff_3(void)
 {
 	uint8_t insn[] = { 0xff, 0x1c, 0x25, 0x00, 0x00, 0x00, 0x00 };
 
-	ptu_classify_s(insn, ptem_64bit, PTI_INST_CALL_FFr3);
+	ptu_classify_s(insn, ptem_64bit, ptic_far_call, PTI_INST_CALL_FFr3);
 
 	return ptu_passed();
 }
@@ -343,7 +346,7 @@ static struct ptunit_result jmp_ff_5(void)
 {
 	uint8_t insn[] = { 0xff, 0x2c, 0x25, 0x00, 0x00, 0x00, 0x00 };
 
-	ptu_classify_s(insn, ptem_64bit, PTI_INST_JMP_FFr5);
+	ptu_classify_s(insn, ptem_64bit, ptic_far_jump, PTI_INST_JMP_FFr5);
 
 	return ptu_passed();
 }
@@ -352,7 +355,7 @@ static struct ptunit_result jmp_ea_cd(void)
 {
 	uint8_t insn[] = { 0xea, 0x00, 0x00, 0x00, 0x00 };
 
-	ptu_classify_s(insn, ptem_16bit, PTI_INST_JMP_EA);
+	ptu_classify_s(insn, ptem_16bit, ptic_far_jump, PTI_INST_JMP_EA);
 
 	return ptu_passed();
 }
@@ -361,7 +364,7 @@ static struct ptunit_result jmp_ea_cp(void)
 {
 	uint8_t insn[] = { 0xea, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
-	ptu_classify_s(insn, ptem_32bit, PTI_INST_JMP_EA);
+	ptu_classify_s(insn, ptem_32bit, ptic_far_jump, PTI_INST_JMP_EA);
 
 	return ptu_passed();
 }
@@ -370,7 +373,7 @@ static struct ptunit_result ret_ca(void)
 {
 	uint8_t insn[] = { 0xca, 0x00, 0x00 };
 
-	ptu_classify_s(insn, ptem_64bit, PTI_INST_RET_CA);
+	ptu_classify_s(insn, ptem_64bit, ptic_far_return, PTI_INST_RET_CA);
 
 	return ptu_passed();
 }
@@ -379,7 +382,7 @@ static struct ptunit_result vmlaunch(void)
 {
 	uint8_t insn[] = { 0x0f, 0x01, 0xc2 };
 
-	ptu_classify_s(insn, ptem_64bit, PTI_INST_VMLAUNCH);
+	ptu_classify_s(insn, ptem_64bit, ptic_far_return, PTI_INST_VMLAUNCH);
 
 	return ptu_passed();
 }
@@ -388,7 +391,7 @@ static struct ptunit_result vmresume(void)
 {
 	uint8_t insn[] = { 0x0f, 0x01, 0xc3 };
 
-	ptu_classify_s(insn, ptem_64bit, PTI_INST_VMRESUME);
+	ptu_classify_s(insn, ptem_64bit, ptic_far_return, PTI_INST_VMRESUME);
 
 	return ptu_passed();
 }
@@ -397,7 +400,7 @@ static struct ptunit_result vmcall(void)
 {
 	uint8_t insn[] = { 0x0f, 0x01, 0xc1 };
 
-	ptu_classify_s(insn, ptem_64bit, PTI_INST_VMCALL);
+	ptu_classify_s(insn, ptem_64bit, ptic_far_call, PTI_INST_VMCALL);
 
 	return ptu_passed();
 }
@@ -406,7 +409,7 @@ static struct ptunit_result vmptrld(void)
 {
 	uint8_t insn[] = { 0x0f, 0xc7, 0x30 };
 
-	ptu_classify_s(insn, ptem_64bit, PTI_INST_VMPTRLD);
+	ptu_classify_s(insn, ptem_64bit, ptic_other, PTI_INST_VMPTRLD);
 
 	return ptu_passed();
 }
@@ -415,7 +418,7 @@ static struct ptunit_result jrcxz(void)
 {
 	uint8_t insn[] = { 0xe3, 0x00 };
 
-	ptu_classify_s(insn, ptem_64bit, PTI_INST_JrCXZ);
+	ptu_classify_s(insn, ptem_64bit, ptic_cond_jump, PTI_INST_JrCXZ);
 
 	return ptu_passed();
 }
@@ -650,9 +653,9 @@ static struct ptunit_result ptwrite_r32(void)
 {
 	uint8_t insn[] = { 0xf3, 0x0f, 0xae, 0xe7 };
 
-	ptu_classify_s(insn, ptem_64bit, PTI_INST_PTWRITE);
-	ptu_classify_s(insn, ptem_32bit, PTI_INST_PTWRITE);
-	ptu_classify_s(insn, ptem_16bit, PTI_INST_PTWRITE);
+	ptu_classify_s(insn, ptem_64bit, ptic_ptwrite, PTI_INST_PTWRITE);
+	ptu_classify_s(insn, ptem_32bit, ptic_ptwrite, PTI_INST_PTWRITE);
+	ptu_classify_s(insn, ptem_16bit, ptic_ptwrite, PTI_INST_PTWRITE);
 
 	return ptu_passed();
 }
@@ -661,9 +664,9 @@ static struct ptunit_result ptwrite_m32(void)
 {
 	uint8_t insn[] = { 0xf3, 0x0f, 0xae, 0x67, 0xcc };
 
-	ptu_classify_s(insn, ptem_64bit, PTI_INST_PTWRITE);
-	ptu_classify_s(insn, ptem_32bit, PTI_INST_PTWRITE);
-	ptu_classify_s(insn, ptem_16bit, PTI_INST_PTWRITE);
+	ptu_classify_s(insn, ptem_64bit, ptic_ptwrite, PTI_INST_PTWRITE);
+	ptu_classify_s(insn, ptem_32bit, ptic_ptwrite, PTI_INST_PTWRITE);
+	ptu_classify_s(insn, ptem_16bit, ptic_ptwrite, PTI_INST_PTWRITE);
 
 	return ptu_passed();
 }
@@ -672,7 +675,7 @@ static struct ptunit_result ptwrite_r64(void)
 {
 	uint8_t insn[] = { 0xf3, 0x48, 0x0f, 0xae, 0xe7 };
 
-	ptu_classify_s(insn, ptem_64bit, PTI_INST_PTWRITE);
+	ptu_classify_s(insn, ptem_64bit, ptic_ptwrite, PTI_INST_PTWRITE);
 
 	return ptu_passed();
 }
@@ -681,7 +684,7 @@ static struct ptunit_result ptwrite_m64(void)
 {
 	uint8_t insn[] = { 0xf3, 0x48, 0x0f, 0xae, 0x67, 0xcc };
 
-	ptu_classify_s(insn, ptem_64bit, PTI_INST_PTWRITE);
+	ptu_classify_s(insn, ptem_64bit, ptic_ptwrite, PTI_INST_PTWRITE);
 
 	return ptu_passed();
 }
@@ -690,7 +693,37 @@ static struct ptunit_result uiret(void)
 {
 	uint8_t insn[] = { 0xf3, 0x0f, 0x01, 0xec };
 
-	ptu_classify_s(insn, ptem_64bit, PTI_INST_UIRET);
+	ptu_classify_s(insn, ptem_64bit, ptic_far_return, PTI_INST_UIRET);
+
+	return ptu_passed();
+}
+
+static struct ptunit_result into(void)
+{
+	uint8_t insn[] = { 0xce };
+
+	ptu_classify_s(insn, ptem_32bit, ptic_far_call, PTI_INST_INTO);
+	ptu_classify_s(insn, ptem_16bit, ptic_far_call, PTI_INST_INTO);
+
+	return ptu_passed();
+}
+
+static struct ptunit_result mov_cr3(void)
+{
+	uint8_t insn[] = { 0x0f, 0x22, 0x18 };
+
+	ptu_classify_s(insn, ptem_64bit, ptic_other, PTI_INST_MOV_CR3);
+	ptu_classify_s(insn, ptem_32bit, ptic_other, PTI_INST_MOV_CR3);
+	ptu_classify_s(insn, ptem_16bit, ptic_other, PTI_INST_MOV_CR3);
+
+	return ptu_passed();
+}
+
+static struct ptunit_result rex_mov_cr3(void)
+{
+	uint8_t insn[] = { 0x40, 0x0f, 0x22, 0x18 };
+
+	ptu_classify_s(insn, ptem_64bit, ptic_other, PTI_INST_MOV_CR3);
 
 	return ptu_passed();
 }
@@ -762,6 +795,9 @@ int main(int argc, char **argv)
 	ptu_run(suite, ptwrite_r64);
 	ptu_run(suite, ptwrite_m64);
 	ptu_run(suite, uiret);
+	ptu_run(suite, into);
+	ptu_run(suite, mov_cr3);
+	ptu_run(suite, rex_mov_cr3);
 
 	return ptunit_report(&suite);
 }

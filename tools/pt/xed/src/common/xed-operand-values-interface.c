@@ -1,6 +1,6 @@
 /* BEGIN_LEGAL 
 
-Copyright (c) 2023 Intel Corporation
+Copyright (c) 2024 Intel Corporation
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -343,19 +343,39 @@ xed_operand_values_has_66_prefix(const xed_operand_values_t* p)
 xed_bool_t
 xed_operand_values_mandatory_66_prefix(const xed_operand_values_t* p)
 {
-    // For legacy instructions, the x66 prefix is mandatory if the REFINING66()/IGNORE66() prefix is used.
-    // When this prefix is used, the OSZ variable is zeroed; therefore we check both conditions.
-    // For {E,}VEX instructions, x66 is mandatory if it's an opcode extension and part of the pp field.
-    if(xed3_operand_get_vexvalid(p) != 0) // VEX or EVEX 
-    {
-        return (xed_operand_values_get_pp_vex_prefix(p) == 1);
-    }
-    else if (xed_operand_values_has_66_prefix(p) &&
-        xed_operand_values_has_operand_size_prefix(p) == 0) // legacy
-    {
-        return 1;
-    }
+    /*
+     * For legacy instructions, the x66 prefix is mandatory if the REFINING66()/IGNORE66() prefix is used.
+     * When this prefix is used, the OSZ variable is zeroed; therefore we check both conditions.
+     *
+     * For VEX instructions, x66 is mandatory if it's an opcode extension and part of the pp field.
+     * EVEX is akin, except for instructions featuring a scalable operand (0x66 used as an OSZ var)
+     */
 
+    // Legacy
+    xed_bool_t encspace = xed3_operand_get_vexvalid(p);
+    if (encspace == 0)
+    {
+        if (xed_operand_values_has_66_prefix(p) &&
+            xed_operand_values_has_operand_size_prefix(p) == 0)
+        {
+            return 1;
+        }
+    }
+    // VEX
+    else if (encspace == 1)
+    {
+        return ((xed_operand_values_get_pp_vex_prefix(p) == 1));
+    }
+    // EVEX
+    else if (encspace == 2)
+    {
+        if ((xed_operand_values_get_pp_vex_prefix(p) == 1) &&
+            (xed_decoded_inst_get_attribute(p, XED_ATTRIBUTE_SCALABLE) == 0))
+        {
+            return 1;
+        }
+    }
+    
     return 0;
 }
 
@@ -499,8 +519,8 @@ xed_operand_values_is_nop(const xed_operand_values_t* p)
 
 
 
-xed_int32_t
-xed_operand_values_get_branch_displacement_int32(
+xed_int64_t
+xed_operand_values_get_branch_displacement_int64(
     const xed_operand_values_t* p)
 {
     const xed_decoded_inst_t* xedd = (const xed_decoded_inst_t*)p; // same type
@@ -509,6 +529,7 @@ xed_operand_values_get_branch_displacement_int32(
       case 8:
       case 16: 
       case 32: 
+      case 64: 
         return xed3_operand_get_disp(xedd);
       default:
         return 0;
@@ -572,7 +593,7 @@ xed_uint8_t
 xed_operand_values_get_branch_displacement_byte(const xed_operand_values_t* p,
                                                 unsigned int i) {
     unsigned int len = xed3_operand_get_brdisp_width(p);
-    xed_int32_t v = xed_operand_values_get_branch_displacement_int32(p); //FIXME: BENDIAN
+    xed_int64_t v = xed_operand_values_get_branch_displacement_int64(p); //FIXME: BENDIAN
     return xed_get_byte(v, i, len);
 }
 
@@ -621,6 +642,10 @@ void
 xed_operand_values_set_relbr(xed_operand_values_t* p) {
     xed3_operand_set_relbr(p,1);
 }
+void
+xed_operand_values_set_absbr(xed_operand_values_t* p) {
+    xed3_operand_set_absbr(p,1);
+}
 
 void
 xed_operand_values_set_effective_operand_width(xed_operand_values_t* p,
@@ -658,8 +683,8 @@ xed_operand_values_set_memory_operand_length(xed_operand_values_t* p,
 unsigned int
 xed_operand_values_get_memory_operand_length(const xed_operand_values_t* p,
                                              unsigned int memop_idx)  {
+    (void)memop_idx;    
     return xed3_operand_get_mem_width(p);
-    (void)memop_idx;
 }
 
 void
@@ -689,19 +714,19 @@ xed_operand_values_set_memory_displacement_bits(xed_operand_values_t* p,
 
 void
 xed_operand_values_set_branch_displacement(xed_operand_values_t* p,
-                                           xed_int32_t x,
+                                           xed_int64_t x,
                                            unsigned int len) {
     xed_operand_values_set_branch_displacement_bits(p,x,len*8);
 }
 void
 xed_operand_values_set_branch_displacement_bits(xed_operand_values_t* p,
-                                                xed_int32_t x,
+                                                xed_int64_t x,
                                                 unsigned int len) {
     /* Set the real displacement value x in big-endian form for emitting.
      * Make sure that the LSB of x is the MSB of the xed3_operand_get_(p)* field
      * because we emit them starting from the MSB based on the width */
-    xed_assert(len==0 || len==8 || len==16 || len==32);
-    if (len ==0){
+    xed_assert(len==0 || len==8 || len==16 || len==32 || len==64);
+    if (len == 0){
         xed3_operand_set_disp(p,0);
     }
     else{
@@ -973,7 +998,18 @@ xed_operand_values_dump(    const xed_operand_values_t* ov,
             break;
           case XED_OPERAND_PTR: 
             if (xed3_operand_get_ptr(ov)) {
-                xed_int64_t be_disp = xed_operand_values_get_branch_displacement_int32(ov);
+                xed_int64_t be_disp = xed_operand_values_get_branch_displacement_int64(ov);
+                xed_bool_t long_mode = xed_operand_values_get_long_mode(ov);
+                xed_uint_t xed_bits_to_print = long_mode ? 8*8 : 4*8;
+                emitted = add_comma(emitted,buf,&blen);
+                blen = xed_strncat(buf, xed_operand_enum_t2str(XED_STATIC_CAST(xed_operand_enum_t,i)),blen);
+                blen = xed_strncat(buf,":0x",blen);
+                blen = xed_itoa_hex_zeros(buf+xed_strlen(buf), be_disp, xed_bits_to_print, leading_zeros, blen);
+            }
+            break;
+          case XED_OPERAND_ABSBR: 
+            if (xed3_operand_get_absbr(ov)) {
+                xed_int64_t be_disp = xed_operand_values_get_branch_displacement_int64(ov);
                 xed_bool_t long_mode = xed_operand_values_get_long_mode(ov);
                 xed_uint_t xed_bits_to_print = long_mode ? 8*8 : 4*8;
                 emitted = add_comma(emitted,buf,&blen);
@@ -984,7 +1020,7 @@ xed_operand_values_dump(    const xed_operand_values_t* ov,
             break;
           case XED_OPERAND_RELBR: 
             if (xed3_operand_get_relbr(ov)) {
-                xed_int64_t be_disp = xed_operand_values_get_branch_displacement_int32(ov);
+                xed_int64_t be_disp = xed_operand_values_get_branch_displacement_int64(ov);
                 xed_uint64_t effective_addr;
                 xed_bool_t long_mode;
                 xed_uint_t xed_bits_to_print;

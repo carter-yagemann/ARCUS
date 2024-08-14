@@ -1,6 +1,7 @@
 #! /bin/bash
 #
-# Copyright (c) 2013-2022, Intel Corporation
+# Copyright (c) 2013-2024, Intel Corporation
+# SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
@@ -152,8 +153,8 @@ run-ptt-test() {
 	lst=$base.lst
 
 
-	# execute pttc - remove the extra \r in Windows line endings
-	files=`run "$pttc_cmd" $pttc_arg $cpu "$ptt" | sed 's/\r\n/\n/g'`
+	# execute pttc to produce input and expected output files
+	files=`run "$pttc_cmd" $pttc_arg $cpu "$ptt"`
 	ret=$?
 	if [[ $ret != 0 ]]; then
 		echo "$ptt: $pttc_cmd $pttc_arg failed with $ret" >&2

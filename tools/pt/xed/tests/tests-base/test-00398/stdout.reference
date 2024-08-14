@@ -16,7 +16,7 @@ Operands
 0   MEM0           (see below) SUPPRESSED   W         Q   64     8     1     64        INT    INVALID
 1  BASE0             BASE0=RDI SUPPRESSED  RW       ASZ   64     8     1     64        INT        GPR
 2   REG0              REG0=RAX SUPPRESSED   R         Q   64     8     1     64        INT        GPR
-3   REG1           REG1=RFLAGS SUPPRESSED   R         Y   64     8     1     64        INT      FLAGS
+3   REG1           REG1=RFLAGS SUPPRESSED   R   INVALID   64     8     1     64        INT      FLAGS
 Memory Operands
   0 written BASE= RDI/GPR  ASZ0=64
   MemopBytes = 8
@@ -28,5 +28,6 @@ FLAGS:
 ATTRIBUTES: FIXED_BASE0 
 Number of legacy prefixes: 1 
 ISA SET: [LONGMODE]
-0	CPUID BIT NAME: [INTEL64]
-	Leaf 0x80000001, subleaf 0x00000000, EDX[29]
+0	CPUID GROUP NAME: [LONGMODE]
+	0	CPUID RECORD NAME: [INTEL64]
+		{Leaf 0x80000001, subleaf 0x00000000, EDX[29:29]} = 1

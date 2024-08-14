@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2016-2022, Intel Corporation
+ * Copyright (c) 2016-2024, Intel Corporation
+ * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -81,10 +82,10 @@ static int pt_blk_status(const struct pt_block_decoder *decoder, int flags)
 	return flags;
 }
 
-static void pt_blk_reset(struct pt_block_decoder *decoder)
+static int pt_blk_reset(struct pt_block_decoder *decoder)
 {
 	if (!decoder)
-		return;
+		return -pte_internal;
 
 	decoder->tsc = 0ull;
 	decoder->lost_mtc = 0u;
@@ -100,10 +101,15 @@ static void pt_blk_reset(struct pt_block_decoder *decoder)
 	decoder->bound_paging = 0;
 	decoder->bound_vmcs = 0;
 	decoder->bound_ptwrite = 0;
+	decoder->bound_iret = 0;
+	decoder->bound_vmentry = 0;
+	decoder->bound_uiret = 0;
 
 	memset(&decoder->event, 0xff, sizeof(decoder->event));
 	pt_retstack_init(&decoder->retstack);
 	pt_asid_init(&decoder->asid);
+
+	return 0;
 }
 
 /* Initialize the event decoder flags based on our flags. */
@@ -117,7 +123,8 @@ static int pt_blk_init_evt_flags(struct pt_conf_flags *qflags,
 	memset(qflags, 0, sizeof(*qflags));
 	qflags->variant.event.keep_tcal_on_ovf =
 		flags->variant.block.keep_tcal_on_ovf;
-
+	qflags->variant.event.enable_iflags_events =
+		flags->variant.block.enable_iflags_events;
 	return 0;
 }
 
@@ -153,9 +160,7 @@ int pt_blk_decoder_init(struct pt_block_decoder *decoder,
 	if (errcode < 0)
 		return errcode;
 
-	pt_blk_reset(decoder);
-
-	return 0;
+	return pt_blk_reset(decoder);
 }
 
 void pt_blk_decoder_fini(struct pt_block_decoder *decoder)
@@ -381,16 +386,6 @@ static int pt_blk_start(struct pt_block_decoder *decoder)
 	return pt_blk_proceed_trailing_event(decoder, NULL);
 }
 
-static int pt_blk_sync_reset(struct pt_block_decoder *decoder)
-{
-	if (!decoder)
-		return -pte_internal;
-
-	pt_blk_reset(decoder);
-
-	return 0;
-}
-
 int pt_blk_sync_forward(struct pt_block_decoder *decoder)
 {
 	int errcode;
@@ -398,7 +393,7 @@ int pt_blk_sync_forward(struct pt_block_decoder *decoder)
 	if (!decoder)
 		return -pte_invalid;
 
-	errcode = pt_blk_sync_reset(decoder);
+	errcode = pt_blk_reset(decoder);
 	if (errcode < 0)
 		return errcode;
 
@@ -432,7 +427,7 @@ int pt_blk_sync_backward(struct pt_block_decoder *decoder)
 
 	sync = start;
 	for (;;) {
-		errcode = pt_blk_sync_reset(decoder);
+		errcode = pt_blk_reset(decoder);
 		if (errcode < 0)
 			return errcode;
 
@@ -475,7 +470,7 @@ int pt_blk_sync_set(struct pt_block_decoder *decoder, uint64_t offset)
 	if (!decoder)
 		return -pte_invalid;
 
-	errcode = pt_blk_sync_reset(decoder);
+	errcode = pt_blk_reset(decoder);
 	if (errcode < 0)
 		return errcode;
 
@@ -583,7 +578,8 @@ static inline int block_to_user(struct pt_block *ublock, size_t size,
 
 	/* Zero out any unknown bytes. */
 	if (sizeof(*block) < size) {
-		memset(ublock + sizeof(*block), 0, size - sizeof(*block));
+		memset(((uint8_t *) ublock) + sizeof(*block), 0,
+		       size - sizeof(*block));
 
 		size = sizeof(*block);
 	}
@@ -1222,6 +1218,222 @@ static int pt_blk_proceed_to_ptwrite(struct pt_block_decoder *decoder,
 	return 1;
 }
 
+/* Proceed to the event location for an iret event.
+ *
+ * We have an iret event pending.  Proceed to the event location and indicate
+ * whether we were able to reach it.
+ *
+ * In case of the event binding to an iret instruction, we pass beyond that
+ * instruction and update the event to provide the instruction's IP.
+ *
+ * In the case of the event binding to an IP provided in the event, we move
+ * beyond the instruction at that IP.
+ *
+ * Returns a positive integer if the event location was reached.
+ * Returns zero if the event location was not reached.
+ * Returns a negative error code otherwise.
+ */
+static int pt_blk_proceed_to_iret(struct pt_block_decoder *decoder,
+				  struct pt_block *block,
+				  struct pt_insn *insn,
+				  struct pt_insn_ext *iext,
+				  struct pt_event *ev)
+{
+	int status;
+
+	if (!insn || !ev)
+		return -pte_internal;
+
+	/* If we don't have an IP, the event binds to the next IRET
+	 * instruction.
+	 *
+	 * If we have an IP it still binds to the next IRET instruction but now
+	 * the IP tells us where that instruction is.  This makes most sense
+	 * when tracing is disabled and we don't have any other means of
+	 * finding the IRET instruction.  We nevertheless distinguish the two
+	 * cases, here.
+	 *
+	 * In both cases, we move beyond the IRET instruction, so it will be
+	 * the last instruction in the current block and @decoder->ip will
+	 * point to the instruction following it.
+	 */
+	if (ev->ip_suppressed) {
+		status = pt_blk_proceed_to_insn(decoder, block, insn, iext,
+						pt_insn_is_iret);
+		if (status <= 0)
+			return status;
+
+		/* We now know the IP of the IRET instruction corresponding to
+		 * this event.  Fill it in to make it more convenient for the
+		 * user to process the event.
+		 */
+		ev->variant.iret.ip = insn->ip;
+		ev->ip_suppressed = 0;
+	} else {
+		status = pt_blk_proceed_to_ip(decoder, block, insn, iext,
+					      ev->variant.iret.ip);
+		if (status <= 0)
+			return status;
+
+		/* We reached the IRET instruction and @decoder->ip points to
+		 * it; @insn/@iext still contain the preceding instruction.
+		 *
+		 * Proceed beyond the IRET to account for it.  Note that we may
+		 * still overflow the block, which would cause us to postpone
+		 * both instruction and event to the next block.
+		 */
+		status = pt_blk_proceed_one_insn(decoder, block, insn, iext);
+		if (status <= 0)
+			return status;
+	}
+
+	return 1;
+}
+
+/* Proceed to the event location for a vmentry event.
+ *
+ * We have a vmentry event pending.  Proceed to the event location and indicate
+ * whether we were able to reach it.
+ *
+ * In case of the event binding to a vmentry instruction, we pass beyond that
+ * instruction and update the event to provide the instruction's IP.
+ *
+ * In the case of the event binding to an IP provided in the event, we move
+ * beyond the instruction at that IP.
+ *
+ * Returns a positive integer if the event location was reached.
+ * Returns zero if the event location was not reached.
+ * Returns a negative error code otherwise.
+ */
+static int pt_blk_proceed_to_vmentry(struct pt_block_decoder *decoder,
+				     struct pt_block *block,
+				     struct pt_insn *insn,
+				     struct pt_insn_ext *iext,
+				     struct pt_event *ev)
+{
+	int status;
+
+	if (!insn || !ev)
+		return -pte_internal;
+
+	/* If we don't have an IP, the event binds to the next vmentry
+	 * instruction.
+	 *
+	 * If we have an IP it still binds to the next vmentry instruction but
+	 * now the IP tells us where that instruction is.  This makes most
+	 * sense when tracing is disabled and we don't have any other means of
+	 * finding the vmentry instruction.  We nevertheless distinguish the
+	 * two cases, here.
+	 *
+	 * In both cases, we move beyond the vmentry instruction, so it will be
+	 * the last instruction in the current block and @decoder->ip will
+	 * point to the instruction following it.
+	 */
+	if (ev->ip_suppressed) {
+		status = pt_blk_proceed_to_insn(decoder, block, insn, iext,
+						pt_insn_is_vmentry);
+		if (status <= 0)
+			return status;
+
+		/* We now know the IP of the vmentry instruction corresponding
+		 * to this event.  Fill it in to make it more convenient for
+		 * the user to process the event.
+		 */
+		ev->variant.vmentry.ip = insn->ip;
+		ev->ip_suppressed = 0;
+	} else {
+		status = pt_blk_proceed_to_ip(decoder, block, insn, iext,
+					      ev->variant.vmentry.ip);
+		if (status <= 0)
+			return status;
+
+		/* We reached the vmentry instruction and @decoder->ip points
+		 * to it; @insn/@iext still contain the preceding instruction.
+		 *
+		 * Proceed beyond the vmentry to account for it.  Note that we
+		 * may still overflow the block, which would cause us to
+		 * postpone both instruction and event to the next block.
+		 */
+		status = pt_blk_proceed_one_insn(decoder, block, insn, iext);
+		if (status <= 0)
+			return status;
+	}
+
+	return 1;
+}
+
+/* Proceed to the event location for an uiret event.
+ *
+ * We have an uiret event pending.  Proceed to the event location and indicate
+ * whether we were able to reach it.
+ *
+ * In case of the event binding to an uiret instruction, we pass beyond that
+ * instruction and update the event to provide the instruction's IP.
+ *
+ * In the case of the event binding to an IP provided in the event, we move
+ * beyond the instruction at that IP.
+ *
+ * Returns a positive integer if the event location was reached.
+ * Returns zero if the event location was not reached.
+ * Returns a negative error code otherwise.
+ */
+static int pt_blk_proceed_to_uiret(struct pt_block_decoder *decoder,
+				   struct pt_block *block,
+				   struct pt_insn *insn,
+				   struct pt_insn_ext *iext,
+				   struct pt_event *ev)
+{
+	int status;
+
+	if (!insn || !ev)
+		return -pte_internal;
+
+	/* If we don't have an IP, the event binds to the next UIRET
+	 * instruction.
+	 *
+	 * If we have an IP it still binds to the next UIRET instruction but
+	 * now the IP tells us where that instruction is.  This makes most
+	 * sense when tracing is disabled and we don't have any other means of
+	 * finding the UIRET instruction.  We nevertheless distinguish the two
+	 * cases, here.
+	 *
+	 * In both cases, we move beyond the UIRET instruction, so it will be
+	 * the last instruction in the current block and @decoder->ip will
+	 * point to the instruction following it.
+	 */
+	if (ev->ip_suppressed) {
+		status = pt_blk_proceed_to_insn(decoder, block, insn, iext,
+						pt_insn_is_uiret);
+		if (status <= 0)
+			return status;
+
+		/* We now know the IP of the UIRET instruction corresponding to
+		 * this event.  Fill it in to make it more convenient for the
+		 * user to process the event.
+		 */
+		ev->variant.uiret.ip = insn->ip;
+		ev->ip_suppressed = 0;
+	} else {
+		status = pt_blk_proceed_to_ip(decoder, block, insn, iext,
+					      ev->variant.uiret.ip);
+		if (status <= 0)
+			return status;
+
+		/* We reached the UIRET instruction and @decoder->ip points to
+		 * it; @insn/@iext still contain the preceding instruction.
+		 *
+		 * Proceed beyond the UIRET to account for it.  Note that we
+		 * may still overflow the block, which would cause us to
+		 * postpone both instruction and event to the next block.
+		 */
+		status = pt_blk_proceed_one_insn(decoder, block, insn, iext);
+		if (status <= 0)
+			return status;
+	}
+
+	return 1;
+}
+
 /* Try to work around erratum SKD022.
  *
  * If we get an asynchronous disable on VMLAUNCH or VMRESUME, the FUP that
@@ -1307,6 +1519,9 @@ static int pt_blk_clear_postponed_insn(struct pt_block_decoder *decoder)
 	decoder->bound_paging = 0;
 	decoder->bound_vmcs = 0;
 	decoder->bound_ptwrite = 0;
+	decoder->bound_iret = 0;
+	decoder->bound_vmentry = 0;
+	decoder->bound_uiret = 0;
 
 	return 0;
 }
@@ -1569,6 +1784,137 @@ static int pt_blk_proceed_event(struct pt_block_decoder *decoder,
 	case ptev_tip:
 	case ptev_tnt:
 		return -pte_internal;
+
+	case ptev_iflags:
+		if (ev->ip_suppressed)
+			break;
+
+		status = pt_blk_proceed_to_ip(decoder, block, &insn, &iext,
+					      ev->variant.iflags.ip);
+		if (status <= 0)
+			return status;
+
+		break;
+
+	case ptev_interrupt:
+		if (ev->ip_suppressed)
+			break;
+
+		status = pt_blk_proceed_to_ip(decoder, block, &insn, &iext,
+					      ev->variant.interrupt.ip);
+		if (status <= 0)
+			return status;
+
+		break;
+
+	case ptev_iret:
+		if (!decoder->enabled)
+			break;
+
+		status = pt_blk_proceed_to_iret(decoder, block, &insn, &iext,
+						ev);
+		if (status <= 0)
+			return status;
+
+		/* We bound an iret event.  Make sure we do not bind further
+		 * iret events to this instruction.
+		 */
+		decoder->bound_iret = 1;
+
+		return pt_blk_postpone_insn(decoder, &insn, &iext);
+
+	case ptev_smi:
+		if (ev->ip_suppressed)
+			break;
+
+		status = pt_blk_proceed_to_ip(decoder, block, &insn, &iext,
+					      ev->variant.smi.ip);
+		if (status <= 0)
+			return status;
+
+		break;
+
+	case ptev_rsm:
+		break;
+
+	case ptev_sipi:
+		break;
+
+	case ptev_init:
+		if (ev->ip_suppressed)
+			break;
+
+		status = pt_blk_proceed_to_ip(decoder, block, &insn, &iext,
+					      ev->variant.init.ip);
+		if (status <= 0)
+			return status;
+
+		break;
+
+	case ptev_vmentry:
+		if (!decoder->enabled)
+			break;
+
+		status = pt_blk_proceed_to_vmentry(decoder, block, &insn,
+						   &iext, ev);
+		if (status <= 0)
+			return status;
+
+		/* We bound a vmentry event.  Make sure we do not bind further
+		 * vmentry events to this instruction.
+		 */
+		decoder->bound_vmentry = 1;
+
+		return pt_blk_postpone_insn(decoder, &insn, &iext);
+
+	case ptev_vmexit:
+		if (ev->ip_suppressed)
+			break;
+
+		status = pt_blk_proceed_to_ip(decoder, block, &insn, &iext,
+					      ev->variant.vmexit.ip);
+		if (status <= 0)
+			return status;
+
+		break;
+
+	case ptev_shutdown:
+		if (ev->ip_suppressed)
+			break;
+
+		status = pt_blk_proceed_to_ip(decoder, block, &insn, &iext,
+					      ev->variant.shutdown.ip);
+		if (status <= 0)
+			return status;
+
+		break;
+
+	case ptev_uintr:
+		if (ev->ip_suppressed)
+			break;
+
+		status = pt_blk_proceed_to_ip(decoder, block, &insn, &iext,
+					      ev->variant.uintr.ip);
+		if (status <= 0)
+			return status;
+
+		break;
+
+	case ptev_uiret:
+		if (!decoder->enabled)
+			break;
+
+		status = pt_blk_proceed_to_uiret(decoder, block, &insn, &iext,
+						 ev);
+		if (status <= 0)
+			return status;
+
+		/* We bound an uiret event.  Make sure we do not bind further
+		 * uiret events to this instruction.
+		 */
+		decoder->bound_uiret = 1;
+
+		return pt_blk_postpone_insn(decoder, &insn, &iext);
 	}
 
 	return pt_blk_status(decoder, pts_event_pending);
@@ -2673,12 +3019,22 @@ static int pt_blk_proceed_trailing_event(struct pt_block_decoder *decoder,
 	/* Check if there is an event to process. */
 	status = decoder->status;
 	if (status < 0) {
-		/* Proceed past any postponed instruction. */
-		status = pt_blk_proceed_postponed_insn(decoder);
-		if (status < 0)
-			return status;
+		int errcode, flags;
 
-		return pt_blk_status(decoder, 0);
+		/* Proceed past any postponed instruction. */
+		errcode = pt_blk_proceed_postponed_insn(decoder);
+		if (errcode < 0)
+			return errcode;
+
+		/* Indicate a pending event to have higher layers query the
+		 * event decode error, unless we just want to indicate the end
+		 * of the trace, which is handled by pt_blk_status().
+		 */
+		flags = 0;
+		if (status != -pte_eos)
+			flags |= pts_event_pending;
+
+		return pt_blk_status(decoder, flags);
 	}
 
 	ev = &decoder->event;
@@ -2927,6 +3283,22 @@ static int pt_blk_proceed_trailing_event(struct pt_block_decoder *decoder,
 		if (status < 0)
 			return status;
 
+		/* With Event Tracing, we may get exec_mode events with an IP
+		 * while tracing is disabled.
+		 *
+		 * One scenario would be BranchEn=0; another scenario would be
+		 * IP filtering, which affects PacketEn, but not ContextEn, so
+		 * we may still see MODE.EXEC due to IF changes while tracing
+		 * is disabled as long as we are in context.
+		 *
+		 * The event decoder re-orders exec_mode and enabled events
+		 * originating from MODE.EXEC + TIP.PGE sequences such that the
+		 * enabled event comes first and events that bind to the enable
+		 * IP follow, such as paging, vmcs, or mode.
+		 */
+		if (!decoder->enabled)
+			return pt_blk_status(decoder, pts_event_pending);
+
 		if (!ev->ip_suppressed &&
 		    decoder->ip != ev->variant.exec_mode.ip)
 			break;
@@ -3024,6 +3396,198 @@ static int pt_blk_proceed_trailing_event(struct pt_block_decoder *decoder,
 		status = pt_blk_proceed_postponed_insn(decoder);
 		if (status < 0)
 			return status;
+
+		return pt_blk_status(decoder, pts_event_pending);
+
+	case ptev_iflags:
+		/* This event does not bind to an instruction. */
+		status = pt_blk_proceed_postponed_insn(decoder);
+		if (status < 0)
+			return status;
+
+		if (decoder->enabled && !ev->ip_suppressed &&
+		    decoder->ip != ev->variant.iflags.ip)
+			break;
+
+		return pt_blk_status(decoder, pts_event_pending);
+
+	case ptev_interrupt:
+		/* This event does not bind to an instruction. */
+		status = pt_blk_proceed_postponed_insn(decoder);
+		if (status < 0)
+			return status;
+
+		if (decoder->enabled && !ev->ip_suppressed &&
+		    decoder->ip != ev->variant.interrupt.ip)
+			break;
+
+		return pt_blk_status(decoder, pts_event_pending);
+
+	case ptev_iret:
+		/* We apply the event immediately if we're not tracing. */
+		if (!decoder->enabled)
+			return pt_blk_status(decoder, pts_event_pending);
+
+		/* Iret events are normally indicated on the event flow, unless
+		 * they bind to the same instruction as a previous event.
+		 *
+		 * We bind at most one iret event to an instruction, though.
+		 */
+		if (!decoder->process_insn || decoder->bound_iret)
+			break;
+
+		/* We're done if we're not binding to the currently postponed
+		 * instruction.  We will process the event on the normal event
+		 * flow in the next iteration.
+		 */
+		if (!ev->ip_suppressed ||
+		    !pt_insn_is_iret(&decoder->insn, &decoder->iext))
+			break;
+
+		/* We bound an iret event.  Make sure we do not bind further
+		 * iret events to this instruction.
+		 */
+		decoder->bound_iret = 1;
+
+		return pt_blk_status(decoder, pts_event_pending);
+
+	case ptev_smi:
+		/* This event does not bind to an instruction. */
+		status = pt_blk_proceed_postponed_insn(decoder);
+		if (status < 0)
+			return status;
+
+		if (decoder->enabled && !ev->ip_suppressed &&
+		    decoder->ip != ev->variant.smi.ip)
+			break;
+
+		return pt_blk_status(decoder, pts_event_pending);
+
+	case ptev_rsm:
+		/* This event does not bind to an instruction. */
+		status = pt_blk_proceed_postponed_insn(decoder);
+		if (status < 0)
+			return status;
+
+		if (!ev->ip_suppressed)
+			return -pte_internal;
+
+		return pt_blk_status(decoder, pts_event_pending);
+
+	case ptev_sipi:
+		/* This event does not bind to an instruction. */
+		status = pt_blk_proceed_postponed_insn(decoder);
+		if (status < 0)
+			return status;
+
+		if (!ev->ip_suppressed)
+			return -pte_internal;
+
+		return pt_blk_status(decoder, pts_event_pending);
+
+	case ptev_init:
+		/* This event does not bind to an instruction. */
+		status = pt_blk_proceed_postponed_insn(decoder);
+		if (status < 0)
+			return status;
+
+		if (decoder->enabled && !ev->ip_suppressed &&
+		    decoder->ip != ev->variant.init.ip)
+			break;
+
+		return pt_blk_status(decoder, pts_event_pending);
+
+	case ptev_vmentry:
+		/* We apply the event immediately if we're not tracing. */
+		if (!decoder->enabled)
+			return pt_blk_status(decoder, pts_event_pending);
+
+		/* Vmentry events are normally indicated on the event flow,
+		 * unless they bind to the same instruction as a previous
+		 * event.
+		 *
+		 * We bind at most one vmentry event to an instruction, though.
+		 */
+		if (!decoder->process_insn || decoder->bound_vmentry)
+			break;
+
+		/* We're done if we're not binding to the currently postponed
+		 * instruction.  We will process the event on the normal event
+		 * flow in the next iteration.
+		 */
+		if (!ev->ip_suppressed ||
+		    !pt_insn_is_vmentry(&decoder->insn, &decoder->iext))
+			break;
+
+		/* We bound a vmentry event.  Make sure we do not bind further
+		 * vmentry events to this instruction.
+		 */
+		decoder->bound_vmentry = 1;
+
+		return pt_blk_status(decoder, pts_event_pending);
+
+	case ptev_vmexit:
+		/* This event does not bind to an instruction. */
+		status = pt_blk_proceed_postponed_insn(decoder);
+		if (status < 0)
+			return status;
+
+		if (decoder->enabled && !ev->ip_suppressed &&
+		    decoder->ip != ev->variant.vmexit.ip)
+			break;
+
+		return pt_blk_status(decoder, pts_event_pending);
+
+	case ptev_shutdown:
+		/* This event does not bind to an instruction. */
+		status = pt_blk_proceed_postponed_insn(decoder);
+		if (status < 0)
+			return status;
+
+		if (decoder->enabled && !ev->ip_suppressed &&
+		    decoder->ip != ev->variant.shutdown.ip)
+			break;
+
+		return pt_blk_status(decoder, pts_event_pending);
+
+	case ptev_uintr:
+		/* This event does not bind to an instruction. */
+		status = pt_blk_proceed_postponed_insn(decoder);
+		if (status < 0)
+			return status;
+
+		if (decoder->enabled && !ev->ip_suppressed &&
+		    decoder->ip != ev->variant.uintr.ip)
+			break;
+
+		return pt_blk_status(decoder, pts_event_pending);
+
+	case ptev_uiret:
+		/* We apply the event immediately if we're not tracing. */
+		if (!decoder->enabled)
+			return pt_blk_status(decoder, pts_event_pending);
+
+		/* Uiret events are normally indicated on the event flow,
+		 * unless they bind to the same instruction as a previous
+		 * event.
+		 *
+		 * We bind at most one uiret event to an instruction, though.
+		 */
+		if (!decoder->process_insn || decoder->bound_uiret)
+			break;
+
+		/* We're done if we're not binding to the currently postponed
+		 * instruction.  We will process the event on the normal event
+		 * flow in the next iteration.
+		 */
+		if (!ev->ip_suppressed ||
+		    !pt_insn_is_uiret(&decoder->insn, &decoder->iext))
+			break;
+
+		/* We bound an uiret event.  Make sure we do not bind further
+		 * uiret events to this instruction.
+		 */
+		decoder->bound_uiret = 1;
 
 		return pt_blk_status(decoder, pts_event_pending);
 	}
@@ -3467,7 +4031,7 @@ int pt_blk_event(struct pt_block_decoder *decoder, struct pt_event *uevent,
 		break;
 
 	case ptev_exec_mode:
-		if (!ev->ip_suppressed &&
+		if (decoder->enabled && !ev->ip_suppressed &&
 		    decoder->ip != ev->variant.exec_mode.ip)
 			return -pte_bad_query;
 
@@ -3513,6 +4077,9 @@ int pt_blk_event(struct pt_block_decoder *decoder, struct pt_event *uevent,
 	case ptev_ptwrite:
 	case ptev_tick:
 	case ptev_mnt:
+	case ptev_iret:
+	case ptev_vmentry:
+	case ptev_uiret:
 		break;
 
 	case ptev_cbr:
@@ -3524,6 +4091,67 @@ int pt_blk_event(struct pt_block_decoder *decoder, struct pt_event *uevent,
 
 	case ptev_tip:
 		return -pte_bad_query;
+
+	case ptev_iflags:
+		if (decoder->enabled && !ev->ip_suppressed &&
+		    decoder->ip != ev->variant.iflags.ip)
+			return -pte_bad_query;
+
+		break;
+
+	case ptev_interrupt:
+		if (decoder->enabled && !ev->ip_suppressed &&
+		    decoder->ip != ev->variant.interrupt.ip)
+			return -pte_bad_query;
+
+		break;
+
+	case ptev_smi:
+		if (decoder->enabled && !ev->ip_suppressed &&
+		    decoder->ip != ev->variant.smi.ip)
+			return -pte_bad_query;
+
+		break;
+
+	case ptev_rsm:
+		if (!ev->ip_suppressed)
+			return -pte_internal;
+
+		break;
+
+	case ptev_sipi:
+		if (!ev->ip_suppressed)
+			return -pte_internal;
+
+		break;
+
+	case ptev_init:
+		if (decoder->enabled && !ev->ip_suppressed &&
+		    decoder->ip != ev->variant.init.ip)
+			return -pte_bad_query;
+
+		break;
+
+	case ptev_vmexit:
+		if (decoder->enabled && !ev->ip_suppressed &&
+		    decoder->ip != ev->variant.vmexit.ip)
+			return -pte_bad_query;
+
+		break;
+
+	case ptev_shutdown:
+		if (decoder->enabled && !ev->ip_suppressed &&
+		    decoder->ip != ev->variant.shutdown.ip)
+			return -pte_bad_query;
+
+		break;
+
+	case ptev_uintr:
+		if (decoder->enabled && !ev->ip_suppressed &&
+		    decoder->ip != ev->variant.uintr.ip)
+			return -pte_bad_query;
+
+		break;
 	}
 
 	/* Copy the event to the user. */

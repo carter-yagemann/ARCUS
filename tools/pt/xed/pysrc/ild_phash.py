@@ -1,6 +1,6 @@
 #BEGIN_LEGAL
 #
-#Copyright (c) 2020 Intel Corporation
+#Copyright (c) 2023 Intel Corporation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -65,7 +65,7 @@ class phash_t(object):
             #and RM gets 3 bits
             shift_val = ('(%s)' % bit_shift)
             bit_shift += self.cdict.op_widths[cname]
-            code = 'key += (%s) << (%s)' % (access_str, shift_val)
+            code = 'key += ((%s) %s) << (%s)' % (key_type, access_str, shift_val)
             fo.add_code_eol(code)
         fo.add_code_eol('return %s' % key_str)
         return nt_lups
@@ -218,11 +218,11 @@ class phash_t(object):
         
         if self.hash_f.kind() == 'trivial':
             operand_lu_fo = None
-            # rule is a pattern_t
-            fo.add_code_eol("return {}".format(self.cdict.rule.ii.inum))
             # avoid parmameter-not-used warnings with compilers that
             # care (like MSVS)
             fo.add_code_eol("(void)d") 
+            # rule is a pattern_t
+            fo.add_code_eol("return {}".format(self.cdict.rule.ii.inum))
         else:
             operand_lu_fo = codegen.function_object_t(lu_operands_fn,
                                            return_type=key_ctype,

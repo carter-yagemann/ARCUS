@@ -1,4 +1,5 @@
-# Copyright (c) 2017-2022, Intel Corporation
+# Copyright (c) 2017-2024, Intel Corporation
+# SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
@@ -56,9 +57,12 @@ configure_file(
 
 set_target_properties(libipt-sb PROPERTIES
   PREFIX ""
+  IMPORT_PREFIX ""
   PUBLIC_HEADER ${CMAKE_CURRENT_BINARY_DIR}/include/libipt-sb.h
   VERSION   ${PT_VERSION}
   SOVERSION ${PT_VERSION_MAJOR}
+  C_STANDARD 11
+  C_STANDARD_REQUIRED ON
 )
 
 target_link_libraries(libipt-sb libipt)
